@@ -9,11 +9,15 @@
   /// so the page can offer to have it corrected rather than only complain.
   public struct TEIFault: Sendable {
     public enum Kind: String, Sendable {
-      /// `<pb n="B1v"/>` where the rendition is named "B1 verso".
-      case shorthandLabel
+      /// A side named something the rendition does not call it.
+      case labelMismatch
       /// An opening that names two sides and marks neither.
       case sidesUnmarked
-      /// The word "blank" standing as if it were transcribed text.
+      /// A surface whose whole reading is one word standing in for absence.
+      ///
+      /// The prompt once asked for `<p>blank</p>`, so documents carry it; but
+      /// the fault is general — a transcription that says a page is empty is
+      /// not a transcription of that page, whatever word it uses.
       case literalBlank
       /// Prose about a surface — its binding, its tooling — in place of a
       /// transcription of what is written on it.
@@ -23,7 +27,7 @@
 
       public var summary: String {
         switch self {
-        case .shorthandLabel: return "Side labelled in catalogue shorthand"
+        case .labelMismatch: return "Side named differently from the rendition"
         case .sidesUnmarked: return "Opening does not mark its sides"
         case .literalBlank: return "\"blank\" transcribed as text"
         case .description: return "Described rather than transcribed"
@@ -34,9 +38,10 @@
       /// What to ask for. The agent is given this verbatim.
       public var instruction: String {
         switch self {
-        case .shorthandLabel:
+        case .labelMismatch:
           return
-            "Spell every side label as the rendition names it — \"B1 verso\", not \"B1v\"."
+            "A side here is named something the rendition is not called. Name each side exactly "
+            + "as the rendition names it, using its own words and spelling."
         case .sidesUnmarked:
           return
             "This opening names two sides but marks neither. Give each side its own <pb n=\"…\"/> "
@@ -67,22 +72,56 @@
   }
 
   extension TEIRenderer {
+    /// How much transcribed text a page carries, in characters.
+    ///
+    /// A change replaces a whole page, so it can take readings away as easily
+    /// as it can mend them — a model that loses its place returns a shorter
+    /// page and says nothing about it. Comparing this before and against after
+    /// is how a reader is told, before they accept, that a correction of a
+    /// label also dropped four lines of verse.
+    public static func readingWeight(of markup: String) -> Int {
+      lines(in: markup)
+        .filter { line in
+          switch line.kind {
+          case .text, .heading, .speaker, .stage: return true
+          case .mark, .forme, .gap: return false
+          }
+        }
+        .reduce(0) { $0 + $1.text.count }
+    }
+  }
+
+  extension TEIRenderer {
     /// Read one page against the rules and report what it breaks.
     public static func faults(in page: TEIPage) -> [TEIFault] {
       var faults: [TEIFault] = []
       let markup = page.markup
       let sides = sideLabels(in: markup)
 
-      if let shorthand = sides.first(where: { isShorthand($0) }) {
-        faults.append(.init(kind: .shorthandLabel, detail: shorthand))
+      // The rendition's label is the authority on what its sides are called —
+      // whatever the manifest that produced it happens to call them. No rule
+      // here knows "recto" from "verso", or expects a Western signature: a side
+      // is wrong when it is named something this rendition is not called.
+      let named = namedSides(of: page.label)
+      if let stray = sides.first(where: { side in
+        !named.contains { matches($0, side) }
+      }) {
+        faults.append(.init(kind: .labelMismatch, detail: stray))
       }
-      if page.label.contains("–"), sides.count < 2 {
+      if named.count > 1, sides.count < named.count {
         faults.append(.init(kind: .sidesUnmarked, detail: page.label))
       }
-      if markup.range(of: ">blank<", options: .caseInsensitive) != nil
-        || markup.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "blank"
-      {
-        faults.append(.init(kind: .literalBlank, detail: nil))
+      // A reading that is one short word and nothing else is a statement about
+      // the page rather than a transcription of it. The threshold is what makes
+      // this general: no list of words to keep in step with a prompt.
+      let reading = readingWeight(of: markup)
+      let readingLines = lines(in: markup).filter { line in
+        if case .text = line.kind { return true }
+        return false
+      }
+      if reading > 0, reading <= 12, readingLines.count <= 2 {
+        faults.append(
+          .init(kind: .literalBlank, detail: readingLines.map(\.text).joined(separator: " ")))
       }
       if let prose = descriptiveProse(in: markup) {
         faults.append(.init(kind: .description, detail: prose))
@@ -108,12 +147,33 @@
       return labels
     }
 
-    /// `A1v`, `front endleaf 2v` — a side written the way a catalogue writes it.
-    static func isShorthand(_ label: String) -> Bool {
-      guard let last = label.last, last == "r" || last == "v" else { return false }
-      let stem = label.dropLast()
-      guard let previous = stem.last, previous.isNumber else { return false }
-      return true
+    /// The sides a rendition's own label names.
+    ///
+    /// A label for more than one surface joins them with a dash or a slash —
+    /// "A1 verso – A2 recto", "12/13", "表/裏". A label that joins nothing names
+    /// one surface, and that surface is the rendition itself.
+    public static func namedSides(of label: String) -> [String] {
+      let separators: [String] = [" – ", " — ", " - ", "–", "—", " / ", "/", "|"]
+      for separator in separators where label.contains(separator) {
+        let parts = label.components(separatedBy: separator)
+          .map { $0.trimmingCharacters(in: .whitespaces) }
+          .filter { !$0.isEmpty }
+        if parts.count > 1 { return parts }
+      }
+      let trimmed = label.trimmingCharacters(in: .whitespaces)
+      return trimmed.isEmpty ? [] : [trimmed]
+    }
+
+    /// Two names for one surface, allowing for spacing and case only. Anything
+    /// further — knowing that "B1v" and "B1 verso" are the same leaf — is a
+    /// convention, and a rule that assumed one would be wrong about every
+    /// source that does not follow it.
+    static func matches(_ a: String, _ b: String) -> Bool {
+      func normalised(_ text: String) -> String {
+        text.lowercased().replacingOccurrences(of: " ", with: "")
+          .replacingOccurrences(of: ".", with: "")
+      }
+      return normalised(a) == normalised(b)
     }
 
     /// A long unbroken sentence about the page, where lines of a transcription
