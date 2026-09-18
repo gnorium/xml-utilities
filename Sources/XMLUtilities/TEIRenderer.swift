@@ -26,7 +26,31 @@
     /// openings puts two sides of the book on one facsimile. `forme` is the
     /// work's own apparatus — running head, catchword, signature, printed page
     /// number — which the page carries but the text does not.
-    public enum Kind: Sendable { case text, heading, speaker, stage, mark, forme }
+    public enum Kind: Sendable {
+      case text, heading, speaker, stage, mark
+      /// Forme work, by the job it does on the page. A catchword sits at the
+      /// foot under the last line and repeats the next page's first word; a
+      /// signature is the binder's mark; a running head names the work. They
+      /// are on the page, not in the work, and a reading that sets them in the
+      /// flow makes the compositor's catchword look like a line of verse.
+      case forme(FormeRole)
+    }
+
+    public enum FormeRole: String, Sendable {
+      case header, catchword, signature, pageNumber, other
+
+      /// TEI writes these as `<fw type="…">`, and the abbreviations vary by
+      /// transcriber: `catch` and `catchword`, `sig` and `signature`.
+      public static func from(_ type: String) -> FormeRole {
+        switch type.lowercased() {
+        case "header", "head", "running-head", "runninghead": return .header
+        case "catch", "catchword": return .catchword
+        case "sig", "signature": return .signature
+        case "pagenum", "pagenumber", "folio": return .pageNumber
+        default: return .other
+        }
+      }
+    }
     public let kind: Kind
     public let text: String
 
@@ -126,7 +150,7 @@
           flush()
         case "fw":
           flush()
-          kind = .forme
+          kind = .forme(TEILine.FormeRole.from(XMLFormatter.attribute("type", in: tag)))
         case "head":
           flush()
           kind = .heading
