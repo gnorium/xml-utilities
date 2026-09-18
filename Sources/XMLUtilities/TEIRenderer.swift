@@ -34,6 +34,10 @@
       /// are on the page, not in the work, and a reading that sets them in the
       /// flow makes the compositor's catchword look like a line of verse.
       case forme(FormeRole)
+      /// Nothing was transcribed here, and the reason why: `<gap reason="blank"/>`
+      /// for a surface with nothing on it, or a damaged one. It is a statement
+      /// about the page, not a word on it.
+      case gap(reason: String)
     }
 
     public enum FormeRole: String, Sendable {
@@ -145,6 +149,13 @@
           cursor = close.upperBound
           continue
         }
+        if name == "gap" || name == "gap/" {
+          flush()
+          let reason = XMLFormatter.attribute("reason", in: tag)
+          lines.append(TEILine(kind: .gap(reason: reason), text: reason.isEmpty ? "gap" : reason))
+          cursor = close.upperBound
+          continue
+        }
         switch name {
         case "lb", "lb/", "/p", "/head", "/speaker", "/stage", "/l", "/lg", "/fw":
           flush()
@@ -167,6 +178,15 @@
       }
       flush()
       return lines
+    }
+
+    /// The image service a facsimile URL is a request against: everything
+    /// before the IIIF Image API parameters. `…/iiif/2/<id>/full/1300,/0/default.jpg`
+    /// and `…/iiif/2/<id>/full/max/0/default.jpg` are two requests for one
+    /// image, and it is the image that identifies a rendition.
+    public static func serviceID(ofFacsimile url: String) -> String {
+      guard let cut = url.range(of: "/full/") else { return url }
+      return String(url[url.startIndex..<cut.lowerBound])
     }
 
     /// `A1v` is how a cataloguer writes it and not how a reader reads it.
