@@ -23,8 +23,10 @@
   /// where the compositor broke the line.
   public struct TEILine: Sendable {
     /// `mark` is a page turn inside the image: a source that photographs
-    /// openings puts two sides of the book on one facsimile.
-    public enum Kind: Sendable { case text, heading, speaker, stage, mark }
+    /// openings puts two sides of the book on one facsimile. `forme` is the
+    /// work's own apparatus — running head, catchword, signature, printed page
+    /// number — which the page carries but the text does not.
+    public enum Kind: Sendable { case text, heading, speaker, stage, mark, forme }
     public let kind: Kind
     public let text: String
 
@@ -120,8 +122,11 @@
           continue
         }
         switch name {
-        case "lb", "lb/", "/p", "/head", "/speaker", "/stage", "/l", "/lg":
+        case "lb", "lb/", "/p", "/head", "/speaker", "/stage", "/l", "/lg", "/fw":
           flush()
+        case "fw":
+          flush()
+          kind = .forme
         case "head":
           flush()
           kind = .heading
