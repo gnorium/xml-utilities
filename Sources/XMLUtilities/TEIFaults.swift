@@ -52,9 +52,11 @@
             + "nothing on it carries <gap reason=\"blank\"/> instead."
         case .description:
           return
-            "This is a description of the surface rather than a transcription of it. Transcribe "
-            + "what is written; mark decoration as <figure> with a few words of <desc>; a surface "
-            + "bearing no text carries <gap reason=\"blank\"/>."
+            "This is a paragraph about the surface rather than a transcription of it. Transcribe "
+            + "what is written on it; keep decoration as <figure> with its bbox and a <figDesc> "
+            + "naming what it is in one plain sentence — do not shorten a description that is "
+            + "already factual, and do not replace <figDesc> with <desc>; a surface bearing no "
+            + "text carries <gap reason=\"blank\"/>."
         case .unbalanced:
           return "An element here is opened and not closed, or closed and not opened. Repair it."
         }
@@ -84,7 +86,9 @@
         .filter { line in
           switch line.kind {
           case .text, .heading, .speaker, .stage: return true
-          case .mark, .forme, .gap: return false
+          // A figure's description is not reading that can be lost: it
+          // describes the surface rather than transcribing it.
+          case .mark, .forme, .gap, .figure: return false
           }
         }
         .reduce(0) { $0 + $1.text.count }
