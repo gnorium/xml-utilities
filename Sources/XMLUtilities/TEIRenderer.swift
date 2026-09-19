@@ -18,7 +18,7 @@
     }
   }
 
-  /// A line of a transcription, carrying what the markup said it was. Line
+  /// A line or structured block of a transcription, carrying what the markup said it was. Line
   /// breaks are kept because they are evidence — a diplomatic transcript says
   /// where the compositor broke the line.
   public struct TEILine: Sendable {
@@ -46,6 +46,10 @@
       /// object — "gold-tooled dark leather binding" — and setting that in the
       /// reading says the cover bears those words, which it does not.
       case figure(type: String, bbox: String)
+      /// Rows and cells must survive parsing; their order alone cannot recover
+      /// the relationship between a heading and a value after flattening.
+      case table(TEITable)
+      case documentBoundary
     }
 
     public enum FormeRole: String, Sendable {
@@ -82,12 +86,19 @@
 
     /// A stretch of one line set one way.
     public struct Run: Sendable {
+      public enum Kind: Sendable {
+        case text
+        case tex(display: Bool)
+      }
+
       public let text: String
       public let rend: String
+      public let kind: Kind
 
-      public init(text: String, rend: String = "") {
+      public init(text: String, rend: String = "", kind: Kind = .text) {
         self.text = text
         self.rend = rend
+        self.kind = kind
       }
     }
 
@@ -97,6 +108,22 @@
       self.rend = rend
       self.runs = runs.isEmpty ? [Run(text: text)] : runs
     }
+  }
+
+  public struct TEITable: Sendable {
+    public struct Cell: Sendable {
+      public let lines: [TEILine]
+      public let isLabel: Bool
+      public let rows: Int
+      public let columns: Int
+    }
+
+    public struct Row: Sendable {
+      public let cells: [Cell]
+    }
+
+    public let caption: [TEILine]
+    public let rows: [Row]
   }
 
   /// Reads a TEI document as a document — pages, and the lines on them —
@@ -152,113 +179,127 @@
 
     /// One page's markup as the lines a reader sees.
     public static func lines(in markup: String) -> [TEILine] {
-      var lines: [TEILine] = []
-      var kind: TEILine.Kind = .text
-      var rend = ""
-      var buffer = ""
-      var runs: [TEILine.Run] = []
-      var inlineRend = ""
+      reading(from: TEIMarkup.parse(markup))
+    }
 
-      /// Close the run in hand, so the next one can be set differently.
-      func closeRun() {
-        let text = XMLFormatter.decodingEntities(buffer)
-        guard !text.isEmpty else {
-          buffer = ""
-          return
-        }
-        runs.append(TEILine.Run(text: text, rend: inlineRend))
-        buffer = ""
-      }
+    private static func reading(from nodes: [TEIMarkup.Node]) -> [TEILine] {
+      var lines: [TEILine] = []
+      var runs: [TEILine.Run] = []
+      var currentKind: TEILine.Kind = .text
+      var currentRend = ""
 
       func flush() {
-        closeRun()
         let text = runs.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty {
-          lines.append(TEILine(kind: kind, text: text, rend: rend, runs: runs))
+          lines.append(TEILine(kind: currentKind, text: text, rend: currentRend, runs: runs))
         }
         runs = []
-        inlineRend = ""
-        kind = .text
       }
 
-      var cursor = markup.startIndex
-      while cursor < markup.endIndex {
-        guard let open = markup.range(of: "<", range: cursor..<markup.endIndex) else {
-          buffer += markup[cursor...]
-          break
+      func walk(
+        _ nodes: [TEIMarkup.Node], kind: TEILine.Kind = .text,
+        rend: String = "", inlineRend: String = ""
+      ) {
+        for node in nodes {
+          switch node {
+          case .text(let text):
+            currentKind = kind
+            currentRend = rend
+            if !text.isEmpty { runs.append(.init(text: text, rend: inlineRend)) }
+          case .element(let element):
+            let ownRend = element.attribute("rend")
+            let blockRend = ownRend.isEmpty ? rend : ownRend
+            switch element.name {
+            case "formula"
+            where ["tex", "latex"].contains(element.attribute("notation").lowercased()):
+              currentKind = kind
+              currentRend = rend
+              let display =
+                ownRend.split(whereSeparator: \.isWhitespace).contains("display")
+                || element.attribute("type") == "display"
+              runs.append(
+                .init(text: element.textContent, rend: inlineRend, kind: .tex(display: display)))
+            case "hi":
+              // Passing the inherited setting down the tree restores it when
+              // a nested span closes, including across physical line breaks.
+              walk(
+                element.children, kind: kind, rend: rend,
+                inlineRend: [inlineRend, ownRend].filter { !$0.isEmpty }.joined(separator: " "))
+            case "lb", "cb":
+              flush()
+            case "pb":
+              flush()
+              let label = expandedLeafLabel(element.attribute("n"))
+              if !label.isEmpty { lines.append(.init(kind: .mark, text: label)) }
+            case "gap":
+              flush()
+              let reason = element.attribute("reason")
+              lines.append(.init(kind: .gap(reason: reason), text: reason.isEmpty ? "gap" : reason))
+            case "milestone" where element.attribute("unit") == "document":
+              flush()
+              lines.append(.init(kind: .documentBoundary, text: ""))
+            case "p", "lg", "l", "head", "div", "speaker", "stage", "fw":
+              flush()
+              let blockKind: TEILine.Kind
+              switch element.name {
+              case "head": blockKind = .heading
+              case "speaker": blockKind = .speaker
+              case "stage": blockKind = .stage
+              case "fw": blockKind = .forme(.from(element.attribute("type")))
+              default: blockKind = kind
+              }
+              walk(element.children, kind: blockKind, rend: blockRend, inlineRend: inlineRend)
+              flush()
+            case "table":
+              flush()
+              let children = element.elements
+              let caption = children.filter { $0.name == "head" }.flatMap {
+                reading(from: $0.children)
+              }
+              let rows = children.filter { $0.name == "row" }.map { row in
+                TEITable.Row(
+                  cells: row.elements.filter { $0.name == "cell" }.map { cell in
+                    TEITable.Cell(
+                      lines: reading(from: cell.children),
+                      isLabel: row.attribute("role") == "label"
+                        || cell.attribute("role") == "label",
+                      rows: max(1, Int(cell.attribute("rows")) ?? 1),
+                      columns: max(1, Int(cell.attribute("cols")) ?? 1)
+                    )
+                  })
+              }
+              let table = TEITable(caption: caption, rows: rows)
+              let text = (caption + rows.flatMap { $0.cells.flatMap(\.lines) }).map(\.text).joined(
+                separator: " ")
+              lines.append(.init(kind: .table(table), text: text, rend: blockRend))
+            case "figure":
+              flush()
+              let descriptions = element.elements.filter {
+                $0.name == "figDesc" || $0.name == "desc"
+              }
+              let description = descriptions.flatMap { reading(from: $0.children) }.map(\.text)
+                .joined(separator: " ")
+              lines.append(
+                .init(
+                  kind: .figure(type: element.attribute("type"), bbox: element.attribute("bbox")),
+                  text: description))
+              // Captions, tables, and diagram labels remain readable even when
+              // the graphic has no usable crop. figDesc is descriptive metadata.
+              let content = element.children.filter { node in
+                if case .element(let child) = node {
+                  return child.name != "figDesc" && child.name != "desc"
+                }
+                return element.attribute("type") != "initial"
+              }
+              walk(content, kind: kind, rend: rend, inlineRend: inlineRend)
+              flush()
+            default:
+              walk(element.children, kind: kind, rend: rend, inlineRend: inlineRend)
+            }
+          }
         }
-        buffer += markup[cursor..<open.lowerBound]
-        guard let close = markup.range(of: ">", range: open.upperBound..<markup.endIndex) else {
-          break
-        }
-        let tag = String(markup[open.upperBound..<close.lowerBound])
-        let name = tag.split(separator: " ").first.map(String.init) ?? tag
-        if name == "pb" {
-          // The side of the leaf the following lines belong to.
-          flush()
-          let label = expandedLeafLabel(XMLFormatter.attribute("n", in: tag))
-          if !label.isEmpty { lines.append(TEILine(kind: .mark, text: label)) }
-          cursor = close.upperBound
-          continue
-        }
-        if name == "gap" || name == "gap/" {
-          flush()
-          let reason = XMLFormatter.attribute("reason", in: tag)
-          lines.append(TEILine(kind: .gap(reason: reason), text: reason.isEmpty ? "gap" : reason))
-          cursor = close.upperBound
-          continue
-        }
-        switch name {
-        case "p", "lg", "l", "head", "div":
-          // Setting is a property of the block, and the lines inside it keep it
-          // until the block closes.
-          flush()
-          let value = XMLFormatter.attribute("rend", in: tag)
-          if !value.isEmpty { rend = value }
-          if name == "head" { kind = .heading }
-        case "/p", "/lg", "/l", "/div":
-          flush()
-          rend = ""
-        case "hi":
-          // Inline: the run before it ends here and a new one begins, set the
-          // way this says.
-          closeRun()
-          inlineRend = XMLFormatter.attribute("rend", in: tag)
-        case "/hi":
-          closeRun()
-          inlineRend = ""
-        case "lb", "lb/", "/head", "/speaker", "/stage", "/fw":
-          flush()
-        case "figure", "figure/":
-          flush()
-          kind = .figure(
-            type: XMLFormatter.attribute("type", in: tag),
-            bbox: XMLFormatter.attribute("bbox", in: tag)
-          )
-          // A self-closing figure carries no description, only its region.
-          if tag.hasSuffix("/") { flush() }
-        case "/figure":
-          flush()
-        case "figDesc", "/figDesc", "desc", "/desc":
-          // The description is the figure's text, not a line of its own.
-          break
-        case "fw":
-          flush()
-          kind = .forme(TEILine.FormeRole.from(XMLFormatter.attribute("type", in: tag)))
-        case "head":
-          flush()
-          kind = .heading
-        case "speaker":
-          flush()
-          kind = .speaker
-        case "stage":
-          flush()
-          kind = .stage
-        default:
-          break
-        }
-        cursor = close.upperBound
       }
+      walk(nodes)
       flush()
       return lines
     }

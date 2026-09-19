@@ -85,10 +85,10 @@
       lines(in: markup)
         .filter { line in
           switch line.kind {
-          case .text, .heading, .speaker, .stage: return true
+          case .text, .heading, .speaker, .stage, .table: return true
           // A figure's description is not reading that can be lost: it
           // describes the surface rather than transcribing it.
-          case .mark, .forme, .gap, .figure: return false
+          case .mark, .forme, .gap, .figure, .documentBoundary: return false
           }
         }
         .reduce(0) { $0 + $1.text.count }
@@ -123,7 +123,7 @@
         if case .text = line.kind { return true }
         return false
       }
-      if reading > 0, reading <= 12, readingLines.count <= 2 {
+      if reading > 0, reading <= 12, !readingLines.isEmpty, readingLines.count <= 2 {
         faults.append(
           .init(kind: .literalBlank, detail: readingLines.map(\.text).joined(separator: " ")))
       }
