@@ -9,7 +9,7 @@
   /// so the page can offer to have it corrected rather than only complain.
   public struct TEIFault: Sendable {
     public enum Kind: String, Sendable {
-      /// A side named something the rendition does not call it.
+      /// A side named something the semblance does not call it.
       case labelMismatch
       /// An opening that names two sides and marks neither.
       case sidesUnmarked
@@ -27,7 +27,7 @@
 
       public var summary: String {
         switch self {
-        case .labelMismatch: return "Side named differently from the rendition"
+        case .labelMismatch: return "Side named differently from the semblance"
         case .sidesUnmarked: return "Opening does not mark its sides"
         case .literalBlank: return "\"blank\" transcribed as text"
         case .description: return "Described rather than transcribed"
@@ -40,12 +40,12 @@
         switch self {
         case .labelMismatch:
           return
-            "A side here is named something the rendition is not called. Name each side exactly "
-            + "as the rendition names it, using its own words and spelling."
+            "A side here is named something the semblance is not called. Name each side exactly "
+            + "as the semblance names it, using its own words and spelling."
         case .sidesUnmarked:
           return
             "This opening names two sides but marks neither. Give each side its own <pb n=\"…\"/> "
-            + "before its content, spelled as the rendition names it."
+            + "before its content, spelled as the semblance names it."
         case .literalBlank:
           return
             "The word \"blank\" is standing here as if it were transcribed text. A surface with "
@@ -102,10 +102,10 @@
       let markup = page.markup
       let sides = sideLabels(in: markup)
 
-      // The rendition's label is the authority on what its sides are called —
+      // The semblance's label is the authority on what its sides are called —
       // whatever the manifest that produced it happens to call them. No rule
       // here knows "recto" from "verso", or expects a Western signature: a side
-      // is wrong when it is named something this rendition is not called.
+      // is wrong when it is named something this semblance is not called.
       let named = namedSides(of: page.label)
       if let stray = sides.first(where: { side in
         !named.contains { matches($0, side) }
@@ -151,11 +151,11 @@
       return labels
     }
 
-    /// The sides a rendition's own label names.
+    /// The sides a semblance's own label names.
     ///
     /// A label for more than one surface joins them with a dash or a slash —
     /// "A1 verso – A2 recto", "12/13", "表/裏". A label that joins nothing names
-    /// one surface, and that surface is the rendition itself.
+    /// one surface, and that surface is the semblance itself.
     public static func namedSides(of label: String) -> [String] {
       let separators: [String] = [" – ", " — ", " - ", "–", "—", " / ", "/", "|"]
       for separator in separators where label.contains(separator) {

@@ -389,7 +389,7 @@
     /// The image service a facsimile URL is a request against: everything
     /// before the IIIF Image API parameters. `…/iiif/2/<id>/full/1300,/0/default.jpg`
     /// and `…/iiif/2/<id>/full/max/0/default.jpg` are two requests for one
-    /// image, and it is the image that identifies a rendition.
+    /// image, and it is the image that identifies a semblance.
     public static func serviceID(ofFacsimile url: String) -> String {
       guard let cut = url.range(of: "/full/") else { return url }
       return String(url[url.startIndex..<cut.lowerBound])
