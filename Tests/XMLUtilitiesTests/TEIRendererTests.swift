@@ -2,6 +2,20 @@ import XCTest
 import XMLUtilities
 
 final class TEIRendererTests: XCTestCase {
+  func testAnEditBreaksMarkupOnlyWhereItChangedTheBalance() {
+    let page = "<div><p>To be,<lb/>or not</p>"
+    XCTAssertFalse(TEIRenderer.breaksMarkup("<div><p>To be,<lb/>or not to be</p>", from: page))
+    XCTAssertTrue(TEIRenderer.breaksMarkup("<div><p>To be,<lb/>or not", from: page))
+    XCTAssertTrue(TEIRenderer.breaksMarkup("<div><p>To be,<lb/>or <hi rend=\"it\" not</p>", from: page))
+    XCTAssertEqual(XMLFormatter.escapingAttribute("a&b \"c\""), "a&amp;b &quot;c&quot;")
+  }
+
+  func testLineBreaksAndBlocksAreToldApart() {
+    let lines = TEIRenderer.lines(in: "<p>To be,<lb/>or not</p><p>That is</p><l>the question</l>")
+    XCTAssertEqual(lines.map(\.text), ["To be,", "or not", "That is", "the question"])
+    XCTAssertEqual(lines.map(\.opensBlock), [true, false, true, true])
+  }
+
   func testTeXRemainsOneRunBetweenSurroundingText() {
     let lines = TEIRenderer.lines(
       in: #"<p>Let <formula notation="TeX">x_{a.b}=\frac{u+v}{w}</formula> hold.</p>"#)

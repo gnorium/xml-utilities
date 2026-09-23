@@ -83,6 +83,11 @@
     /// The renderer used to drop `<hi>` and keep its text, which turned
     /// "By WILLIAM SHAKESPEARE" and every italicised speaker into plain prose.
     public let runs: [Run]
+    /// Whether the line opens a block — a paragraph, a verse line, a heading,
+    /// anything set apart — rather than following an `<lb/>` inside one. A
+    /// line break and a paragraph break are different evidence, and a diff
+    /// that turned one into the other has changed the page.
+    public let opensBlock: Bool
 
     /// A stretch of one line set one way.
     public struct Run: Sendable {
@@ -102,11 +107,12 @@
       }
     }
 
-    public init(kind: Kind, text: String, rend: String = "", runs: [Run] = []) {
+    public init(kind: Kind, text: String, rend: String = "", runs: [Run] = [], opensBlock: Bool = true) {
       self.kind = kind
       self.text = text
       self.rend = rend
       self.runs = runs.isEmpty ? [Run(text: text)] : runs
+      self.opensBlock = opensBlock
     }
   }
 
@@ -187,13 +193,23 @@
       var runs: [TEILine.Run] = []
       var currentKind: TEILine.Kind = .text
       var currentRend = ""
+      // Whether the next line opens a block: true until a line is set, and
+      // again at every block's edge; an `<lb/>` leaves it false.
+      var blockPending = true
 
       func flush() {
         let text = runs.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty {
-          lines.append(TEILine(kind: currentKind, text: text, rend: currentRend, runs: runs))
+          lines.append(
+            TEILine(kind: currentKind, text: text, rend: currentRend, runs: runs, opensBlock: blockPending))
+          blockPending = false
         }
         runs = []
+      }
+
+      func append(_ line: TEILine) {
+        lines.append(line)
+        blockPending = true
       }
 
       func walk(
@@ -230,16 +246,17 @@
             case "pb":
               flush()
               let label = expandedLeafLabel(element.attribute("n"))
-              if !label.isEmpty { lines.append(.init(kind: .mark, text: label)) }
+              if !label.isEmpty { append(.init(kind: .mark, text: label)) }
             case "gap":
               flush()
               let reason = element.attribute("reason")
-              lines.append(.init(kind: .gap(reason: reason), text: reason.isEmpty ? "gap" : reason))
+              append(.init(kind: .gap(reason: reason), text: reason.isEmpty ? "gap" : reason))
             case "milestone" where element.attribute("unit") == "document":
               flush()
-              lines.append(.init(kind: .documentBoundary, text: ""))
+              append(.init(kind: .documentBoundary, text: ""))
             case "p", "lg", "l", "head", "div", "speaker", "stage", "fw":
               flush()
+              blockPending = true
               let blockKind: TEILine.Kind
               switch element.name {
               case "head": blockKind = .heading
@@ -250,6 +267,7 @@
               }
               walk(element.children, kind: blockKind, rend: blockRend, inlineRend: inlineRend)
               flush()
+              blockPending = true
             case "table":
               flush()
               let children = element.elements
@@ -271,7 +289,7 @@
               let table = TEITable(caption: caption, rows: rows)
               let text = (caption + rows.flatMap { $0.cells.flatMap(\.lines) }).map(\.text).joined(
                 separator: " ")
-              lines.append(.init(kind: .table(table), text: text, rend: blockRend))
+              append(.init(kind: .table(table), text: text, rend: blockRend))
             case "figure":
               flush()
               let descriptions = element.elements.filter {
@@ -279,7 +297,7 @@
               }
               let description = descriptions.flatMap { reading(from: $0.children) }.map(\.text)
                 .joined(separator: " ")
-              lines.append(
+              append(
                 .init(
                   kind: .figure(type: element.attribute("type"), bbox: element.attribute("bbox")),
                   text: description))
@@ -293,6 +311,7 @@
               }
               walk(content, kind: kind, rend: rend, inlineRend: inlineRend)
               flush()
+              blockPending = true
             default:
               walk(element.children, kind: kind, rend: rend, inlineRend: inlineRend)
             }

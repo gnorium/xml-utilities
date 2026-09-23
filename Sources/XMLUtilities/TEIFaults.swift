@@ -202,6 +202,51 @@
       return nil
     }
 
+    /// Whether an edit left a page's markup broken: a tag cut off before its
+    /// `>`, or an element opened or closed that the page did not already
+    /// leave open or closed. A page is a slice of a document, and a slice can
+    /// carry half of a `<div>` legitimately; only what the edit changed about
+    /// that counts.
+    public static func breaksMarkup(_ edited: String, from original: String) -> Bool {
+      if hasCutTag(edited) && !hasCutTag(original) { return true }
+      return balance(of: edited) != balance(of: original)
+    }
+
+    /// A `<` that another `<` or the end of the page comes before its `>`.
+    static func hasCutTag(_ markup: String) -> Bool {
+      var inTag = false
+      for character in markup {
+        if character == "<" {
+          if inTag { return true }
+          inTag = true
+        } else if character == ">" {
+          inTag = false
+        }
+      }
+      return inTag
+    }
+
+    /// Each element's openings less its closings.
+    static func balance(of markup: String) -> [String: Int] {
+      let voids: Set<String> = ["pb", "lb", "gap", "cb", "space", "milestone"]
+      var counts: [String: Int] = [:]
+      var cursor = markup.startIndex
+      while let start = markup.range(of: "<", range: cursor..<markup.endIndex) {
+        guard let end = markup.range(of: ">", range: start.upperBound..<markup.endIndex) else { break }
+        let tag = String(markup[start.upperBound..<end.lowerBound])
+        cursor = end.upperBound
+        guard !tag.hasPrefix("!"), !tag.hasPrefix("?"), !tag.hasSuffix("/") else { continue }
+        if tag.hasPrefix("/") {
+          counts[String(tag.dropFirst()).trimmingCharacters(in: .whitespaces), default: 0] -= 1
+          continue
+        }
+        let name = tag.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? tag
+        guard !voids.contains(name) else { continue }
+        counts[name, default: 0] += 1
+      }
+      return counts.filter { $0.value != 0 }
+    }
+
     static func unbalancedElement(in markup: String) -> String? {
       let voids: Set<String> = ["pb", "lb", "gap", "cb", "space", "milestone"]
       var open: [String: Int] = [:]

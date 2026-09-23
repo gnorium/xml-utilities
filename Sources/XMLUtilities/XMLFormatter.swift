@@ -58,6 +58,17 @@
         .replacingOccurrences(of: "&amp;", with: "&")
     }
 
+    /// Text made safe to stand in an attribute value: the five XML entities,
+    /// the ampersand first.
+    public static func escapingAttribute(_ text: String) -> String {
+      text
+        .replacingOccurrences(of: "&", with: "&amp;")
+        .replacingOccurrences(of: "<", with: "&lt;")
+        .replacingOccurrences(of: ">", with: "&gt;")
+        .replacingOccurrences(of: "\"", with: "&quot;")
+        .replacingOccurrences(of: "'", with: "&apos;")
+    }
+
     /// The body of a document, or the whole of it when there is no `<body>`.
     public static func body(of xml: String) -> String? {
       guard let start = xml.range(of: "<body>")?.upperBound else { return nil }
