@@ -35,17 +35,18 @@
         }
       }
 
-      /// What to ask for. The agent is given this verbatim.
+      /// What to ask for. The model is given this verbatim, so it speaks of the
+      /// canvas image label, never of a semblance.
       public var instruction: String {
         switch self {
         case .labelMismatch:
           return
-            "A side here is named something the semblance is not called. Name each side exactly "
-            + "as the semblance names it, using its own words and spelling."
+            "A side here is named differently from its canvas image label. Name each side exactly "
+            + "as the image label names it, in its own words and spelling."
         case .sidesUnmarked:
           return
             "This opening names two sides but marks neither. Give each side its own <pb n=\"…\"/> "
-            + "before its content, spelled as the semblance names it."
+            + "before its content, spelled as the image label names it."
         case .literalBlank:
           return
             "The word \"blank\" is standing here as if it were transcribed text. A surface with "
