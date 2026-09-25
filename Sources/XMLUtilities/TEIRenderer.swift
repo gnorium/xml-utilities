@@ -330,7 +330,7 @@
     /// type at about fifteen pixels tall, and the last letters of a word are
     /// two or three of them. That is where "Ophelia." comes back as "Ophel."
     /// and "ſleepe" as "ſleep" — the model is not misreading, it cannot see
-    /// them. Re-reading one page is cheap enough to do at native size.
+    /// them. Reading one page is cheap enough to do at native size.
     public static func fullResolutionURL(ofFacsimile url: String) -> String {
       let service = serviceID(ofFacsimile: url)
       guard !service.isEmpty else { return url }
