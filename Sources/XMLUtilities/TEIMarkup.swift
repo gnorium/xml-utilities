@@ -20,11 +20,6 @@
       var projected: [Int: TEIProjection.Position] = [:]
       /// Where the element starts in the projection, likewise.
       var projectedStart: Int?
-      /// Where it ends in the projection: past its last counted text, before
-      /// the line end a block adds.
-      var projectedEnd: Int?
-      /// Its start tag in the markup it was read from.
-      var tag: Range<String.Index>?
 
       init(name: String, attributes: [String: String] = [:]) {
         self.name = name
@@ -90,7 +85,6 @@
               String(token[value].dropFirst().dropLast()))
           }
           let element = Element(name: name, attributes: values)
-          element.tag = range
           stack.last?.children.append(.element(element))
           if !token.hasSuffix("/>") && !emptyElements.contains(name) { stack.append(element) }
         }

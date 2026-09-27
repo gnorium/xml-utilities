@@ -116,7 +116,6 @@
           }
         }
       }
-      element.projectedEnd = size
       if element.name == "s", size > start {
         sentences.append(.init(range: start..<size, part: element.attribute("part")))
       }
@@ -129,7 +128,6 @@
     /// point it would be.
     private func leaveOut(_ element: TEIMarkup.Element) {
       element.projectedStart = size
-      element.projectedEnd = size
       for (index, node) in element.children.enumerated() {
         switch node {
         case .text: element.projected[index] = .init(start: size, counted: false)
