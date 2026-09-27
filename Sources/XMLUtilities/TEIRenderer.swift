@@ -113,12 +113,19 @@
       /// place: a `<choice>`'s regularized spelling, expansion or
       /// correction ("the" for "yͤ"). Empty when there is none.
       public let alternative: String
+      /// The highlight it falls in, when the reading has one: an utterance's
+      /// sentence, or its word (`TEIRenderer.utterance`).
+      public let highlight: TEIHighlight.Kind?
 
-      public init(text: String, rend: String = "", kind: Kind = .text, alternative: String = "") {
+      public init(
+        text: String, rend: String = "", kind: Kind = .text, alternative: String = "",
+        highlight: TEIHighlight.Kind? = nil
+      ) {
         self.text = text
         self.rend = rend
         self.kind = kind
         self.alternative = alternative
+        self.highlight = highlight
       }
     }
 
@@ -167,48 +174,85 @@
     /// the leaf, carrying only a label. Counting both made a 64-image quarto
     /// read as 162 pages. A page here is an image; the side marks are lines
     /// within it, where they belong.
-    public static func pages(in xml: String) -> [TEIPage] {
+    public static func pages(in xml: String, highlights: [String: [TEIHighlight]] = [:]) -> [TEIPage] {
       guard let body = XMLFormatter.body(of: xml) else { return [] }
-
-      var pages: [TEIPage] = []
-      var cursor = body.startIndex
-      var current: (label: String, facs: String, start: String.Index)?
-
-      func page(_ open: (label: String, facs: String, start: String.Index), upTo end: String.Index)
-        -> TEIPage
-      {
-        let markup = String(body[open.start..<end])
+      let breaks = pageBreaks(in: body)
+      return breaks.enumerated().map { index, open in
+        let end = index + 1 < breaks.count ? breaks[index + 1].tag.lowerBound : body.endIndex
+        let markup = String(body[open.tag.upperBound..<end])
         return TEIPage(
           label: open.label,
-          facsimileURL: open.facs,
-          lines: lines(in: markup),
+          facsimileURL: open.facsimileURL,
+          lines: lines(in: markup, highlights: highlights[serviceID(ofFacsimile: open.facsimileURL)] ?? []),
           markup: markup.trimmingCharacters(in: .whitespacesAndNewlines)
         )
       }
+    }
 
+    /// The page breaks of a body that carry a facsimile, each with where its
+    /// tag stands, its label and its image. A side mark (a `<pb>` with no
+    /// `facs`) is left in its page, where `lines(in:)` turns it into a line.
+    static func pageBreaks(in body: String) -> [(tag: Range<String.Index>, label: String, facsimileURL: String)] {
+      var breaks: [(tag: Range<String.Index>, label: String, facsimileURL: String)] = []
+      var cursor = body.startIndex
       while let open = body.range(of: "<pb", range: cursor..<body.endIndex) {
         guard let close = body.range(of: ">", range: open.upperBound..<body.endIndex) else { break }
         let tag = String(body[open.lowerBound..<close.upperBound])
         let facs = XMLFormatter.attribute("facs", in: tag)
-        guard !facs.isEmpty else {
-          // A side mark: left in place so `lines(in:)` turns it into a line.
-          cursor = close.upperBound
-          continue
-        }
-        if let started = current { pages.append(page(started, upTo: open.lowerBound)) }
-        current = (expandedLeafLabel(XMLFormatter.attribute("n", in: tag)), facs, close.upperBound)
         cursor = close.upperBound
+        guard !facs.isEmpty else { continue }
+        breaks.append((open.lowerBound..<close.upperBound, expandedLeafLabel(XMLFormatter.attribute("n", in: tag)), facs))
       }
-      if let started = current { pages.append(page(started, upTo: body.endIndex)) }
-      return pages
+      return breaks
     }
 
-    /// One page's markup as the lines a reader sees.
-    public static func lines(in markup: String) -> [TEILine] {
-      reading(from: TEIMarkup.parse(markup))
+    /// One page's markup as the lines a reader sees; with `highlights`
+    /// (counted in the page's projection, `TEIProjection`), each run says
+    /// which it falls in.
+    public static func lines(in markup: String, highlights: [TEIHighlight] = []) -> [TEILine] {
+      guard !highlights.isEmpty else { return reading(from: TEIMarkup.document(markup)) }
+      let root = TEIMarkup.document(TEIProjection.normalized(markup))
+      _ = TEIProjection(root)
+      return reading(from: root, highlights: highlights)
     }
 
-    private static func reading(from nodes: [TEIMarkup.Node]) -> [TEILine] {
+    /// The highlight a point of the projection falls in, the word's before
+    /// the sentence's.
+    private static func highlight(at offset: Int, in highlights: [TEIHighlight]) -> TEIHighlight.Kind? {
+      let holding = highlights.filter { $0.range.contains(offset) }
+      return holding.contains { $0.kind == .headword } ? .headword : holding.first?.kind
+    }
+
+    /// A text node cut where a highlight begins or ends. A text the
+    /// projection leaves out (what an editor supplies) takes the highlight
+    /// it stands inside, not one it only borders.
+    private static func pieces(
+      of text: String, at position: TEIProjection.Position?, in highlights: [TEIHighlight]
+    ) -> [(text: String, highlight: TEIHighlight.Kind?)] {
+      guard let position, !highlights.isEmpty else { return [(text, nil)] }
+      guard position.counted else {
+        let inside = highlights.filter {
+          $0.range.lowerBound < position.start && position.start < $0.range.upperBound
+        }
+        return [(text, inside.contains { $0.kind == .headword } ? .headword : inside.first?.kind)]
+      }
+      var pieces: [(text: String, highlight: TEIHighlight.Kind?)] = []
+      var current = String.UnicodeScalarView()
+      var currentKind: TEIHighlight.Kind?
+      for (offset, scalar) in text.unicodeScalars.enumerated() {
+        let kind = highlight(at: position.start + offset, in: highlights)
+        if kind != currentKind, !current.isEmpty {
+          pieces.append((String(current), currentKind))
+          current = String.UnicodeScalarView()
+        }
+        currentKind = kind
+        current.append(scalar)
+      }
+      if !current.isEmpty { pieces.append((String(current), currentKind)) }
+      return pieces
+    }
+
+    private static func reading(from owner: TEIMarkup.Element, highlights: [TEIHighlight] = []) -> [TEILine] {
       var lines: [TEILine] = []
       var runs: [TEILine.Run] = []
       var currentKind: TEILine.Kind = .text
@@ -243,19 +287,29 @@
       }
 
       func walk(
-        _ nodes: [TEIMarkup.Node], kind: TEILine.Kind = .text,
-        rend: String = "", inlineRend: String = "", alternative: String = ""
+        _ owner: TEIMarkup.Element, kind: TEILine.Kind = .text,
+        rend: String = "", inlineRend: String = "", alternative: String = "",
+        including: (TEIMarkup.Node) -> Bool = { _ in true }
       ) {
         func joined(_ extra: String) -> String {
           [inlineRend, extra].filter { !$0.isEmpty }.joined(separator: " ")
         }
-        for node in nodes {
+        for (index, node) in owner.children.enumerated() where including(node) {
           switch node {
           case .text(let text):
             currentKind = kind
             currentRend = rend
             if !text.isEmpty {
-              runs.append(.init(text: text, rend: inlineRend, alternative: alternative))
+              if alternative.isEmpty {
+                for piece in pieces(of: text, at: owner.projected[index], in: highlights) {
+                  runs.append(.init(text: piece.text, rend: inlineRend, highlight: piece.highlight))
+                }
+              } else {
+                // A run with an alternative stays whole: it is read on hover
+                // as one.
+                let first = pieces(of: text, at: owner.projected[index], in: highlights).first?.highlight
+                runs.append(.init(text: text, rend: inlineRend, alternative: alternative, highlight: first))
+              }
             }
           case .element(let element):
             let ownRend = element.attribute("rend")
@@ -269,12 +323,14 @@
                 ownRend.split(whereSeparator: \.isWhitespace).contains("display")
                 || element.attribute("type") == "display"
               runs.append(
-                .init(text: element.textContent, rend: inlineRend, kind: .tex(display: display)))
+                .init(
+                  text: element.textContent, rend: inlineRend, kind: .tex(display: display),
+                  highlight: element.projectedStart.flatMap { highlight(at: $0, in: highlights) }))
             case "hi":
               // Passing the inherited setting down the tree restores it when
               // a nested span closes, including across physical line breaks.
               walk(
-                element.children, kind: kind, rend: rend, inlineRend: joined(ownRend),
+                element, kind: kind, rend: rend, inlineRend: joined(ownRend),
                 alternative: alternative)
             case "choice":
               // The surface reading (orig, sic, abbr) is the reading; the
@@ -286,7 +342,7 @@
               let beside = children.first { ["reg", "corr", "expan"].contains($0.name) }
               if let surface {
                 walk(
-                  surface.children, kind: kind, rend: rend, inlineRend: inlineRend,
+                  surface, kind: kind, rend: rend, inlineRend: inlineRend,
                   alternative: beside.map { $0.textContent } ?? alternative)
               }
             case "supplied":
@@ -294,19 +350,22 @@
               // edition sets what it supplies.
               currentKind = kind
               currentRend = rend
-              runs.append(.init(text: "[", rend: joined("supplied")))
-              walk(element.children, kind: kind, rend: rend, inlineRend: joined("supplied"))
-              runs.append(.init(text: "]", rend: joined("supplied")))
+              let bracket = pieces(
+                of: "[", at: element.projectedStart.map { .init(start: $0, counted: false) }, in: highlights
+              ).first?.highlight
+              runs.append(.init(text: "[", rend: joined("supplied"), highlight: bracket))
+              walk(element, kind: kind, rend: rend, inlineRend: joined("supplied"))
+              runs.append(.init(text: "]", rend: joined("supplied"), highlight: bracket))
             case "del", "add":
               // The makers' own deletions and additions, read in place.
               walk(
-                element.children, kind: kind, rend: rend, inlineRend: joined(element.name),
+                element, kind: kind, rend: rend, inlineRend: joined(element.name),
                 alternative: alternative)
             case "note":
               flush()
               blockPending = true
               walk(
-                element.children, kind: .note(place: element.attribute("place")), rend: blockRend,
+                element, kind: .note(place: element.attribute("place")), rend: blockRend,
                 inlineRend: inlineRend)
               flush()
               blockPending = true
@@ -340,7 +399,7 @@
               case "fw": blockKind = .forme(.from(element.attribute("type")))
               default: blockKind = kind
               }
-              walk(element.children, kind: blockKind, rend: blockRend, inlineRend: inlineRend)
+              walk(element, kind: blockKind, rend: blockRend, inlineRend: inlineRend)
               flush()
               blockPending = true
               if element.name != "fw" { lineBroken = true }
@@ -348,13 +407,13 @@
               flush()
               let children = element.elements
               let caption = children.filter { $0.name == "head" }.flatMap {
-                reading(from: $0.children)
+                reading(from: $0, highlights: highlights)
               }
               let rows = children.filter { $0.name == "row" }.map { row in
                 TEITable.Row(
                   cells: row.elements.filter { $0.name == "cell" }.map { cell in
                     TEITable.Cell(
-                      lines: reading(from: cell.children),
+                      lines: reading(from: cell, highlights: highlights),
                       isLabel: row.attribute("role") == "label"
                         || cell.attribute("role") == "label",
                       rows: max(1, Int(cell.attribute("rows")) ?? 1),
@@ -371,7 +430,7 @@
               let descriptions = element.elements.filter {
                 $0.name == "figDesc" || $0.name == "desc"
               }
-              let description = descriptions.flatMap { reading(from: $0.children) }.map(\.text)
+              let description = descriptions.flatMap { reading(from: $0) }.map(\.text)
                 .joined(separator: " ")
               append(
                 .init(
@@ -379,25 +438,24 @@
                   text: description))
               // Captions, tables, and diagram labels remain readable even when
               // the graphic has no usable crop. figDesc is descriptive metadata.
-              let content = element.children.filter { node in
+              walk(element, kind: kind, rend: rend, inlineRend: inlineRend) { node in
                 if case .element(let child) = node {
                   return child.name != "figDesc" && child.name != "desc"
                 }
                 return element.attribute("type") != "initial"
               }
-              walk(content, kind: kind, rend: rend, inlineRend: inlineRend)
               flush()
               blockPending = true
             default:
               // Words, punctuation, sentences, glyphs, names, dates, numbers,
               // quotations and references add nothing to the reading but
               // their text.
-              walk(element.children, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative)
+              walk(element, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative)
             }
           }
         }
       }
-      walk(nodes)
+      walk(owner)
       flush()
       return lines
     }
