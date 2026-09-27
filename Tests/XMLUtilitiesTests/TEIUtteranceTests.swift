@@ -30,8 +30,10 @@ final class TEIUtteranceTests: XCTestCase {
 
   func testASplitSentenceIsHighlightedOnBothPagesAndItsWordMoreStrongly() throws {
     let pages = TEIRenderer.pages(in: document)
-    let highlights = TEIRenderer.utterance(
-      in: pages, canvasID: "https://example.org/iiif/p1", passage: 22..<34, headword: 30..<34)
+    // "word": line 2 (after the <lb/>), after "here", "A" and "split".
+    let word = TEIWordPosition(line: 2, word: 4, surface: "word")
+    let highlights = try XCTUnwrap(
+      TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/p1", start: word, end: word))
     XCTAssertEqual(highlights["https://example.org/iiif/p1"], [.init(22..<34, kind: .sentence), .init(30..<34, kind: .headword)])
     XCTAssertEqual(highlights["https://example.org/iiif/p2"], [.init(0..<13, kind: .sentence)])
     XCTAssertNil(highlights["https://example.org/iiif/p0"])
@@ -51,24 +53,78 @@ final class TEIUtteranceTests: XCTestCase {
     XCTAssertEqual(marked(read[0]), ["Before."])
   }
 
-  func testAWordInNoSentenceHighlightsItsPassage() {
-    let pages = TEIRenderer.pages(in: document)
-    // "Last yͤ one." read past its <s>'s end: no <s> holds 14..<27.
-    let highlights = TEIRenderer.utterance(
-      in: pages, canvasID: "https://example.org/iiif/p2", passage: 14..<27, headword: 14..<27)
-    XCTAssertEqual(highlights["https://example.org/iiif/p2"], [.init(14..<27, kind: .sentence), .init(14..<27, kind: .headword)])
+  func testAWordInNoSentenceHighlightsItsLines() throws {
+    let document = """
+      <TEI><text><body>\
+      <pb n="1" facs="https://example.org/iiif/q0/full/1300,/0/default.jpg"/><p>No sentence<lb/>here at all</p>\
+      </body></text></TEI>
+      """
+    let here = TEIWordPosition(line: 2, word: 1, surface: "here")
+    let highlights = try XCTUnwrap(
+      TEIRenderer.utterance(
+        in: TEIRenderer.pages(in: document), canvasID: "https://example.org/iiif/q0", start: here, end: here))
+    XCTAssertEqual(highlights["https://example.org/iiif/q0"], [.init(11..<24, kind: .sentence), .init(12..<16, kind: .headword)])
   }
 
-  func testTheWholeSentenceOfAnUnsplitWord() {
+  func testTheWholeSentenceOfAnUnsplitWord() throws {
     let pages = TEIRenderer.pages(in: document)
     // "sentence" in "First  sentence\nhere.": the supplied word is not counted.
-    let highlights = TEIRenderer.utterance(
-      in: pages, canvasID: "https://example.org/iiif/p1", passage: 0..<21, headword: 7..<15)
+    let sentence = TEIWordPosition(line: 1, word: 2, surface: "sentence")
+    let highlights = try XCTUnwrap(
+      TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/p1", start: sentence, end: sentence))
     XCTAssertEqual(highlights["https://example.org/iiif/p1"], [.init(0..<21, kind: .sentence), .init(7..<15, kind: .headword)])
     let read = TEIRenderer.pages(in: document, highlights: highlights)
     let runs = read[1].lines.flatMap(\.runs)
     XCTAssertEqual(runs.filter { $0.highlight == .headword }.map(\.text), ["sentence"])
     // The supplied word stands inside the sentence, so it is the sentence's.
     XCTAssertEqual(runs.first { $0.text == "very" }?.highlight, .sentence)
+  }
+
+  func testSeveralWordsAreHighlightedFromTheFirstToTheLast() throws {
+    let pages = TEIRenderer.pages(in: document)
+    let highlights = try XCTUnwrap(
+      TEIRenderer.utterance(
+        in: pages, canvasID: "https://example.org/iiif/p1",
+        start: .init(line: 2, word: 2, surface: "A"), end: .init(line: 2, word: 4, surface: "word")))
+    XCTAssertEqual(highlights["https://example.org/iiif/p1"]?.last, .init(22..<34, kind: .headword))
+  }
+
+  func testAWordThatReadsOtherwiseIsNotHighlighted() {
+    let pages = TEIRenderer.pages(in: document)
+    let moved = TEIWordPosition(line: 2, word: 3, surface: "word")
+    XCTAssertNil(TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/p1", start: moved, end: moved))
+    let absent = TEIWordPosition(line: 9, word: 1, surface: "word")
+    XCTAssertNil(TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/p1", start: absent, end: absent))
+    let word = TEIWordPosition(line: 2, word: 4, surface: "word")
+    XCTAssertNil(TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/nowhere", start: word, end: word))
+  }
+
+  /// The same pages as gnorium-python's `units` counts them
+  /// (tests/test_concordance.py `TAGGED`, test_anchor_alignment.py).
+  func testWordsAreCountedAsTheConcordanceCountsThem() throws {
+    let tagged = """
+      <TEI><text><body><pb n="1" facs="https://example.org/iiif/t0/full/1300,/0/default.jpg"/><p>\
+      <w lemma="the" pos="DET">The</w> <w lemma="computer" pos="NOUN">Computors</w> \
+      <w lemma="compute" pos="VERB">computed</w>; <w lemma="computer" pos="NOUN">compu-<lb/>ter</w> \
+      <hi rend="italic"><w lemma="computer" pos="NOUN">computor</w></hi> \
+      <w lemma="computer" pos="VERB">computer</w>.</p>\
+      <pb n="2" facs="https://example.org/iiif/t1/full/1300,/0/default.jpg"/><p>\
+      <w>The</w> <w part="I">compu-</w></p>\
+      <pb n="3" facs="https://example.org/iiif/t2/full/1300,/0/default.jpg"/><p>\
+      <w part="F">ter</w> <w>won</w> Roſæ</p>\
+      </body></text></TEI>
+      """
+    let pages = TEIRenderer.pages(in: tagged)
+    let computor = TEIWordPosition(line: 2, word: 1, surface: "computor")
+    XCTAssertEqual(
+      TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/t0", start: computor, end: computor)?[
+        "https://example.org/iiif/t0"]?.last?.kind, .headword)
+    // A word broken over a page is counted where it starts, its surface both parts.
+    let broken = TEIWordPosition(line: 1, word: 2, surface: "compu-ter")
+    XCTAssertNotNil(TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/t1", start: broken, end: broken))
+    // The next page counts from its own first word; untagged text is counted by its tokens.
+    let won = TEIWordPosition(line: 1, word: 1, surface: "won")
+    let rosae = TEIWordPosition(line: 1, word: 2, surface: "rosæ")
+    XCTAssertNotNil(TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/t2", start: won, end: rosae))
   }
 }

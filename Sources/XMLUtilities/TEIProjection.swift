@@ -46,6 +46,26 @@
       let part: String
     }
 
+    /// A `<w>`: its span, and its `part` ("I", "M" or "F" for a word broken
+    /// over lines or pages; "" when whole).
+    struct Word: Equatable {
+      let range: Range<Int>
+      let part: String
+    }
+
+    /// A word as an anchor counts it (gnorium-python `concordance/text.py`
+    /// `units`): its line (1 + the `<lb/>`s at or before it), its place among
+    /// the words starting on that line, its parts on this page, its surface
+    /// as written here, and whether it runs on to the next page.
+    struct Unit: Equatable {
+      let line: Int
+      let number: Int
+      var ranges: [Range<Int>]
+      var surface: String
+      var runsOn: Bool
+      var range: Range<Int> { ranges[0].lowerBound..<ranges[ranges.count - 1].upperBound }
+    }
+
     private static let excluded: Set<String> = [
       "teiHeader", "facsimile", "standOff", "supplied", "reg", "expan", "corr", "ex",
     ]
@@ -53,6 +73,11 @@
 
     private(set) var size = 0
     private(set) var sentences: [Sentence] = []
+    private(set) var words: [Word] = []
+    /// Where each `<lb/>` stands (`break="no"` too), in document order.
+    private(set) var breaks: [Int] = []
+    /// The text, scalar by scalar.
+    private(set) var scalars: [Unicode.Scalar] = []
     /// Whether what was last added ends a line; nil before anything is.
     private var endsLine: Bool?
 
@@ -75,6 +100,7 @@
     private mutating func append(_ text: String) {
       guard let last = text.unicodeScalars.last else { return }
       size += text.unicodeScalars.count
+      scalars.append(contentsOf: text.unicodeScalars)
       endsLine = last == "\n"
     }
 
@@ -89,6 +115,7 @@
       case "gap":
         append("\u{FFFC}")
       case "lb", "pb":
+        if element.name == "lb" { breaks.append(size) }
         if element.attribute("break") != "no" { append("\n") }
       case "choice":
         let children = element.elements
@@ -119,9 +146,109 @@
       if element.name == "s", size > start {
         sentences.append(.init(range: start..<size, part: element.attribute("part")))
       }
+      if element.name == "w", size > start {
+        words.append(.init(range: start..<size, part: element.attribute("part")))
+      }
       if Self.blocks.contains(element.name), endsLine == false {
         append("\n")
       }
+    }
+
+    /// The line a point of the text is on: 1 + the `<lb/>`s at or before it.
+    func line(at offset: Int) -> Int {
+      1 + breaks.filter { $0 <= offset }.count
+    }
+
+    func text(_ range: Range<Int>) -> String {
+      var text = ""
+      text.unicodeScalars.append(contentsOf: scalars[range])
+      return text
+    }
+
+    /// Runs of letters and marks, with apostrophes inside a word
+    /// (gnorium-python `tokens`).
+    var tokens: [Range<Int>] {
+      func isLetter(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
+        case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter: return true
+        default: return false
+        }
+      }
+      func isMark(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
+        case .nonspacingMark, .spacingMark, .enclosingMark: return true
+        default: return false
+        }
+      }
+      var found: [Range<Int>] = []
+      var start: Int?
+      for (index, scalar) in scalars.enumerated() {
+        let apostrophe =
+          (scalar == "'" || scalar == "\u{2019}") && start != nil && index + 1 < scalars.count
+          && isLetter(scalars[index + 1])
+        if isLetter(scalar) || isMark(scalar) || apostrophe {
+          if start == nil { start = index }
+        } else if let begun = start {
+          found.append(begun..<index)
+          start = nil
+        }
+      }
+      if let begun = start { found.append(begun..<scalars.count) }
+      return found
+    }
+
+    /// The page's words as anchors count them, in order: its `<w>`s, and any
+    /// token of text no `<w>` covers. The parts of a word broken over lines
+    /// are one word; a page's leading continuation (`<w part="M|F">` before
+    /// any word of its own) is the previous page's word.
+    var units: [Unit] {
+      let covered = words.map(\.range)
+      let loose = tokens.filter { token in !covered.contains { $0.overlaps(token) } }
+      let items = (words.map { ($0.range, Optional($0.part)) } + loose.map { ($0, String?.none) })
+        .sorted { $0.0.lowerBound < $1.0.lowerBound }
+      var found: [Unit] = []
+      var perLine: [Int: Int] = [:]
+      for (range, part) in items {
+        if let part, part == "M" || part == "F" {
+          if var last = found.last, last.runsOn {
+            last.ranges.append(range)
+            last.surface += text(range)
+            last.runsOn = part == "M"
+            found[found.count - 1] = last
+            continue
+          }
+          if found.isEmpty { continue }
+        }
+        let line = line(at: range.lowerBound)
+        perLine[line, default: 0] += 1
+        found.append(
+          .init(
+            line: line, number: perLine[line]!, ranges: [range], surface: text(range),
+            runsOn: part == "I" || part == "M"))
+      }
+      return found
+    }
+
+    /// The text a page begins with that goes on with the previous page's
+    /// broken word, and whether the word ends on this page.
+    var leadingContinuation: (text: String, ends: Bool) {
+      var continued = ""
+      for word in words {
+        guard word.part == "M" || word.part == "F" else { return (continued, true) }
+        continued += text(word.range)
+        if word.part == "F" { return (continued, true) }
+      }
+      return (continued, continued.isEmpty)
+    }
+
+    /// How surfaces are compared: compatibility-folded, case-folded, long s
+    /// as s, curly apostrophe as straight, white space single
+    /// (gnorium-python `fold`).
+    static func fold(_ word: String) -> String {
+      word.precomposedStringWithCompatibilityMapping
+        .folding(options: .caseInsensitive, locale: nil)
+        .replacingOccurrences(of: "ſ", with: "s").replacingOccurrences(of: "\u{2019}", with: "'")
+        .split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     /// An element the projection leaves out: each of its texts stands at the
@@ -137,22 +264,62 @@
     }
   }
 
+  /// A word of a page as an utterance's anchor names it (`tei-line-word-v1`):
+  /// its line (1 + the `<lb/>`s before it), its place among the words
+  /// starting on that line, and its surface as written, which must still read
+  /// there.
+  public struct TEIWordPosition: Sendable, Equatable {
+    public let line: Int
+    public let word: Int
+    public let surface: String
+
+    public init(line: Int, word: Int, surface: String) {
+      self.line = line
+      self.word = word
+      self.surface = surface
+    }
+  }
+
   extension TEIRenderer {
-    /// Where an utterance reads in a document's pages: the sentence holding
-    /// its word — the smallest `<s>` of its canvas holding the headword, a
-    /// sentence split across pages (`<s part="I|M|F">`) joined over the
-    /// pages it runs on, as the concordance joins its `sentence_parts` —
-    /// and the word itself, by page (its image service). Where no `<s>`
-    /// holds the word, the anchor's passage stands for the sentence.
+    /// Where an utterance reads in a document's pages: its words, found by
+    /// their line and place in the line on the anchor's page (`start` to
+    /// `end`), and the sentence holding them — the smallest `<s>` of the page
+    /// holding the words, a sentence split across pages (`<s part="I|M|F">`)
+    /// joined over the pages it runs on, as the concordance joins its
+    /// `sentence_parts` — by page (its image service). Where no `<s>` holds
+    /// the words, their lines stand for the sentence. Nil when the page is
+    /// not among `pages`, or a word is not there or reads otherwise than its
+    /// surface: nothing is highlighted rather than the wrong words.
     public static func utterance(
-      in pages: [TEIPage], canvasID: String, passage: Range<Int>, headword: Range<Int>
-    ) -> [String: [TEIHighlight]] {
+      in pages: [TEIPage], canvasID: String, start: TEIWordPosition, end: TEIWordPosition
+    ) -> [String: [TEIHighlight]]? {
       let ids = pages.map { serviceID(ofFacsimile: $0.facsimileURL) }
-      guard let at = ids.firstIndex(of: canvasID) else { return [:] }
+      guard let at = ids.firstIndex(of: canvasID) else { return nil }
+      let projections = pages.map { TEIProjection.of(markup: $0.markup) }
+      let projection = projections[at]
+      // Each word's whole surface: a word broken over the page break is its
+      // parts on the pages it runs over.
+      func located(_ position: TEIWordPosition) -> TEIProjection.Unit? {
+        guard let unit = projection.units.first(where: { $0.line == position.line && $0.number == position.word })
+        else { return nil }
+        var surface = unit.surface
+        if unit.runsOn {
+          for following in projections.dropFirst(at + 1) {
+            let continuation = following.leadingContinuation
+            surface += continuation.text
+            if continuation.ends { break }
+          }
+        }
+        guard TEIProjection.fold(surface) == TEIProjection.fold(position.surface) else { return nil }
+        return unit
+      }
+      guard let first = located(start), let last = located(end), first.range.lowerBound < last.range.upperBound
+      else { return nil }
+      let headword = first.range.lowerBound..<last.range.upperBound
       // Every sentence of the pages in reading order, page by page.
       var sequence: [(page: Int, sentence: TEIProjection.Sentence)] = []
-      for (index, page) in pages.enumerated() {
-        sequence += TEIProjection.of(markup: page.markup).sentences
+      for (index, page) in projections.enumerated() {
+        sequence += page.sentences
           .sorted { $0.range.lowerBound < $1.range.lowerBound }
           .map { (index, $0) }
       }
@@ -184,7 +351,11 @@
           highlights[ids[entry.page], default: []].append(.init(entry.sentence.range, kind: .sentence))
         }
       } else {
-        highlights[canvasID, default: []].append(.init(passage, kind: .sentence))
+        // The words' lines: from the line end before the first to the line end after the last.
+        let breaks = projection.breaks
+        let from = first.line >= 2 && first.line - 2 < breaks.count ? breaks[first.line - 2] : 0
+        let to = last.line - 1 < breaks.count ? breaks[last.line - 1] : projection.size
+        highlights[canvasID, default: []].append(.init(min(from, headword.lowerBound)..<max(to, headword.upperBound), kind: .sentence))
       }
       highlights[canvasID, default: []].append(.init(headword, kind: .headword))
       return highlights
