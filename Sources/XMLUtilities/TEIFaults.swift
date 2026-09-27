@@ -86,7 +86,7 @@
       lines(in: markup)
         .filter { line in
           switch line.kind {
-          case .text, .heading, .speaker, .stage, .table: return true
+          case .text, .heading, .speaker, .stage, .table, .note: return true
           // A figure's description is not reading that can be lost: it
           // describes the surface rather than transcribing it.
           case .mark, .forme, .gap, .figure, .documentBoundary: return false

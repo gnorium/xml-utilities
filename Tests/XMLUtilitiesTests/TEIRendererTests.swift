@@ -143,4 +143,48 @@ final class TEIRendererTests: XCTestCase {
       label: "7", facsimileURL: "", lines: TEIRenderer.lines(in: markup), markup: markup)
     XCTAssertFalse(TEIRenderer.faults(in: page).contains { $0.kind == .literalBlank })
   }
+
+  func testEnrichedEncodingReadsAsTheSurfaceWithWhatIsBesideIt() {
+    let page = #"""
+      <p><s><w lemma="the" pos="DET"><choice><abbr>yͤ</abbr><expan>the</expan></choice></w> <w lemma="virtue" pos="NOUN" msd="Number=Sing"><choice><orig>vertue</orig><reg>virtue</reg></choice></w> <w lemma="of" pos="ADP">of</w> <persName><w lemma="John" pos="PROPN">Iohn</w></persName> <w lemma="show" pos="VERB"><g ref="#slong">ſ</g>hewed</w> <w lemma="bank" pos="NOUN">ba<supplied reason="damage">nk</supplied></w><pc>,</pc> <del rend="strikethrough">not</del> <date when="1603"><num value="1603">1603</num></date><pc>.</pc></s><note place="margin"><s><w lemma="mark" pos="VERB">Marke</w></s></note></p><list><item>First</item><item>Second</item></list><handShift new="#h2"/>
+      """#
+    let lines = TEIRenderer.lines(in: page)
+    XCTAssertEqual(
+      lines.map(\.text), ["yͤ vertue of Iohn ſhewed ba[nk], not 1603.", "Marke", "First", "Second"])
+    let runs = lines[0].runs
+    XCTAssertEqual(runs.first { $0.text == "yͤ" }?.alternative, "the")
+    XCTAssertEqual(runs.first { $0.text == "vertue" }?.alternative, "virtue")
+    XCTAssertEqual(runs.first { $0.text == "of" }?.alternative, "")
+    XCTAssertEqual(runs.first { $0.text == "nk" }?.rend, "supplied")
+    XCTAssertEqual(runs.first { $0.text == "not" }?.rend, "del")
+    guard case .note(let place) = lines[1].kind else { return XCTFail("Lost the marginal note") }
+    XCTAssertEqual(place, "margin")
+    XCTAssertTrue(lines[2].opensBlock && lines[3].opensBlock)
+  }
+
+  func testAnEnrichedPageHasNoFaultsAndWeighsItsReading() {
+    let tagged = TEIPage(
+      label: "7", facsimileURL: "",
+      lines: TEIRenderer.lines(in: #"<pb n="7"/><p><s><w lemma="be" pos="VERB">Been</w> <w lemma="thus" pos="ADV">thus</w><pc>,</pc><lb/><w lemma="encounter" pos="VERB">encountred</w><pc>:</pc></s></p>"#),
+      markup: #"<pb n="7"/><p><s><w lemma="be" pos="VERB">Been</w> <w lemma="thus" pos="ADV">thus</w><pc>,</pc><lb/><w lemma="encounter" pos="VERB">encountred</w><pc>:</pc></s></p>"#)
+    XCTAssertTrue(TEIRenderer.faults(in: tagged).isEmpty)
+    XCTAssertEqual(
+      TEIRenderer.readingWeight(of: tagged.markup),
+      TEIRenderer.readingWeight(of: #"<pb n="7"/><p>Been thus,<lb/>encountred:</p>"#))
+  }
+
+  func testLinesKnowWhetherTheyShareALineOrJoinAWord() {
+    let lines = TEIRenderer.lines(
+      in: #"""
+        <fw type="pageNum" rend="align(left)">10</fw> <fw type="header" rend="align(center)">On the Goodness</fw>
+        <lg><l rend="indent(1)"><s><w lemma="the" pos="DET">The</w> <w lemma="computer" pos="NOUN">compu-<lb break="no"/>ter</w> <w lemma="stand" pos="VERB">stands</w><lb/><w lemma="here" pos="ADV">here</w></s></l></lg>
+        <fw type="catch" rend="align(right)">Here,</fw>
+        """#)
+    XCTAssertEqual(lines.map(\.text), ["10", "On the Goodness", "The compu-", "ter stands", "here", "Here,"])
+    XCTAssertEqual(lines.map(\.sharesLine), [false, true, false, false, false, false])
+    XCTAssertEqual(lines.map(\.joinsPrevious), [false, false, false, true, false, false])
+    XCTAssertEqual(lines.map(\.opensBlock), [true, true, true, false, false, true])
+    XCTAssertEqual(lines[2].rend, "indent(1)")
+    XCTAssertEqual(lines[5].rend, "align(right)")
+  }
 }

@@ -50,6 +50,9 @@
       /// the relationship between a heading and a value after flattening.
       case table(TEITable)
       case documentBoundary
+      /// An original note, set apart from the text it annotates, and where
+      /// the page puts it: TEI's `<note place="margin|foot|inline">`.
+      case note(place: String)
     }
 
     public enum FormeRole: String, Sendable {
@@ -88,6 +91,13 @@
     /// line break and a paragraph break are different evidence, and a diff
     /// that turned one into the other has changed the page.
     public let opensBlock: Bool
+    /// Whether it follows the line before with no line break between them:
+    /// furniture set on one line (a page number, then a running head).
+    public let sharesLine: Bool
+    /// Whether the line break before it falls inside a word
+    /// (`<lb break="no"/>`), so that read as running text it joins the line
+    /// before with no space.
+    public let joinsPrevious: Bool
 
     /// A stretch of one line set one way.
     public struct Run: Sendable {
@@ -99,20 +109,30 @@
       public let text: String
       public let rend: String
       public let kind: Kind
+      /// What the transcription gives beside the reading, never in its
+      /// place: a `<choice>`'s regularized spelling, expansion or
+      /// correction ("the" for "yͤ"). Empty when there is none.
+      public let alternative: String
 
-      public init(text: String, rend: String = "", kind: Kind = .text) {
+      public init(text: String, rend: String = "", kind: Kind = .text, alternative: String = "") {
         self.text = text
         self.rend = rend
         self.kind = kind
+        self.alternative = alternative
       }
     }
 
-    public init(kind: Kind, text: String, rend: String = "", runs: [Run] = [], opensBlock: Bool = true) {
+    public init(
+      kind: Kind, text: String, rend: String = "", runs: [Run] = [], opensBlock: Bool = true,
+      sharesLine: Bool = false, joinsPrevious: Bool = false
+    ) {
       self.kind = kind
       self.text = text
       self.rend = rend
       self.runs = runs.isEmpty ? [Run(text: text)] : runs
       self.opensBlock = opensBlock
+      self.sharesLine = sharesLine
+      self.joinsPrevious = joinsPrevious
     }
   }
 
@@ -196,13 +216,21 @@
       // Whether the next line opens a block: true until a line is set, and
       // again at every block's edge; an `<lb/>` leaves it false.
       var blockPending = true
+      // Whether a line break (`<lb/>`, `<cb/>`, `<pb/>`) came since the last
+      // line was set, and whether it fell inside a word.
+      var lineBroken = true
+      var breakInWord = false
 
       func flush() {
         let text = runs.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty {
           lines.append(
-            TEILine(kind: currentKind, text: text, rend: currentRend, runs: runs, opensBlock: blockPending))
+            TEILine(
+              kind: currentKind, text: text, rend: currentRend, runs: runs, opensBlock: blockPending,
+              sharesLine: !lineBroken, joinsPrevious: breakInWord))
           blockPending = false
+          lineBroken = false
+          breakInWord = false
         }
         runs = []
       }
@@ -210,18 +238,25 @@
       func append(_ line: TEILine) {
         lines.append(line)
         blockPending = true
+        lineBroken = true
+        breakInWord = false
       }
 
       func walk(
         _ nodes: [TEIMarkup.Node], kind: TEILine.Kind = .text,
-        rend: String = "", inlineRend: String = ""
+        rend: String = "", inlineRend: String = "", alternative: String = ""
       ) {
+        func joined(_ extra: String) -> String {
+          [inlineRend, extra].filter { !$0.isEmpty }.joined(separator: " ")
+        }
         for node in nodes {
           switch node {
           case .text(let text):
             currentKind = kind
             currentRend = rend
-            if !text.isEmpty { runs.append(.init(text: text, rend: inlineRend)) }
+            if !text.isEmpty {
+              runs.append(.init(text: text, rend: inlineRend, alternative: alternative))
+            }
           case .element(let element):
             let ownRend = element.attribute("rend")
             let blockRend = ownRend.isEmpty ? rend : ownRend
@@ -239,12 +274,49 @@
               // Passing the inherited setting down the tree restores it when
               // a nested span closes, including across physical line breaks.
               walk(
-                element.children, kind: kind, rend: rend,
-                inlineRend: [inlineRend, ownRend].filter { !$0.isEmpty }.joined(separator: " "))
+                element.children, kind: kind, rend: rend, inlineRend: joined(ownRend),
+                alternative: alternative)
+            case "choice":
+              // The surface reading (orig, sic, abbr) is the reading; the
+              // regularized, corrected or expanded form rides beside it.
+              let children = element.elements
+              let surface =
+                ["orig", "sic", "abbr"].lazy.compactMap { name in children.first { $0.name == name } }.first
+                ?? children.first
+              let beside = children.first { ["reg", "corr", "expan"].contains($0.name) }
+              if let surface {
+                walk(
+                  surface.children, kind: kind, rend: rend, inlineRend: inlineRend,
+                  alternative: beside.map { $0.textContent } ?? alternative)
+              }
+            case "supplied":
+              // Not on the surface: set apart in square brackets, as an
+              // edition sets what it supplies.
+              currentKind = kind
+              currentRend = rend
+              runs.append(.init(text: "[", rend: joined("supplied")))
+              walk(element.children, kind: kind, rend: rend, inlineRend: joined("supplied"))
+              runs.append(.init(text: "]", rend: joined("supplied")))
+            case "del", "add":
+              // The makers' own deletions and additions, read in place.
+              walk(
+                element.children, kind: kind, rend: rend, inlineRend: joined(element.name),
+                alternative: alternative)
+            case "note":
+              flush()
+              blockPending = true
+              walk(
+                element.children, kind: .note(place: element.attribute("place")), rend: blockRend,
+                inlineRend: inlineRend)
+              flush()
+              blockPending = true
             case "lb", "cb":
               flush()
+              lineBroken = true
+              breakInWord = element.name == "lb" && element.attribute("break") == "no"
             case "pb":
               flush()
+              lineBroken = true
               let label = expandedLeafLabel(element.attribute("n"))
               if !label.isEmpty { append(.init(kind: .mark, text: label)) }
             case "gap":
@@ -254,9 +326,12 @@
             case "milestone" where element.attribute("unit") == "document":
               flush()
               append(.init(kind: .documentBoundary, text: ""))
-            case "p", "lg", "l", "head", "div", "speaker", "stage", "fw":
+            case "p", "lg", "l", "head", "div", "speaker", "stage", "fw", "item":
               flush()
               blockPending = true
+              // A block begins a line of its own; only furniture set beside
+              // furniture (a page number, then a running head) shares one.
+              if element.name != "fw" { lineBroken = true }
               let blockKind: TEILine.Kind
               switch element.name {
               case "head": blockKind = .heading
@@ -268,6 +343,7 @@
               walk(element.children, kind: blockKind, rend: blockRend, inlineRend: inlineRend)
               flush()
               blockPending = true
+              if element.name != "fw" { lineBroken = true }
             case "table":
               flush()
               let children = element.elements
@@ -313,7 +389,10 @@
               flush()
               blockPending = true
             default:
-              walk(element.children, kind: kind, rend: rend, inlineRend: inlineRend)
+              // Words, punctuation, sentences, glyphs, names, dates, numbers,
+              // quotations and references add nothing to the reading but
+              // their text.
+              walk(element.children, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative)
             }
           }
         }
