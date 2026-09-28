@@ -75,7 +75,7 @@
     /// How the type was set, when the transcription says: TEI's `rend`.
     ///
     /// A diplomatic transcription records what is on the surface, and how the
-    /// compositor set it is part of that — a centred block on a title page is
+    /// compositor set it is part of that — a centered block on a title page is
     /// how an imprint statement or an epigraph is marked, and a reading that
     /// ranges it left has quietly dropped evidence.
     public let rend: String
@@ -169,7 +169,7 @@
   public enum TEIRenderer {
     /// Split the body at the page breaks that carry a facsimile.
     ///
-    /// A document holds two kinds of `<pb>`: one per image, labelled for the
+    /// A document holds two kinds of `<pb>`: one per image, labeled for the
     /// opening ("F1 verso – F2 recto") and carrying `facs`, and one per side of
     /// the leaf, carrying only a label. Counting both made a 64-image quarto
     /// read as 162 pages. A page here is an image; the side marks are lines
@@ -532,7 +532,7 @@
       return String(url[url.startIndex..<cut.lowerBound])
     }
 
-    /// `A1v` is how a cataloguer writes it and not how a reader reads it.
+    /// `A1v` is how a cataloger writes it and not how a reader reads it.
     /// A trailing r or v after a digit is the side of the leaf; spell it.
     public static func expandedLeafLabel(_ label: String) -> String {
       let lowered = label.lowercased()
