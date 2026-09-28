@@ -127,4 +127,28 @@ final class TEIUtteranceTests: XCTestCase {
     let rosae = TEIWordPosition(line: 1, word: 2, surface: "rosæ")
     XCTAssertNotNil(TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/t2", start: won, end: rosae))
   }
+  /// A line starts after each `<lb/>` and at each verse line, block and a
+  /// speech's first child, once text was read since the last start; the same
+  /// page as gnorium-python `test_verse_lines_and_blocks_start_lines_without_line_breaks`.
+  func testVerseAndBlocksStartLinesWithoutLineBreaks() throws {
+    let verse = """
+      <TEI><text><body><pb n="1" facs="https://example.org/iiif/v0/full/1300,/0/default.jpg"/>\
+      <fw type="header"><w lemma="the">The</w> <w lemma="tragedy">Tragedy</w></fw>\
+      <sp><speaker><w lemma="king">King.</w></speaker>\
+      <l><w lemma="take">Take</w> <w lemma="thy">thy</w></l>\
+      <l><w lemma="and">And</w> <w lemma="king">king</w><lb/></l>\
+      <l><lb/><w lemma="but">But</w></l></sp>\
+      </body></text></TEI>
+      """
+    let pages = TEIRenderer.pages(in: verse)
+    let page = "https://example.org/iiif/v0"
+    for (line, word, surface) in [(1, 2, "Tragedy"), (2, 1, "King."), (3, 2, "thy"), (4, 2, "king"), (5, 1, "But")] {
+      let at = TEIWordPosition(line: line, word: word, surface: surface)
+      XCTAssertNotNil(
+        TEIRenderer.utterance(in: pages, canvasID: page, start: at, end: at), "\(surface) is not line \(line), word \(word)")
+    }
+    // The <lb/> ending line 4 and the one opening the next verse line are one line.
+    let none = TEIWordPosition(line: 6, word: 1, surface: "But")
+    XCTAssertNil(TEIRenderer.utterance(in: pages, canvasID: page, start: none, end: none))
+  }
 }

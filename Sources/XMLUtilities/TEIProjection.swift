@@ -22,15 +22,16 @@
     }
   }
 
-  /// A page's text as the concordance counts it (`diplomatic-codepoints-v2`,
+  /// A page's text as the concordance counts it (`diplomatic-codepoints-v3`,
   /// gnorium-python `concordance/text.py` `diplomatic_text`), so that an
   /// utterance's anchor, which counts in it, can be found in the page's
   /// markup: Unicode scalars, not normalized; a `<choice>` reads its orig,
   /// sic or abbr (else its first child); what an editor adds beside the
   /// surface (supplied, reg, expan, corr, ex) and the header, facsimile and
   /// standoff are left out; `<lb/>` and `<pb/>` are a line end unless
-  /// `break="no"`; a gap is one U+FFFC; a block (p, head, l, ab, item, cell)
-  /// ends with a line end if it has none.
+  /// `break="no"`; a gap is one U+FFFC; a line-starting element (l, p, head,
+  /// item, note, fw, cell, ab) and a speech's first child end with a line end
+  /// if they have none.
   struct TEIProjection {
     /// Where a text node starts, and whether the projection counts it: one it
     /// leaves out stands at the point where it would be.
@@ -54,7 +55,7 @@
     }
 
     /// A word as an anchor counts it (gnorium-python `concordance/text.py`
-    /// `units`): its line (1 + the `<lb/>`s at or before it), its place among
+    /// `units`): its line (`breaks`), its place among
     /// the words starting on that line, its parts on this page, its surface
     /// as written here, and whether it runs on to the next page.
     struct Unit: Equatable {
@@ -69,13 +70,21 @@
     private static let excluded: Set<String> = [
       "teiHeader", "facsimile", "standOff", "supplied", "reg", "expan", "corr", "ex",
     ]
-    private static let blocks: Set<String> = ["p", "head", "l", "ab", "item", "cell"]
+    /// What starts a line (gnorium-python `LINE_STARTS`): a verse line and a
+    /// block; the first child of an `<sp>` too.
+    private static let lineStarts: Set<String> = ["l", "p", "head", "item", "note", "fw", "cell", "ab"]
 
     private(set) var size = 0
     private(set) var sentences: [Sentence] = []
     private(set) var words: [Word] = []
-    /// Where each `<lb/>` stands (`break="no"` too), in document order.
+    /// Where each line after the first starts, in document order
+    /// (`tei-line-word-v2`, gnorium-python `ANCHOR_VERSION`): after each
+    /// `<lb/>` (`break="no"` too) and at the start of each verse line, block
+    /// and first child of an `<sp>`, once text has been read since the last
+    /// start, so an `<lb/>` at a block's start is the same line.
     private(set) var breaks: [Int] = []
+    /// Whether text has been read since the last line start.
+    private var read = false
     /// The text, scalar by scalar.
     private(set) var scalars: [Unicode.Scalar] = []
     /// Whether what was last added ends a line; nil before anything is.
@@ -102,20 +111,28 @@
       size += text.unicodeScalars.count
       scalars.append(contentsOf: text.unicodeScalars)
       endsLine = last == "\n"
+      if text.unicodeScalars.contains(where: { !$0.properties.isWhitespace }) { read = true }
     }
 
-    private mutating func visit(_ element: TEIMarkup.Element) {
+    private mutating func startLine() {
+      guard read else { return }
+      breaks.append(size)
+      read = false
+    }
+
+    private mutating func visit(_ element: TEIMarkup.Element, firstOfSpeech: Bool = false) {
       if Self.excluded.contains(element.name) {
         leaveOut(element)
         return
       }
+      if Self.lineStarts.contains(element.name) || firstOfSpeech { startLine() }
       let start = size
       element.projectedStart = start
       switch element.name {
       case "gap":
         append("\u{FFFC}")
       case "lb", "pb":
-        if element.name == "lb" { breaks.append(size) }
+        if element.name == "lb" { startLine() }
         if element.attribute("break") != "no" { append("\n") }
       case "choice":
         let children = element.elements
@@ -133,13 +150,15 @@
           }
         }
       default:
+        var first = true
         for (index, node) in element.children.enumerated() {
           switch node {
           case .text(let text):
             element.projected[index] = .init(start: size, counted: true)
             append(text)
           case .element(let child):
-            visit(child)
+            visit(child, firstOfSpeech: first && element.name == "sp")
+            first = false
           }
         }
       }
@@ -149,12 +168,14 @@
       if element.name == "w", size > start {
         words.append(.init(range: start..<size, part: element.attribute("part")))
       }
-      if Self.blocks.contains(element.name), endsLine == false {
+      // A line-starting element (and a speech's first child) ends its line,
+      // so its last word never runs into the next line's first.
+      if Self.lineStarts.contains(element.name) || firstOfSpeech, endsLine == false {
         append("\n")
       }
     }
 
-    /// The line a point of the text is on: 1 + the `<lb/>`s at or before it.
+    /// The line a point of the text is on: 1 + the line starts at or before it.
     func line(at offset: Int) -> Int {
       1 + breaks.filter { $0 <= offset }.count
     }
@@ -264,8 +285,8 @@
     }
   }
 
-  /// A word of a page as an utterance's anchor names it (`tei-line-word-v1`):
-  /// its line (1 + the `<lb/>`s before it), its place among the words
+  /// A word of a page as an utterance's anchor names it (`tei-line-word-v2`):
+  /// its line (`TEIProjection.breaks`), its place among the words
   /// starting on that line, and its surface as written, which must still read
   /// there.
   public struct TEIWordPosition: Sendable, Equatable {
