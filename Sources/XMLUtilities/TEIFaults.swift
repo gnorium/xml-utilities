@@ -3,7 +3,7 @@
 
   /// What is wrong with a page, by the rules a diplomatic transcript is held to.
   ///
-  /// Every fault here was found in a vouched document, and every one of them is
+  /// Every fault here was found in a recognized document, and every one of them is
   /// mechanical to state: a reader should not have to know the rules to see that
   /// a page breaks them. Each carries the instruction that would put it right,
   /// so the page can offer to have it corrected rather than only complain.
