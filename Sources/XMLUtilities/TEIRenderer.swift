@@ -38,9 +38,11 @@
       /// for a surface with nothing on it, or a damaged one. It is a statement
       /// about the page, not a word on it.
       case gap(reason: String)
-      /// Something drawn rather than set: a printer's device, an ornament, a
-      /// decorated initial. `bbox` is where it sits on the surface, in a
-      /// normalized 0–1000 space, so the region can be cut from the facsimile.
+      /// Something drawn rather than set: an illustration, a printer's device,
+      /// an ornament. `bbox` is where it sits on the surface, in a normalized
+      /// 0–1000 space, so the region can be cut from the facsimile. A
+      /// decorated initial is not a figure: it is the first letter of its word
+      /// (`<hi rend="initial">`, `Run.bbox`).
       ///
       /// A figure is not a line of the text. Its `<figDesc>` describes the
       /// object — "gold-tooled dark leather binding" — and setting that in the
@@ -116,6 +118,11 @@
       /// The highlight it falls in, when the reading has one: an utterance's
       /// sentence, or its word (`TEIRenderer.utterance`).
       public let highlight: TEIHighlight.Kind?
+      /// Where a decorated initial sits on the surface (`<hi rend="initial"
+      /// bbox="x y w h">`, 0–1000), so its decoration can be cut from the
+      /// facsimile as a figure's is. Empty for every other run, and for an
+      /// initial whose box did not survive.
+      public let bbox: String
       /// The word it is of, where the page is read word by word
       /// (`marksWords`): its place as an anchor counts it. Nil for what
       /// stands between words, and for every run of a page read whole.
@@ -123,7 +130,7 @@
 
       public init(
         text: String, rend: String = "", kind: Kind = .text, alternative: String = "",
-        highlight: TEIHighlight.Kind? = nil, word: TEIWordPlace? = nil
+        highlight: TEIHighlight.Kind? = nil, word: TEIWordPlace? = nil, bbox: String = ""
       ) {
         self.text = text
         self.rend = rend
@@ -131,6 +138,7 @@
         self.alternative = alternative
         self.highlight = highlight
         self.word = word
+        self.bbox = bbox
       }
     }
 
@@ -341,7 +349,7 @@
 
       func walk(
         _ owner: TEIMarkup.Element, kind: TEILine.Kind = .text,
-        rend: String = "", inlineRend: String = "", alternative: String = "",
+        rend: String = "", inlineRend: String = "", alternative: String = "", bbox: String = "",
         including: (TEIMarkup.Node) -> Bool = { _ in true }
       ) {
         func joined(_ extra: String) -> String {
@@ -355,7 +363,8 @@
             if !text.isEmpty {
               if alternative.isEmpty {
                 for piece in pieces(of: text, at: owner.projected[index], in: highlights, words: words) {
-                  runs.append(.init(text: piece.text, rend: inlineRend, highlight: piece.highlight, word: piece.word))
+                  runs.append(
+                    .init(text: piece.text, rend: inlineRend, highlight: piece.highlight, word: piece.word, bbox: bbox))
                 }
               } else {
                 // A run with an alternative stays whole: it is read on hover
@@ -364,7 +373,7 @@
                 runs.append(
                   .init(
                     text: text, rend: inlineRend, alternative: alternative, highlight: first?.highlight,
-                    word: first?.word))
+                    word: first?.word, bbox: bbox))
               }
             }
           case .element(let element):
@@ -385,9 +394,12 @@
             case "hi":
               // Passing the inherited setting down the tree restores it when
               // a nested span closes, including across physical line breaks.
+              // A decorated initial is the first letter of its word, and its
+              // box, where it has one, rides on the letter's run.
+              let initial = ownRend.split(whereSeparator: \.isWhitespace).contains("initial")
               walk(
                 element, kind: kind, rend: rend, inlineRend: joined(ownRend),
-                alternative: alternative)
+                alternative: alternative, bbox: initial ? element.attribute("bbox") : bbox)
             case "choice":
               // The surface reading (orig, sic, abbr) is the reading; the
               // regularized, corrected or expanded form rides beside it.
@@ -499,7 +511,7 @@
                 if case .element(let child) = node {
                   return child.name != "figDesc" && child.name != "desc"
                 }
-                return element.attribute("type") != "initial"
+                return true
               }
               flush()
               blockPending = true
@@ -507,7 +519,8 @@
               // Words, punctuation, sentences, glyphs, names, dates, numbers,
               // quotations and references add nothing to the reading but
               // their text.
-              walk(element, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative)
+              walk(
+                element, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative, bbox: bbox)
             }
           }
         }

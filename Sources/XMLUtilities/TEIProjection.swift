@@ -111,7 +111,7 @@
     /// TeX source not printed words (gnorium-python `Projection.formulas`).
     private(set) var formulas: [Range<Int>] = []
     /// Where each line after the first starts, in document order
-    /// (`tei-line-word-v2`, gnorium-python `ANCHOR_VERSION`): after each
+    /// (`tei-line-word-v3`, gnorium-python `ANCHOR_VERSION`): after each
     /// `<lb/>` (`break="no"` too) and at the start of each verse line, block
     /// and first child of an `<sp>`, once text has been read since the last
     /// start, so an `<lb/>` at a block's start is the same line.
@@ -358,7 +358,7 @@
     }
   }
 
-  /// A word of a page as an utterance's anchor names it (`tei-line-word-v2`):
+  /// A word of a page as an utterance's anchor names it (`tei-line-word-v3`):
   /// its line (`TEIProjection.breaks`), its place among the words
   /// starting on that line, and its surface as written, which must still read
   /// there.
@@ -375,7 +375,7 @@
   }
 
   /// Where a word stands on its page, as an utterance's anchor counts it
-  /// (`tei-line-word-v2`): its line and its place among the words starting
+  /// (`tei-line-word-v3`): its line and its place among the words starting
   /// on that line. What a reader's word is found by.
   public struct TEIWordPlace: Sendable, Hashable {
     public let line: Int
@@ -418,7 +418,7 @@
 
   extension TEIRenderer {
     /// A page's words as an utterance's anchor counts them
-    /// (`tei-line-word-v2`), in reading order: each its place, its surface
+    /// (`tei-line-word-v3`), in reading order: each its place, its surface
     /// as written on this page and what its `<w>` says of it. A word broken
     /// over the page break is its part on this page; the part a page begins
     /// with belongs to the previous page's word.

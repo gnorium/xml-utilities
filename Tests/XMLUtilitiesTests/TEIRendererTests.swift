@@ -100,6 +100,31 @@ final class TEIRendererTests: XCTestCase {
     guard case .table = lines[2].kind else { return XCTFail("Missing figure table") }
   }
 
+  /// A decorated initial is the first letter of its word, never a figure:
+  /// its box rides on the letter's run, and the letter reads with its word.
+  func testADecoratedInitialIsTheFirstLetterOfItsWord() throws {
+    let lines = TEIRenderer.lines(
+      in: #"<p><w lemma="when"><hi rend="initial" bbox="40 60 120 150">W</hi>hen</w> in the course</p>"#,
+      marksWords: true)
+    XCTAssertEqual(lines.count, 1)
+    guard case .text = lines[0].kind else { return XCTFail("An initial is not a figure") }
+    XCTAssertEqual(lines[0].text, "When in the course")
+    let letter = try XCTUnwrap(lines[0].runs.first)
+    XCTAssertEqual(letter.text, "W")
+    XCTAssertEqual(letter.rend, "initial")
+    XCTAssertEqual(letter.bbox, "40 60 120 150")
+    XCTAssertEqual(lines[0].runs[1].text, "hen")
+    XCTAssertEqual(lines[0].runs[1].bbox, "")
+    XCTAssertNotNil(letter.word)
+    XCTAssertEqual(letter.word, lines[0].runs[1].word)
+    // Without a box (stripped at commit), the letter alone.
+    let bare = TEIRenderer.lines(in: #"<p><w><hi rend="initial">W</hi>hen</w></p>"#)
+    XCTAssertEqual(bare[0].runs.map(\.bbox), ["", ""])
+    // A figure typed "initial" is a figure like any other: its text is read.
+    let figure = TEIRenderer.lines(in: #"<figure type="initial" bbox="1 2 3 4"><head>W</head></figure>"#)
+    XCTAssertEqual(figure.map(\.text), ["", "W"])
+  }
+
   func testFigureWithoutDescriptionStillCarriesItsCrop() {
     let lines = TEIRenderer.lines(in: "<figure bbox=\"10 20 30 40\"/>")
     XCTAssertEqual(lines.count, 1)
