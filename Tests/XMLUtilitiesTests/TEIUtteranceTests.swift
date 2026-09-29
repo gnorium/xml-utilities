@@ -88,7 +88,7 @@ final class TEIUtteranceTests: XCTestCase {
     let word = TEIWordPosition(line: 2, word: 4, surface: "word")
     let highlights = try XCTUnwrap(
       TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/p1", start: word, end: word))
-    XCTAssertEqual(highlights["https://example.org/iiif/p1"], [.init(22..<34, kind: .sentence), .init(30..<34, kind: .headword)])
+    XCTAssertEqual(highlights["https://example.org/iiif/p1"], [.init(22..<34, kind: .sentence), .init(30..<34, kind: .title)])
     XCTAssertEqual(highlights["https://example.org/iiif/p2"], [.init(0..<13, kind: .sentence)])
     XCTAssertNil(highlights["https://example.org/iiif/p0"])
 
@@ -96,7 +96,7 @@ final class TEIUtteranceTests: XCTestCase {
     func marked(_ page: TEIPage) -> [String] {
       page.lines.flatMap(\.runs).map { run in
         switch run.highlight {
-        case .headword?: return "<<\(run.text)>>"
+        case .title?: return "<<\(run.text)>>"
         case .sentence?: return "<\(run.text)>"
         case nil: return run.text
         }
@@ -117,7 +117,7 @@ final class TEIUtteranceTests: XCTestCase {
     let highlights = try XCTUnwrap(
       TEIRenderer.utterance(
         in: TEIRenderer.pages(in: document), canvasID: "https://example.org/iiif/q0", start: here, end: here))
-    XCTAssertEqual(highlights["https://example.org/iiif/q0"], [.init(11..<24, kind: .sentence), .init(12..<16, kind: .headword)])
+    XCTAssertEqual(highlights["https://example.org/iiif/q0"], [.init(11..<24, kind: .sentence), .init(12..<16, kind: .title)])
   }
 
   func testTheWholeSentenceOfAnUnsplitWord() throws {
@@ -126,10 +126,10 @@ final class TEIUtteranceTests: XCTestCase {
     let sentence = TEIWordPosition(line: 1, word: 2, surface: "sentence")
     let highlights = try XCTUnwrap(
       TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/p1", start: sentence, end: sentence))
-    XCTAssertEqual(highlights["https://example.org/iiif/p1"], [.init(0..<21, kind: .sentence), .init(7..<15, kind: .headword)])
+    XCTAssertEqual(highlights["https://example.org/iiif/p1"], [.init(0..<21, kind: .sentence), .init(7..<15, kind: .title)])
     let read = TEIRenderer.pages(in: document, highlights: highlights)
     let runs = read[1].lines.flatMap(\.runs)
-    XCTAssertEqual(runs.filter { $0.highlight == .headword }.map(\.text), ["sentence"])
+    XCTAssertEqual(runs.filter { $0.highlight == .title }.map(\.text), ["sentence"])
     // The supplied word stands inside the sentence, so it is the sentence's.
     XCTAssertEqual(runs.first { $0.text == "very" }?.highlight, .sentence)
   }
@@ -140,7 +140,7 @@ final class TEIUtteranceTests: XCTestCase {
       TEIRenderer.utterance(
         in: pages, canvasID: "https://example.org/iiif/p1",
         start: .init(line: 2, word: 2, surface: "A"), end: .init(line: 2, word: 4, surface: "word")))
-    XCTAssertEqual(highlights["https://example.org/iiif/p1"]?.last, .init(22..<34, kind: .headword))
+    XCTAssertEqual(highlights["https://example.org/iiif/p1"]?.last, .init(22..<34, kind: .title))
   }
 
   func testAWordThatReadsOtherwiseIsNotHighlighted() {
@@ -172,7 +172,7 @@ final class TEIUtteranceTests: XCTestCase {
     let computor = TEIWordPosition(line: 2, word: 1, surface: "computor")
     XCTAssertEqual(
       TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/t0", start: computor, end: computor)?[
-        "https://example.org/iiif/t0"]?.last?.kind, .headword)
+        "https://example.org/iiif/t0"]?.last?.kind, .title)
     // A word broken over a page is counted where it starts, its surface both parts.
     let broken = TEIWordPosition(line: 1, word: 2, surface: "compu-ter")
     XCTAssertNotNil(TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/t1", start: broken, end: broken))

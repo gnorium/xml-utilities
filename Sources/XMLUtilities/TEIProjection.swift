@@ -8,8 +8,8 @@
       /// The sentence an utterance is: an `<s>`, or the passage an anchor
       /// names where no `<s>` holds its word.
       case sentence
-      /// The utterance's own word: the anchor's headword.
-      case headword
+      /// The utterance's own word: the anchor's title.
+      case title
     }
 
     /// Unicode scalar offsets in the page's projection, half-open.
@@ -424,7 +424,7 @@
       }
       guard let first = located(start), let last = located(end), first.range.lowerBound < last.range.upperBound
       else { return nil }
-      let headword = first.range.lowerBound..<last.range.upperBound
+      let title = first.range.lowerBound..<last.range.upperBound
       // Every sentence of the pages in reading order, page by page.
       var sequence: [(page: Int, sentence: TEIProjection.Sentence)] = []
       for (index, page) in projections.enumerated() {
@@ -435,8 +435,8 @@
       var highlights: [String: [TEIHighlight]] = [:]
       let own = sequence.indices
         .filter { i in
-          sequence[i].page == at && sequence[i].sentence.range.lowerBound <= headword.lowerBound
-            && headword.upperBound <= sequence[i].sentence.range.upperBound
+          sequence[i].page == at && sequence[i].sentence.range.lowerBound <= title.lowerBound
+            && title.upperBound <= sequence[i].sentence.range.upperBound
         }
         .min { sequence[$0].sentence.range.count < sequence[$1].sentence.range.count }
       if let own {
@@ -464,9 +464,9 @@
         let breaks = projection.breaks
         let from = first.line >= 2 && first.line - 2 < breaks.count ? breaks[first.line - 2] : 0
         let to = last.line - 1 < breaks.count ? breaks[last.line - 1] : projection.size
-        highlights[canvasID, default: []].append(.init(min(from, headword.lowerBound)..<max(to, headword.upperBound), kind: .sentence))
+        highlights[canvasID, default: []].append(.init(min(from, title.lowerBound)..<max(to, title.upperBound), kind: .sentence))
       }
-      highlights[canvasID, default: []].append(.init(headword, kind: .headword))
+      highlights[canvasID, default: []].append(.init(title, kind: .title))
       return highlights
     }
 

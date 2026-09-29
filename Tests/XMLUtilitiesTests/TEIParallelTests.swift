@@ -112,7 +112,7 @@ final class TEIParallelTests: XCTestCase {
     // Carried: the definition and the etymology's prose.
     XCTAssertTrue(translation.contains(">Ein Gebäude, in dem Menschen <hi rend=\"italic\" corresp=\"#e10\">wohnen</hi>.</def>"))
     XCTAssertTrue(translation.contains(">Aus dem Mittelhochdeutschen <mentioned corresp=\"#e18\">hūs</mentioned>.</etym>"))
-    // Untouched: the forms, the headword, the equivalent, the quotation and
+    // Untouched: the forms, the title, the equivalent, the quotation and
     // its source, the labels.
     for kept in [">Haus</orth>", ">haʊs</pron>", ">noun</pos>", ">architecture</usg>", ">house</quote>",
       ">Das Haus ist alt.</quote>", ">1905</date>"]

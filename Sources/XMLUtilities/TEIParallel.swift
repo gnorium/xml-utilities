@@ -19,7 +19,7 @@
   /// What is carried depends on the kind of document (`Profile`): a
   /// transcript carries every text-bearing block; a dictionary entry carries
   /// its definitions and the notes and etymology written in English, and
-  /// keeps everything else as it is — its forms, its headword, its quotations
+  /// keeps everything else as it is — its forms, its title, its quotations
   /// and their sources, its labels, its dates and references.
   ///
   /// `@corresp` names the source element by its `xml:id`, or — one without —
@@ -46,7 +46,7 @@
       /// formula, a figure, forme work other than a running head.
       case transcript
       /// A dictionary entry (TEI dictionaries): its definitions, and the
-      /// notes and etymology written in English. Its forms, headword and
+      /// notes and etymology written in English. Its forms, title and
       /// pronunciations, its quotations and their sources, its equivalents,
       /// its labels, dates, identifiers and references are kept as they are.
       case dictionary

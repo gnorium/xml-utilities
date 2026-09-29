@@ -263,7 +263,7 @@
     /// the sentence's.
     private static func highlight(at offset: Int, in highlights: [TEIHighlight]) -> TEIHighlight.Kind? {
       let holding = highlights.filter { $0.range.contains(offset) }
-      return holding.contains { $0.kind == .headword } ? .headword : holding.first?.kind
+      return holding.contains { $0.kind == .title } ? .title : holding.first?.kind
     }
 
     /// A text node cut where a highlight or a word begins or ends. A text
@@ -279,7 +279,7 @@
         }
         return [
           (
-            text, inside.contains { $0.kind == .headword } ? .headword : inside.first?.kind,
+            text, inside.contains { $0.kind == .title } ? .title : inside.first?.kind,
             words?.inside(position.start)
           )
         ]
