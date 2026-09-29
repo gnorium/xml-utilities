@@ -302,6 +302,17 @@
   }
 
   extension TEIRenderer {
+    /// A page's words as an utterance's anchor counts them
+    /// (`tei-line-word-v2`), in reading order: each its line, its place among
+    /// the words starting on that line, and its surface as written on this
+    /// page. A word broken over the page break is its part on this page; the
+    /// part a page begins with belongs to the previous page's word.
+    public static func words(of page: TEIPage) -> [TEIWordPosition] {
+      TEIProjection.of(markup: page.markup).units.map {
+        TEIWordPosition(line: $0.line, word: $0.number, surface: $0.surface)
+      }
+    }
+
     /// Where an utterance reads in a document's pages: its words, found by
     /// their line and place in the line on the anchor's page (`start` to
     /// `end`), and the sentence holding them — the smallest `<s>` of the page

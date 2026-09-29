@@ -28,6 +28,18 @@ final class TEIUtteranceTests: XCTestCase {
     XCTAssertNil(TEIRenderer.excerpt(of: document, around: "https://example.org/iiif/nowhere"))
   }
 
+  /// A page's words as an anchor counts them: by line and place in the
+  /// line, the supplied word left out, the word broken over the page break
+  /// its part here and none of the next page's.
+  func testAPagesWordsAreCountedAsAnAnchorCountsThem() {
+    let pages = TEIRenderer.pages(in: document)
+    let second = TEIRenderer.words(of: pages[1])
+    XCTAssertEqual(second.map(\.surface), ["First", "sentence", "here", "A", "split", "word"])
+    XCTAssertEqual(second.map(\.line), [1, 1, 2, 2, 2, 2])
+    XCTAssertEqual(second.map(\.word), [1, 2, 1, 2, 3, 4])
+    XCTAssertEqual(TEIRenderer.words(of: pages[2]).first?.surface, "goes")
+  }
+
   func testASplitSentenceIsHighlightedOnBothPagesAndItsWordMoreStrongly() throws {
     let pages = TEIRenderer.pages(in: document)
     // "word": line 2 (after the <lb/>), after "here", "A" and "split".
