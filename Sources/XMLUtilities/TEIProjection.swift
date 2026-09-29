@@ -22,7 +22,7 @@
     }
   }
 
-  /// A page's text as the concordance counts it (`diplomatic-codepoints-v5`,
+  /// A page's text as the concordance counts it (`diplomatic-codepoints-v6`,
   /// gnorium-python `concordance/text.py` `diplomatic_text`), so that an
   /// utterance's anchor, which counts in it, can be found in the page's
   /// markup: Unicode scalars, not normalized; a `<choice>` reads its orig,
@@ -33,8 +33,10 @@
   /// `break="no"`; a gap is one U+FFFC; a line-starting element (l, p, head,
   /// item, note, fw, cell, ab) and a speech's first child end with a line end
   /// if they have none; a figure has one before and after it (it is set
-  /// apart: a line starts at it and after it); a `<formula>` is one word
-  /// (`units`), its TeX source kept in the text as written.
+  /// apart: a line starts at it and after it); a `<formula>` is its
+  /// Presentation MathML's token elements' text (`mathTokens`), without its
+  /// TeX `<annotation>` or the white space between its elements, each symbol
+  /// it prints a word (`symbols`); a `<formula>` without MathML is left out.
   struct TEIProjection {
     /// Where a text node starts, and whether the projection counts it: one it
     /// leaves out stands at the point where it would be.
@@ -103,15 +105,29 @@
     /// `SET_APART`): a line starts at it and after it, so a figure's caption
     /// keeps its own lines and the text after the whole figure starts a new one.
     private static let setApart: Set<String> = ["figure"]
+    /// MathML's token elements, what a formula prints (gnorium-python
+    /// `MATH_TOKENS`): each an `mi`, `mn`, `mo` or `ms` one word ("sin",
+    /// "3.14", "∫", "×", a fence "(" too), an `mtext`'s words its runs
+    /// between white space.
+    private static let mathTokens: Set<String> = ["mi", "mn", "mo", "ms", "mtext"]
+    /// A formula's source (its TeX), never read (gnorium-python `MATH_SOURCES`).
+    private static let mathSources: Set<String> = ["annotation", "annotation-xml"]
+    /// Operators that print nothing (function application, invisible times,
+    /// separator, plus): no word (gnorium-python `INVISIBLE`).
+    private static let invisible: Set<Unicode.Scalar> = ["\u{2061}", "\u{2062}", "\u{2063}", "\u{2064}"]
 
     private(set) var size = 0
     private(set) var sentences: [Sentence] = []
     private(set) var words: [Word] = []
-    /// Each `<formula>`'s span: one word as anchors count it (`units`), its
-    /// TeX source not printed words (gnorium-python `Projection.formulas`).
+    /// Each `<formula>`'s span: its text is its symbols, run together
+    /// (gnorium-python `Projection.formulas`).
     private(set) var formulas: [Range<Int>] = []
+    /// Each word a formula prints, its span and its MathML token element, in
+    /// document order: a word as anchors count it (`units`; gnorium-python
+    /// `Projection.symbols`).
+    private(set) var symbols: [Word] = []
     /// Where each line after the first starts, in document order
-    /// (`tei-line-word-v3`, gnorium-python `ANCHOR_VERSION`): after each
+    /// (`tei-line-word-v4`, gnorium-python `ANCHOR_VERSION`): after each
     /// `<lb/>` (`break="no"` too) and at the start of each verse line, block
     /// and first child of an `<sp>`, once text has been read since the last
     /// start, so an `<lb/>` at a block's start is the same line.
@@ -159,8 +175,10 @@
       read = false
     }
 
-    private mutating func visit(_ element: TEIMarkup.Element, firstOfSpeech: Bool = false) {
-      if Self.excluded.contains(element.name) {
+    private mutating func visit(_ element: TEIMarkup.Element, firstOfSpeech: Bool = false, inMath: Bool = false) {
+      if Self.excluded.contains(element.name) || (inMath && Self.mathSources.contains(element.name))
+        || (element.name == "formula" && !element.elements.contains { $0.name == "math" })
+      {
         leaveOut(element)
         return
       }
@@ -195,14 +213,17 @@
           }
         }
       default:
+        // Inside a formula's MathML, only its tokens' text is read.
+        let math = inMath || element.name == "math"
+        let readsText = !math || Self.mathTokens.contains(element.name)
         var first = true
         for (index, node) in element.children.enumerated() {
           switch node {
           case .text(let text):
-            element.projected[index] = .init(start: size, counted: true)
-            append(text)
+            element.projected[index] = .init(start: size, counted: readsText)
+            if readsText { append(text) }
           case .element(let child):
-            visit(child, firstOfSpeech: first && element.name == "sp")
+            visit(child, firstOfSpeech: first && element.name == "sp", inMath: math)
             first = false
           }
         }
@@ -212,6 +233,9 @@
       }
       if element.name == "formula", size > start {
         formulas.append(start..<size)
+      }
+      if inMath, Self.mathTokens.contains(element.name), size > start {
+        symbols += mathWords(element.name, in: start..<size)
       }
       if element.name == "w" || element.name == "m", size > start {
         let word = Word(
@@ -231,6 +255,29 @@
       }
       // What follows a figure starts a new line.
       if Self.setApart.contains(element.name) { startLine() }
+    }
+
+    /// The words a MathML token element prints, over its text (gnorium-python
+    /// `math_words`): an `mtext`'s runs between white space; any other
+    /// token's text, white space trimmed, as one word, unless it prints
+    /// nothing (`invisible`).
+    private func mathWords(_ name: String, in range: Range<Int>) -> [Word] {
+      var runs: [Range<Int>] = []
+      var begun: Int?
+      for index in range {
+        if scalars[index].properties.isWhitespace {
+          if let start = begun { runs.append(start..<index) }
+          begun = nil
+        } else if begun == nil {
+          begun = index
+        }
+      }
+      if let start = begun { runs.append(start..<range.upperBound) }
+      guard let firstRun = runs.first, let lastRun = runs.last else { return [] }
+      if name == "mtext" { return runs.map { Word(range: $0, part: "", element: name) } }
+      let printed = firstRun.lowerBound..<lastRun.upperBound
+      if scalars[printed].allSatisfy({ Self.invisible.contains($0) }) { return [] }
+      return [Word(range: printed, part: "", element: name)]
     }
 
     /// The line a point of the text is on: 1 + the line starts at or before it.
@@ -276,27 +323,18 @@
       return found
     }
 
-    /// The page's words as anchors count them, in order: its `<w>`s, each
-    /// `<formula>` as one word whatever it holds (its surface its TeX source
-    /// as written), and any token of text neither covers. The parts of a
+    /// The page's words as anchors count them, in order: its `<w>`s, the
+    /// symbols each `<formula>` prints (`symbols`), and any token of text
+    /// neither covers. The parts of a
     /// word broken over lines are one word; a page's leading continuation
     /// (`<w part="M|F">` before any word of its own) is the previous page's
     /// word.
     var units: [Unit] {
-      func inFormula(_ range: Range<Int>) -> Bool {
-        formulas.contains { $0.lowerBound <= range.lowerBound && range.upperBound <= $0.upperBound }
-      }
-      let counted = words.filter { !inFormula($0.range) }
-      let whole = formulas.filter { formula in
-        !formulas.contains {
-          $0 != formula && $0.lowerBound <= formula.lowerBound && formula.upperBound <= $0.upperBound
-        }
-      }
-      let covered = counted.map(\.range) + formulas
+      let covered = words.map(\.range) + formulas
       let loose = tokens.filter { token in !covered.contains { $0.overlaps(token) } }
       let items =
-        (counted.map { ($0.range, Optional($0.part), Optional($0)) }
-        + whole.map { ($0, String?.none, Optional(Word(range: $0, part: "", element: "formula"))) }
+        (words.map { ($0.range, Optional($0.part), Optional($0)) }
+        + symbols.map { ($0.range, String?.none, Optional($0)) }
         + loose.map { ($0, String?.none, Word?.none) })
         .sorted { $0.0.lowerBound < $1.0.lowerBound }
       var found: [Unit] = []
@@ -358,7 +396,7 @@
     }
   }
 
-  /// A word of a page as an utterance's anchor names it (`tei-line-word-v3`):
+  /// A word of a page as an utterance's anchor names it (`tei-line-word-v4`):
   /// its line (`TEIProjection.breaks`), its place among the words
   /// starting on that line, and its surface as written, which must still read
   /// there.
@@ -375,7 +413,7 @@
   }
 
   /// Where a word stands on its page, as an utterance's anchor counts it
-  /// (`tei-line-word-v3`): its line and its place among the words starting
+  /// (`tei-line-word-v4`): its line and its place among the words starting
   /// on that line. What a reader's word is found by.
   public struct TEIWordPlace: Sendable, Hashable {
     public let line: Int
@@ -396,8 +434,9 @@
   public struct TEIWord: Sendable, Equatable {
     public let place: TEIWordPlace
     public let surface: String
-    /// "w", "m" (a form cited as a form), "formula" (one word whatever its
-    /// TeX source holds), or "" for a token none of them covers.
+    /// "w", "m" (a form cited as a form), a MathML token element ("mi",
+    /// "mn", "mo", "ms", "mtext": a symbol a formula prints), or "" for a
+    /// token none of them covers.
     public let element: String
     public let lemma: String
     public let morphology: String
@@ -418,7 +457,7 @@
 
   extension TEIRenderer {
     /// A page's words as an utterance's anchor counts them
-    /// (`tei-line-word-v3`), in reading order: each its place, its surface
+    /// (`tei-line-word-v4`), in reading order: each its place, its surface
     /// as written on this page and what its `<w>` says of it. A word broken
     /// over the page break is its part on this page; the part a page begins
     /// with belongs to the previous page's word.

@@ -105,7 +105,9 @@
     public struct Run: Sendable {
       public enum Kind: Sendable {
         case text
-        case tex(display: Bool)
+        /// A formula, as the page keeps it: Presentation MathML. The run's
+        /// text is the symbols it prints, run together.
+        case math(TEIMath)
       }
 
       public let text: String
@@ -154,6 +156,56 @@
       self.sharesLine = sharesLine
       self.joinsPrevious = joinsPrevious
     }
+  }
+
+  /// A formula as the page keeps it (gnorium-python recognition
+  /// `formulas.py`): Presentation MathML, drawn as MathML Core, each symbol it
+  /// prints a word of the page (`TEIProjection.symbols`), and the TeX it was
+  /// written in beside it, never drawn.
+  public struct TEIMath: Sendable {
+    public enum Node: Sendable {
+      /// A MathML element, its presentation attributes as written
+      /// (`TEIMath.attributes`), and its children. An element outside
+      /// MathML Core is read as an `mrow`.
+      case element(name: String, attributes: [(name: String, value: String)], children: [Node])
+      /// A token element (`mi`, `mn`, `mo`, `ms`, `mtext`), its text as runs,
+      /// each with the word it is of and the highlight it falls in.
+      case token(name: String, attributes: [(name: String, value: String)], runs: [TEILine.Run])
+
+      /// Its tokens' runs, in reading order.
+      public var runs: [TEILine.Run] {
+        switch self {
+        case .element(_, _, let children): return children.flatMap(\.runs)
+        case .token(_, _, let runs): return runs
+        }
+      }
+    }
+
+    /// Its tokens' runs, in reading order: the words it prints.
+    public var runs: [TEILine.Run] { content.flatMap(\.runs) }
+
+    /// Set on its own line (`display="block"`), not in the text's line.
+    public let display: Bool
+    /// What the `<math>` draws: its `<semantics>`' first child, never its
+    /// annotations.
+    public let content: [Node]
+    /// The TeX it was written in (its `application/x-tex` annotation); ""
+    /// where it has none.
+    public let source: String
+
+    /// MathML Core's elements; any other is read as an `mrow`.
+    static let elements: Set<String> = [
+      "mrow", "mi", "mn", "mo", "ms", "mtext", "mspace", "mfrac", "msqrt", "mroot", "mstyle", "merror",
+      "mpadded", "mphantom", "msub", "msup", "msubsup", "munder", "mover", "munderover", "mmultiscripts",
+      "mprescripts", "none", "mtable", "mtr", "mtd",
+    ]
+    static let tokens: Set<String> = ["mi", "mn", "mo", "ms", "mtext"]
+    /// The presentation attributes MathML Core reads; no other is kept.
+    static let attributes: Set<String> = [
+      "dir", "displaystyle", "scriptlevel", "mathvariant", "stretchy", "symmetric", "largeop", "movablelimits",
+      "fence", "separator", "form", "lspace", "rspace", "minsize", "maxsize", "accent", "accentunder",
+      "linethickness", "width", "height", "depth", "voffset", "columnspan", "rowspan",
+    ]
   }
 
   public struct TEITable: Sendable {
@@ -380,17 +432,11 @@
             let ownRend = element.attribute("rend")
             let blockRend = ownRend.isEmpty ? rend : ownRend
             switch element.name {
-            case "formula"
-            where ["tex", "latex"].contains(element.attribute("notation").lowercased()):
+            case "formula" where element.elements.contains(where: { $0.name == "math" }):
               currentKind = kind
               currentRend = rend
-              let display =
-                ownRend.split(whereSeparator: \.isWhitespace).contains("display")
-                || element.attribute("type") == "display"
-              runs.append(
-                .init(
-                  text: element.textContent, rend: inlineRend, kind: .tex(display: display),
-                  highlight: element.projectedStart.flatMap { highlight(at: $0, in: highlights) }))
+              let formula = math(element, highlights: highlights, words: words)
+              runs.append(.init(text: formula.text, rend: inlineRend, kind: .math(formula.math)))
             case "hi":
               // Passing the inherited setting down the tree restores it when
               // a nested span closes, including across physical line breaks.
@@ -528,6 +574,46 @@
       walk(owner)
       flush()
       return lines
+    }
+
+    /// A `<formula>`'s MathML as a view draws it, and the symbols it prints
+    /// run together (the run's text).
+    private static func math(
+      _ formula: TEIMarkup.Element, highlights: [TEIHighlight], words: Words?
+    ) -> (math: TEIMath, text: String) {
+      var text = ""
+      var source = ""
+      func node(_ element: TEIMarkup.Element) -> TEIMath.Node? {
+        let attributes = element.attributes.filter { TEIMath.attributes.contains($0.key) }
+          .sorted { $0.key < $1.key }.map { (name: $0.key, value: $0.value) }
+        switch element.name {
+        case "annotation", "annotation-xml":
+          if element.attribute("encoding") == "application/x-tex" { source = element.textContent }
+          return nil
+        case "semantics":
+          for annotation in element.elements.dropFirst() { _ = node(annotation) }
+          return element.elements.first.flatMap(node)
+        case let name where TEIMath.tokens.contains(name):
+          var runs: [TEILine.Run] = []
+          for (index, child) in element.children.enumerated() {
+            guard case .text(let value) = child, !value.isEmpty else { continue }
+            text += value
+            for piece in pieces(of: value, at: element.projected[index], in: highlights, words: words) {
+              runs.append(.init(text: piece.text, highlight: piece.highlight, word: piece.word))
+            }
+          }
+          return .token(name: name, attributes: attributes, runs: runs)
+        case let name:
+          return .element(
+            name: TEIMath.elements.contains(name) ? name : "mrow", attributes: attributes,
+            children: element.elements.compactMap(node))
+        }
+      }
+      let math = formula.elements.first { $0.name == "math" }
+      let content = math?.elements.compactMap(node) ?? []
+      return (
+        TEIMath(display: math?.attribute("display") == "block", content: content, source: source), text
+      )
     }
 
     /// The facsimile at the size the scan actually is.

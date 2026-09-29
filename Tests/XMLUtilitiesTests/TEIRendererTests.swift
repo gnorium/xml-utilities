@@ -16,25 +16,62 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(lines.map(\.opensBlock), [true, false, true, true])
   }
 
-  func testTeXRemainsOneRunBetweenSurroundingText() {
+  /// The MathML the page keeps for a formula (gnorium-python recognition `formulas.py`).
+  static let math = #"<math xmlns="http://www.w3.org/1998/Math/MathML" display="inline">"#
+
+  func testAFormulaIsDrawnAsItsMathMLAndReadAsItsSymbols() {
     let lines = TEIRenderer.lines(
-      in: #"<p>Let <formula notation="TeX">x_{a.b}=\frac{u+v}{w}</formula> hold.</p>"#)
+      in: #"<p>Let <formula notation="mathml">"# + Self.math
+        + #"<semantics><mrow><mi>x</mi><mo>=</mo><mfrac><mi>a</mi><mi>b</mi></mfrac></mrow>"#
+        + #"<annotation encoding="application/x-tex">x=\frac{a}{b}</annotation></semantics></math></formula> hold.</p>"#)
     XCTAssertEqual(lines.count, 1)
-    XCTAssertEqual(lines[0].runs.map(\.text), ["Let ", #"x_{a.b}=\frac{u+v}{w}"#, " hold."])
-    guard case .tex(display: false) = lines[0].runs[1].kind else {
-      return XCTFail("Lost inline formula")
+    XCTAssertEqual(lines[0].runs.map(\.text), ["Let ", "x=ab", " hold."])
+    guard case .math(let formula) = lines[0].runs[1].kind else { return XCTFail("Lost the formula") }
+    XCTAssertFalse(formula.display)
+    XCTAssertEqual(formula.source, #"x=\frac{a}{b}"#)
+    guard case .element(name: "mrow", _, let children) = formula.content.first else {
+      return XCTFail("The formula draws its semantics' first child")
     }
+    XCTAssertEqual(formula.content.count, 1)
+    XCTAssertEqual(children.count, 3)
+    guard case .token(name: "mo", _, let runs) = children[1] else { return XCTFail("Lost the operator") }
+    XCTAssertEqual(runs.map(\.text), ["="])
   }
 
-  func testDisplayMathRetainsXMLUnescapedMatrixSeparators() {
+  /// Only MathML Core's elements and presentation attributes are drawn: any
+  /// other element reads as an mrow, any other attribute is dropped.
+  func testAFormulaDrawsOnlyMathMLCore() {
     let lines = TEIRenderer.lines(
-      in:
-        #"<p><formula notation="latex" rend="display">\begin{matrix}a &amp; b \\ c &amp; d\end{matrix}</formula></p>"#
-    )
-    XCTAssertEqual(lines[0].runs[0].text, #"\begin{matrix}a & b \\ c & d\end{matrix}"#)
-    guard case .tex(display: true) = lines[0].runs[0].kind else {
-      return XCTFail("Lost display formula")
+      in: #"<p><formula notation="mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block">"#
+        + #"<semantics><maction onclick="x()" href="https://example.org"><mi mathvariant="normal" style="color:red">H</mi>"#
+        + #"</maction><annotation encoding="application/x-tex">\mathrm{H}</annotation></semantics></math></formula></p>"#)
+    guard case .math(let formula) = lines[0].runs[0].kind else { return XCTFail("Lost the formula") }
+    XCTAssertTrue(formula.display)
+    guard case .element(name: "mrow", let attributes, let children) = formula.content.first,
+      case .token(name: "mi", let tokenAttributes, _) = children.first
+    else { return XCTFail("An unknown element reads as an mrow") }
+    XCTAssertTrue(attributes.isEmpty)
+    XCTAssertEqual(tokenAttributes.map(\.name), ["mathvariant"])
+  }
+
+  /// Read word by word, each symbol is its word, as an anchor counts it.
+  func testAFormulasSymbolsAreItsWords() {
+    let lines = TEIRenderer.lines(
+      in: #"<p>so <formula notation="mathml">"# + Self.math
+        + #"<semantics><mrow><mi>sin</mi><mo>\#u{2061}</mo><mi>x</mi></mrow>"#
+        + #"<annotation encoding="application/x-tex">\sin x</annotation></semantics></math></formula></p>"#,
+      marksWords: true)
+    let formulas = lines[0].runs.compactMap { run -> TEIMath? in
+      if case .math(let formula) = run.kind { return formula }
+      return nil
     }
+    guard let formula = formulas.first, case .element(_, _, let children) = formula.content.first
+    else { return XCTFail("Lost the formula") }
+    let places = children.map { child -> String in
+      guard case .token(_, _, let runs) = child else { return "?" }
+      return runs.map { $0.word.map { "\($0.line).\($0.word)" } ?? "-" }.joined()
+    }
+    XCTAssertEqual(places, ["1.2", "-", "1.3"])
   }
 
   func testNonTeXFormulaKeepsExistingInlineMarkup() {

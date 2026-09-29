@@ -217,20 +217,33 @@ final class TEIUtteranceTests: XCTestCase {
       ["1.1 A", "1.2 cut", "2.1 Fig", "3.1 The", "3.2 hand", "4.1 below"])
   }
 
-  /// A `<formula>` is one word as anchors count it, whatever its TeX source
-  /// holds; the same page as gnorium-python `test_a_formula_is_one_word`.
-  func testAFormulaIsOneWord() {
-    let page = #"""
-      <TEI><text><body><pb n="1" facs="https://example.org/iiif/m0/full/1300,/0/default.jpg"/>\#
-      <p><s><w lemma="let" type="verb">Let</w> <formula notation="tex">\sin x=\frac{u}{w}</formula> \#
-      <w lemma="hold" type="verb">hold</w><pc>.</pc></s><lb/>and <formula>\log y</formula> so</p>\#
-      </body></text></TEI>
-      """#
+  /// A formula's words are the symbols it prints: each MathML token (mi, mn,
+  /// mo) one word, an mtext's runs between white space, an operator printing
+  /// nothing (U+2061) none; its TeX annotation, the white space between
+  /// MathML's elements and a formula without MathML are never read. The same
+  /// page as gnorium-python `test_a_formulas_words_are_the_symbols_it_prints`.
+  func testAFormulasWordsAreTheSymbolsItPrints() {
+    let math = #"<math xmlns="http://www.w3.org/1998/Math/MathML" display="inline">"#
+    let page =
+      #"<TEI><text><body><pb n="1" facs="https://example.org/iiif/f0/full/1300,/0/default.jpg"/>"#
+      + #"<p><s><w lemma="let" type="verb">Let</w> <formula notation="mathml">"# + math
+      + "<semantics><mrow><mi>sin</mi><mo>\u{2061}</mo><mi>x</mi><mo>=</mo>"
+      + "<mfrac><mrow><mi>a</mi><mo>+</mo><mi>b</mi></mrow><mrow><mi>c</mi></mrow></mfrac></mrow>"
+      + #"<annotation encoding="application/x-tex">\sin x=\frac{a+b}{c}</annotation></semantics></math></formula> "#
+      + #"<w lemma="hold" type="verb">hold</w><pc>.</pc></s><lb/>and <formula notation="mathml">"# + math
+      + "<semantics>\n  <mrow>\n    <mn>2</mn><mo>×</mo><mi>log</mi><mi>y</mi>\n    <mtext>for all</mtext>\n  </mrow>\n"
+      + #"  <annotation encoding="application/x-tex">2\times\log y\text{for all}</annotation>\#n</semantics></math>"#
+      + #"</formula> <formula notation="tex">\log z</formula> so</p></body></text></TEI>"#
     let words = TEIRenderer.words(of: TEIRenderer.pages(in: page)[0])
     XCTAssertEqual(
       words.map { "\($0.place.line).\($0.place.word) \($0.surface)" },
-      ["1.1 Let", #"1.2 \sin x=\frac{u}{w}"#, "1.3 hold", "2.1 and", #"2.2 \log y"#, "2.3 so"])
-    XCTAssertEqual(words.map(\.element), ["w", "formula", "w", "", "formula", ""])
+      [
+        "1.1 Let", "1.2 sin", "1.3 x", "1.4 =", "1.5 a", "1.6 +", "1.7 b", "1.8 c", "1.9 hold",
+        "2.1 and", "2.2 2", "2.3 ×", "2.4 log", "2.5 y", "2.6 for", "2.7 all", "2.8 so",
+      ])
+    XCTAssertEqual(
+      words.map(\.element),
+      ["w", "mi", "mi", "mo", "mi", "mo", "mi", "mi", "w", "", "mn", "mo", "mi", "mi", "mtext", "mtext", ""])
   }
 
   /// A line starts after each `<lb/>` and at each verse line, block and a
