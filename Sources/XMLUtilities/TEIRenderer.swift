@@ -9,12 +9,17 @@
     public let lines: [TEILine]
     /// The page's own markup, for a reader who wants to see the tags.
     public let markup: String
+    /// The document's zones (its `<facsimile>`'s, by `xml:id`): where the
+    /// page's figures and decorated initials sit, which its markup names by
+    /// `facs="#…"` but does not hold.
+    public let zones: [String: TEIZone]
 
-    public init(label: String, facsimileURL: String, lines: [TEILine], markup: String) {
+    public init(label: String, facsimileURL: String, lines: [TEILine], markup: String, zones: [String: TEIZone] = [:]) {
       self.label = label
       self.facsimileURL = facsimileURL
       self.lines = lines
       self.markup = markup
+      self.zones = zones
     }
   }
 
@@ -39,15 +44,16 @@
       /// about the page, not a word on it.
       case gap(reason: String)
       /// Something drawn rather than set: an illustration, a printer's device,
-      /// an ornament. `bbox` is where it sits on the surface, in a normalized
-      /// 0–1000 space, so the region can be cut from the facsimile. A
-      /// decorated initial is not a figure: it is the first letter of its word
-      /// (`<hi rend="initial">`, `Run.bbox`).
+      /// an ornament. `zone` is where it sits on the surface (the zone its
+      /// `facs` names, `TEIZone`), so the region can be cut from the
+      /// facsimile; nil where it names none. A decorated initial is not a
+      /// figure: it is the first letter of its word (`<hi rend="initial">`,
+      /// `Run.zone`).
       ///
       /// A figure is not a line of the text. Its `<figDesc>` describes the
       /// object — "gold-tooled dark leather binding" — and setting that in the
       /// reading says the cover bears those words, which it does not.
-      case figure(type: String, bbox: String)
+      case figure(type: String, zone: TEIZone?)
       /// Rows and cells must survive parsing; their order alone cannot recover
       /// the relationship between a heading and a value after flattening.
       case table(TEITable)
@@ -120,11 +126,11 @@
       /// The highlight it falls in, when the reading has one: an utterance's
       /// sentence, or its word (`TEIRenderer.utterance`).
       public let highlight: TEIHighlight.Kind?
-      /// Where a decorated initial sits on the surface (`<hi rend="initial"
-      /// bbox="x y w h">`, 0–1000), so its decoration can be cut from the
-      /// facsimile as a figure's is. Empty for every other run, and for an
-      /// initial whose box did not survive.
-      public let bbox: String
+      /// Where a decorated initial sits on the surface (the zone its `<hi
+      /// rend="initial" facs="#…">` names), so its decoration can be cut from
+      /// the facsimile as a figure's is. Nil for every other run, and for an
+      /// initial that names no zone.
+      public let zone: TEIZone?
       /// The word it is of, where the page is read word by word
       /// (`marksWords`): its place as an anchor counts it. Nil for what
       /// stands between words, and for every run of a page read whole.
@@ -132,7 +138,7 @@
 
       public init(
         text: String, rend: String = "", kind: Kind = .text, alternative: String = "",
-        highlight: TEIHighlight.Kind? = nil, word: TEIWordPlace? = nil, bbox: String = ""
+        highlight: TEIHighlight.Kind? = nil, word: TEIWordPlace? = nil, zone: TEIZone? = nil
       ) {
         self.text = text
         self.rend = rend
@@ -140,7 +146,7 @@
         self.alternative = alternative
         self.highlight = highlight
         self.word = word
-        self.bbox = bbox
+        self.zone = zone
       }
     }
 
@@ -171,14 +177,55 @@
       /// A token element (`mi`, `mn`, `mo`, `ms`, `mtext`), its text as runs,
       /// each with the word it is of and the highlight it falls in.
       case token(name: String, attributes: [(name: String, value: String)], runs: [TEILine.Run])
+      /// A mark that could not be read: TEI's `<gap>` (its reason) in
+      /// MathML's `<semantics>` (gnorium-python recognition `formulas.py`).
+      /// Nothing was read there; no word.
+      case gap(reason: String)
 
       /// Its tokens' runs, in reading order.
       public var runs: [TEILine.Run] {
         switch self {
         case .element(_, _, let children): return children.flatMap(\.runs)
         case .token(_, _, let runs): return runs
+        case .gap: return []
         }
       }
+
+      /// As MathML markup, its tokens' text escaped (`TEIMath.markup`).
+      var markup: String {
+        func opening(_ name: String, _ attributes: [(name: String, value: String)]) -> String {
+          name + attributes.map { " \($0.name)=\"\(XMLFormatter.escapingAttribute($0.value))\"" }.joined()
+        }
+        switch self {
+        case .element(let name, let attributes, let children):
+          let inner = children.map(\.markup).joined()
+          return inner.isEmpty ? "<\(opening(name, attributes))/>" : "<\(opening(name, attributes))>\(inner)</\(name)>"
+        case .token(let name, let attributes, let runs):
+          let text = runs.map(\.text).joined()
+            .replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+          return "<\(opening(name, attributes))>\(text)</\(name)>"
+        case .gap(let reason):
+          return #"<semantics><mrow/><annotation-xml encoding="application/tei+xml">"#
+            + #"<gap xmlns="http://www.tei-c.org/ns/1.0" reason=""# + XMLFormatter.escapingAttribute(reason)
+            + #""/></annotation-xml></semantics>"#
+        }
+      }
+    }
+
+    /// The formula as MathML, drawn content only (no annotation): what a
+    /// diff compares it by and draws it from (`TEIRenderer.math(markup:)`
+    /// reads it back). Two formulas that draw alike compare alike, however
+    /// their TeX was written.
+    public var markup: String {
+      #"<math xmlns="http://www.w3.org/1998/Math/MathML" display=""# + (display ? "block" : "inline") + #"">"#
+        + content.map(\.markup).joined() + "</math>"
+    }
+
+    public init(display: Bool, content: [Node], source: String = "") {
+      self.display = display
+      self.content = content
+      self.source = source
     }
 
     /// Its tokens' runs, in reading order: the words it prints.
@@ -245,6 +292,7 @@
     ) -> [TEIPage] {
       guard let body = XMLFormatter.body(of: xml) else { return [] }
       let breaks = pageBreaks(in: body)
+      let zones = TEIFacsimile.zones(in: TEIFacsimile.blocks(in: xml))
       return breaks.enumerated().map { index, open in
         let end = index + 1 < breaks.count ? breaks[index + 1].tag.lowerBound : body.endIndex
         let markup = String(body[open.tag.upperBound..<end])
@@ -253,8 +301,9 @@
           facsimileURL: open.facsimileURL,
           lines: lines(
             in: markup, highlights: highlights[serviceID(ofFacsimile: open.facsimileURL)] ?? [],
-            marksWords: marksWords),
-          markup: markup.trimmingCharacters(in: .whitespacesAndNewlines)
+            marksWords: marksWords, zones: zones),
+          markup: markup.trimmingCharacters(in: .whitespacesAndNewlines),
+          zones: zones
         )
       }
     }
@@ -279,14 +328,19 @@
     /// One page's markup as the lines a reader sees; with `highlights`
     /// (counted in the page's projection, `TEIProjection`), each run says
     /// which it falls in; with `marksWords`, which word it is of, as an
-    /// anchor counts the page's words (`words(of:)`).
-    public static func lines(in markup: String, highlights: [TEIHighlight] = [], marksWords: Bool = false)
-      -> [TEILine]
-    {
-      guard !highlights.isEmpty || marksWords else { return reading(from: TEIMarkup.document(markup)) }
+    /// anchor counts the page's words (`words(of:)`). `zones` are the
+    /// document's (`TEIPage.zones`); nil reads the markup's own facsimile.
+    public static func lines(
+      in markup: String, highlights: [TEIHighlight] = [], marksWords: Bool = false, zones: [String: TEIZone]? = nil
+    ) -> [TEILine] {
+      let zones = zones ?? TEIFacsimile.zones(in: TEIFacsimile.blocks(in: markup))
+      guard !highlights.isEmpty || marksWords else {
+        return reading(from: TEIMarkup.document(markup), zones: zones)
+      }
       let root = TEIMarkup.document(TEIProjection.normalized(markup))
       let projection = TEIProjection(root)
-      return reading(from: root, highlights: highlights, words: marksWords ? Words(projection.units) : nil)
+      return reading(
+        from: root, highlights: highlights, words: marksWords ? Words(projection.units) : nil, zones: zones)
     }
 
     /// A page's words by where they are in its projection: which word a
@@ -364,8 +418,15 @@
     }
 
     private static func reading(
-      from owner: TEIMarkup.Element, highlights: [TEIHighlight] = [], words: Words? = nil
+      from owner: TEIMarkup.Element, highlights: [TEIHighlight] = [], words: Words? = nil,
+      zones: [String: TEIZone] = [:]
     ) -> [TEILine] {
+      /// The zone an element names by `facs="#…"`.
+      func zone(of element: TEIMarkup.Element) -> TEIZone? {
+        let facs = element.attribute("facs")
+        guard facs.hasPrefix("#") else { return nil }
+        return zones[String(facs.dropFirst())]
+      }
       var lines: [TEILine] = []
       var runs: [TEILine.Run] = []
       var currentKind: TEILine.Kind = .text
@@ -401,7 +462,7 @@
 
       func walk(
         _ owner: TEIMarkup.Element, kind: TEILine.Kind = .text,
-        rend: String = "", inlineRend: String = "", alternative: String = "", bbox: String = "",
+        rend: String = "", inlineRend: String = "", alternative: String = "", zone initialZone: TEIZone? = nil,
         including: (TEIMarkup.Node) -> Bool = { _ in true }
       ) {
         func joined(_ extra: String) -> String {
@@ -416,7 +477,9 @@
               if alternative.isEmpty {
                 for piece in pieces(of: text, at: owner.projected[index], in: highlights, words: words) {
                   runs.append(
-                    .init(text: piece.text, rend: inlineRend, highlight: piece.highlight, word: piece.word, bbox: bbox))
+                    .init(
+                      text: piece.text, rend: inlineRend, highlight: piece.highlight, word: piece.word,
+                      zone: initialZone))
                 }
               } else {
                 // A run with an alternative stays whole: it is read on hover
@@ -425,7 +488,7 @@
                 runs.append(
                   .init(
                     text: text, rend: inlineRend, alternative: alternative, highlight: first?.highlight,
-                    word: first?.word, bbox: bbox))
+                    word: first?.word, zone: initialZone))
               }
             }
           case .element(let element):
@@ -441,11 +504,14 @@
               // Passing the inherited setting down the tree restores it when
               // a nested span closes, including across physical line breaks.
               // A decorated initial is the first letter of its word, and its
-              // box, where it has one, rides on the letter's run.
+              // zone, where it names one, rides on the letter's run.
               let initial = ownRend.split(whereSeparator: \.isWhitespace).contains("initial")
               walk(
                 element, kind: kind, rend: rend, inlineRend: joined(ownRend),
-                alternative: alternative, bbox: initial ? element.attribute("bbox") : bbox)
+                alternative: alternative, zone: initial ? zone(of: element) : initialZone)
+            case "facsimile":
+              // Where the page's figures sit, not what it reads.
+              continue
             case "choice":
               // The surface reading (orig, sic, abbr) is the reading; the
               // regularized, corrected or expanded form rides beside it.
@@ -522,13 +588,13 @@
               flush()
               let children = element.elements
               let caption = children.filter { $0.name == "head" }.flatMap {
-                reading(from: $0, highlights: highlights, words: words)
+                reading(from: $0, highlights: highlights, words: words, zones: zones)
               }
               let rows = children.filter { $0.name == "row" }.map { row in
                 TEITable.Row(
                   cells: row.elements.filter { $0.name == "cell" }.map { cell in
                     TEITable.Cell(
-                      lines: reading(from: cell, highlights: highlights, words: words),
+                      lines: reading(from: cell, highlights: highlights, words: words, zones: zones),
                       isLabel: row.attribute("role") == "label"
                         || cell.attribute("role") == "label",
                       rows: max(1, Int(cell.attribute("rows")) ?? 1),
@@ -549,7 +615,7 @@
                 .joined(separator: " ")
               append(
                 .init(
-                  kind: .figure(type: element.attribute("type"), bbox: element.attribute("bbox")),
+                  kind: .figure(type: element.attribute("type"), zone: zone(of: element)),
                   text: description))
               // Captions, tables, and diagram labels remain readable even when
               // the graphic has no usable crop. figDesc is descriptive metadata.
@@ -566,7 +632,8 @@
               // quotations and references add nothing to the reading but
               // their text.
               walk(
-                element, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative, bbox: bbox)
+                element, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative,
+                zone: initialZone)
             }
           }
         }
@@ -581,6 +648,19 @@
     private static func math(
       _ formula: TEIMarkup.Element, highlights: [TEIHighlight], words: Words?
     ) -> (math: TEIMath, text: String) {
+      math(of: formula.elements.first { $0.name == "math" }, highlights: highlights, words: words)
+    }
+
+    /// A formula's MathML as `TEIMath.markup` writes it, read back to be
+    /// drawn (a diff's formula); nil where it holds no `<math>`.
+    public static func math(markup: String) -> TEIMath? {
+      guard let element = TEIMarkup.document(markup).elements.first(where: { $0.name == "math" }) else { return nil }
+      return math(of: element, highlights: [], words: nil).math
+    }
+
+    private static func math(
+      of math: TEIMarkup.Element?, highlights: [TEIHighlight], words: Words?
+    ) -> (math: TEIMath, text: String) {
       var text = ""
       var source = ""
       func node(_ element: TEIMarkup.Element) -> TEIMath.Node? {
@@ -590,6 +670,9 @@
         case "annotation", "annotation-xml":
           if element.attribute("encoding") == "application/x-tex" { source = element.textContent }
           return nil
+        case "semantics" where TEIProjection.isMathGap(element):
+          let gap = element.elements.first { $0.name == "annotation-xml" }?.elements.first { $0.name == "gap" }
+          return .gap(reason: gap?.attribute("reason") ?? "")
         case "semantics":
           for annotation in element.elements.dropFirst() { _ = node(annotation) }
           return element.elements.first.flatMap(node)
@@ -609,7 +692,6 @@
             children: element.elements.compactMap(node))
         }
       }
-      let math = formula.elements.first { $0.name == "math" }
       let content = math?.elements.compactMap(node) ?? []
       return (
         TEIMath(display: math?.attribute("display") == "block", content: content, source: source), text
@@ -630,53 +712,43 @@
       return "\(service)/full/max/0/default.jpg"
     }
 
-    /// The region of a facsimile a `bbox` names, as a IIIF Image API request.
+    /// The region of a facsimile a zone names, as a IIIF Image API request.
     ///
-    /// The bbox is `x y w h` in a normalized 0–1000 space, and IIIF takes a
-    /// region as a percentage of the full image — so the two meet by dividing
-    /// by ten, and nothing needs to know how many pixels wide the scan is.
-    /// That matters: the pixel dimensions live in the manifest, which only the
-    /// viewer loads, and a reading that had to wait for it could not be
+    /// A zone is in its surface's coordinates, and IIIF takes a region as a
+    /// percentage of the full image — so the two meet as a fraction of the
+    /// surface (`TEIZone.percent`; the recognition's 0–1000 surface divides
+    /// by ten), and nothing needs to know how many pixels wide the scan is.
+    /// That matters: the pixel dimensions live in the manifest, which only
+    /// the viewer loads, and a reading that had to wait for it could not be
     /// rendered on the server at all.
     ///
-    /// Returns nil when the bbox is not four numbers — a malformed one should
-    /// leave the figure without a crop, not with the wrong one.
-    /// A region at the size the scan actually is, for reading rather than
-    /// showing. An argument about one word should carry the pixels that settle
-    /// it, not a thumbnail of the page it sits on.
-    public static func fullResolutionRegionURL(ofFacsimile url: String, bbox: String)
-      -> String?
-    {
-      let parts = bbox.split(whereSeparator: { $0 == " " || $0 == "," })
-        .compactMap { Double($0) }
-      guard parts.count == 4 else { return nil }
+    /// Nil where the facsimile is not an image service.
+    public static func regionURL(ofFacsimile url: String, zone: TEIZone, fitting: Int = 600) -> String? {
       let service = serviceID(ofFacsimile: url)
       guard !service.isEmpty else { return nil }
-      func pct(_ value: Double) -> String {
-        let scaled = (value / 10 * 1000).rounded() / 1000
-        return scaled == scaled.rounded() ? String(Int(scaled)) : String(scaled)
-      }
-      let region = "pct:\(pct(parts[0])),\(pct(parts[1])),\(pct(parts[2])),\(pct(parts[3]))"
-      return "\(service)/\(region)/full/0/default.jpg"
-    }
-
-    public static func regionURL(ofFacsimile url: String, bbox: String, fitting: Int = 600)
-      -> String?
-    {
-      let parts = bbox.split(whereSeparator: { $0 == " " || $0 == "," })
-        .compactMap { Double($0) }
-      guard parts.count == 4 else { return nil }
-      let service = serviceID(ofFacsimile: url)
-      guard !service.isEmpty else { return nil }
-      func pct(_ value: Double) -> String {
-        let scaled = (value / 10 * 1000).rounded() / 1000
-        return scaled == scaled.rounded() ? String(Int(scaled)) : String(scaled)
-      }
-      let region = "pct:\(pct(parts[0])),\(pct(parts[1])),\(pct(parts[2])),\(pct(parts[3]))"
       // Best fit inside a square, not a fixed width. A spine ornament is a
       // narrow slice of a very tall scan, and asking for 600 wide returned it
       // 1500 high — a thumbnail taller than the column it sits in.
-      return "\(service)/\(region)/!\(fitting),\(fitting)/0/default.jpg"
+      return "\(service)/\(region(zone))/!\(fitting),\(fitting)/0/default.jpg"
+    }
+
+    /// A region at the size the scan actually is, for reading rather than
+    /// showing. An argument about one word should carry the pixels that settle
+    /// it, not a thumbnail of the page it sits on.
+    public static func fullResolutionRegionURL(ofFacsimile url: String, zone: TEIZone) -> String? {
+      let service = serviceID(ofFacsimile: url)
+      guard !service.isEmpty else { return nil }
+      return "\(service)/\(region(zone))/full/0/default.jpg"
+    }
+
+    /// A zone as a IIIF `pct:` region, each value to a thousandth.
+    private static func region(_ zone: TEIZone) -> String {
+      func pct(_ value: Double) -> String {
+        let scaled = (value * 1000).rounded() / 1000
+        return scaled == scaled.rounded() ? String(Int(scaled)) : String(scaled)
+      }
+      let box = zone.percent
+      return "pct:\(pct(box.x)),\(pct(box.y)),\(pct(box.width)),\(pct(box.height))"
     }
 
     /// The image service a facsimile URL is a request against: everything

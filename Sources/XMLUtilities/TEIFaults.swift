@@ -24,6 +24,10 @@
       case description
       /// An element opened and not closed, or closed and not opened.
       case unbalanced
+      /// A box a stored page must keep as a zone of the document's facsimile
+      /// (gnorium-python recognition `facsimile.py`): a `bbox` left in the
+      /// page, or a `facs="#…"` naming no zone the document holds.
+      case zone
 
       public var summary: String {
         switch self {
@@ -32,6 +36,7 @@
         case .literalBlank: return "\"blank\" transcribed as text"
         case .description: return "Described rather than transcribed"
         case .unbalanced: return "Markup does not balance"
+        case .zone: return "Box without its zone"
         }
       }
 
@@ -60,6 +65,10 @@
             + "text carries <gap reason=\"blank\"/>."
         case .unbalanced:
           return "An element here is opened and not closed, or closed and not opened. Repair it."
+        case .zone:
+          return
+            "A figure or a decorated initial here has no box the page keeps. Give it its box as "
+            + "bbox=\"x y w h\", four whole numbers in the 0–1000 space over the canvas image."
         }
       }
     }
@@ -133,6 +142,13 @@
       }
       if let tag = unbalancedElement(in: markup) {
         faults.append(.init(kind: .unbalanced, detail: tag))
+      }
+      // A stored page keeps a box as a zone: never a bbox, never a reference
+      // to a zone the document lacks.
+      if markup.range(of: #"\sbbox\s*="#, options: .regularExpression) != nil {
+        faults.append(.init(kind: .zone, detail: "bbox"))
+      } else if let missing = TEIFacsimile.references(in: markup).first(where: { page.zones[$0] == nil }) {
+        faults.append(.init(kind: .zone, detail: "#" + missing))
       }
       return faults
     }

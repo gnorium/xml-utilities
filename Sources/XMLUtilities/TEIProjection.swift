@@ -22,7 +22,7 @@
     }
   }
 
-  /// A page's text as the concordance counts it (`diplomatic-codepoints-v6`,
+  /// A page's text as the concordance counts it (`diplomatic-codepoints-v7`,
   /// gnorium-python `concordance/text.py` `diplomatic_text`), so that an
   /// utterance's anchor, which counts in it, can be found in the page's
   /// markup: Unicode scalars, not normalized; a `<choice>` reads its orig,
@@ -35,8 +35,11 @@
   /// if they have none; a figure has one before and after it (it is set
   /// apart: a line starts at it and after it); a `<formula>` is its
   /// Presentation MathML's token elements' text (`mathTokens`), without its
-  /// TeX `<annotation>` or the white space between its elements, each symbol
-  /// it prints a word (`symbols`); a `<formula>` without MathML is left out.
+  /// TeX `<annotation>` or the white space between its elements, one space
+  /// between two symbols it prints ("sin x = a + b c", the space no word),
+  /// each symbol it prints a word (`symbols`), a mark that could not be read
+  /// (TEI's gap in a MathML `<semantics>`, `isMathGap`) one U+FFFC as a gap
+  /// is; a `<formula>` without MathML is left out.
   struct TEIProjection {
     /// Where a text node starts, and whether the projection counts it: one it
     /// leaves out stands at the point where it would be.
@@ -116,11 +119,25 @@
     /// separator, plus): no word (gnorium-python `INVISIBLE`).
     private static let invisible: Set<Unicode.Scalar> = ["\u{2061}", "\u{2062}", "\u{2063}", "\u{2064}"]
 
+    /// Whether a MathML `<semantics>` is a mark of a formula that could not
+    /// be read: its `annotation-xml` holds TEI's `<gap>` (gnorium-python
+    /// `is_math_gap`, recognition `formulas.py`).
+    static func isMathGap(_ element: TEIMarkup.Element) -> Bool {
+      element.name == "semantics"
+        && element.elements.contains { $0.name == "annotation-xml" && $0.elements.contains { $0.name == "gap" } }
+    }
+
+    /// Whether a MathML token's text prints anything: not only white space
+    /// and invisible operators (gnorium-python `prints`).
+    private static func prints(_ text: String) -> Bool {
+      text.unicodeScalars.contains { !$0.properties.isWhitespace && !invisible.contains($0) }
+    }
+
     private(set) var size = 0
     private(set) var sentences: [Sentence] = []
     private(set) var words: [Word] = []
-    /// Each `<formula>`'s span: its text is its symbols, run together
-    /// (gnorium-python `Projection.formulas`).
+    /// Each `<formula>`'s span: its text is its symbols, one space between
+    /// two (gnorium-python `Projection.formulas`).
     private(set) var formulas: [Range<Int>] = []
     /// Each word a formula prints, its span and its MathML token element, in
     /// document order: a word as anchors count it (`units`; gnorium-python
@@ -140,6 +157,9 @@
     private(set) var scalars: [Unicode.Scalar] = []
     /// Whether what was last added ends a line; nil before anything is.
     private var endsLine: Bool?
+    /// Whether the formula being read has printed a symbol yet: the next one
+    /// is set after a space.
+    private var symbolPrinted = false
 
     /// A page's markup, as XML reads it: its line ends are line feeds.
     static func normalized(_ markup: String) -> String {
@@ -169,6 +189,12 @@
       if endsLine == false { append("\n") }
     }
 
+    /// A space before a formula's symbol, unless it is the first.
+    private mutating func separate() {
+      if symbolPrinted { append(" ") }
+      symbolPrinted = true
+    }
+
     private mutating func startLine() {
       guard read else { return }
       breaks.append(size)
@@ -189,11 +215,18 @@
       let language = element.attribute("xml:lang")
       if !language.isEmpty { languages.append(language) }
       defer { if !language.isEmpty { languages.removeLast() } }
-      let start = size
+      var start = size
       element.projectedStart = start
+      if element.name == "formula" { symbolPrinted = false }
       switch element.name {
       case "gap":
         append("\u{FFFC}")
+      case "semantics" where inMath && Self.isMathGap(element):
+        separate()
+        start = size
+        element.projectedStart = start
+        append("\u{FFFC}")
+        leaveOut(element, at: start)
       case "lb", "pb":
         if element.name == "lb" { startLine() }
         if element.attribute("break") != "no" { append("\n") }
@@ -216,6 +249,11 @@
         // Inside a formula's MathML, only its tokens' text is read.
         let math = inMath || element.name == "math"
         let readsText = !math || Self.mathTokens.contains(element.name)
+        if math, readsText, Self.prints(element.textContent) {
+          separate()
+          start = size
+          element.projectedStart = start
+        }
         var first = true
         for (index, node) in element.children.enumerated() {
           switch node {
@@ -385,12 +423,13 @@
 
     /// An element the projection leaves out: each of its texts stands at the
     /// point it would be.
-    private func leaveOut(_ element: TEIMarkup.Element) {
-      element.projectedStart = size
+    private func leaveOut(_ element: TEIMarkup.Element, at point: Int? = nil) {
+      let point = point ?? size
+      element.projectedStart = point
       for (index, node) in element.children.enumerated() {
         switch node {
-        case .text: element.projected[index] = .init(start: size, counted: false)
-        case .element(let child): leaveOut(child)
+        case .text: element.projected[index] = .init(start: point, counted: false)
+        case .element(let child): leaveOut(child, at: point)
         }
       }
     }
@@ -562,7 +601,8 @@
       let first = max(0, at - radius)
       let last = min(breaks.count - 1, at + radius)
       let end = last + 1 < breaks.count ? breaks[last + 1].tag.lowerBound : body.endIndex
-      return #"<TEI xmlns="http://www.tei-c.org/ns/1.0"><text><body>"#
+      // The document's facsimile comes along: its pages' zones are there.
+      return #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + TEIFacsimile.blocks(in: xml) + "<text><body>"
         + body[breaks[first].tag.lowerBound..<end] + "</body></text></TEI>"
     }
   }

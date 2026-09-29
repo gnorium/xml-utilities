@@ -244,6 +244,39 @@ final class TEIUtteranceTests: XCTestCase {
     XCTAssertEqual(
       words.map(\.element),
       ["w", "mi", "mi", "mo", "mi", "mo", "mi", "mi", "w", "", "mn", "mo", "mi", "mi", "mtext", "mtext", ""])
+    // The text sets a space between two symbols (diplomatic-codepoints-v7):
+    // "Let sin\u{2061} x = a + b c hold.", so x is at 9 and = at 11.
+    let pages = TEIRenderer.pages(in: page)
+    for (word, surface, offset) in [(3, "x", 9), (4, "=", 11), (8, "c", 19), (9, "hold", 21)] {
+      let at = TEIWordPosition(line: 1, word: word, surface: surface)
+      let title = TEIRenderer.utterance(
+        in: pages, canvasID: "https://example.org/iiif/f0", start: at, end: at)?["https://example.org/iiif/f0"]?
+        .first { $0.kind == .title }
+      XCTAssertEqual(title?.range, offset..<(offset + surface.unicodeScalars.count), surface)
+    }
+  }
+
+  /// A formula's mark that could not be read is TEI's gap in MathML's
+  /// semantics: one U+FFFC set apart as a symbol is, never a word. The same
+  /// page as gnorium-python `test_an_unreadable_mark_in_a_formula_is_a_gap_not_a_word`.
+  func testAnUnreadableMarkInAFormulaIsAGapNotAWord() {
+    let page =
+      #"<TEI><text><body><pb n="1" facs="https://example.org/iiif/g0/full/1300,/0/default.jpg"/>"#
+      + #"<p><formula notation="mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="inline">"#
+      + #"<semantics><mrow><mi>a</mi><mo>+</mo><semantics><mrow/><annotation-xml encoding="application/tei+xml">"#
+      + #"<gap xmlns="http://www.tei-c.org/ns/1.0" reason="illegible"/></annotation-xml></semantics><mi>b</mi></mrow>"#
+      + #"<annotation encoding="application/x-tex">a+\text{[?]}b</annotation></semantics></math></formula> end</p>"#
+      + "</body></text></TEI>"
+    let pages = TEIRenderer.pages(in: page)
+    XCTAssertEqual(
+      TEIRenderer.words(of: pages[0]).map { "\($0.place.line).\($0.place.word) \($0.surface)" },
+      ["1.1 a", "1.2 +", "1.3 b", "1.4 end"])
+    // "a + \u{FFFC} b end": b at 6.
+    let at = TEIWordPosition(line: 1, word: 3, surface: "b")
+    let title = TEIRenderer.utterance(
+      in: pages, canvasID: "https://example.org/iiif/g0", start: at, end: at)?["https://example.org/iiif/g0"]?
+      .first { $0.kind == .title }
+    XCTAssertEqual(title?.range, 6..<7)
   }
 
   /// A line starts after each `<lb/>` and at each verse line, block and a

@@ -126,22 +126,29 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(lines.last?.runs.first?.rend, "smallcaps")
   }
 
+  /// A page's own facsimile: one surface over the 0–1000 space with zones,
+  /// as the recognition commits a page (gnorium-python `encode_zones`).
+  static let facsimile =
+    #"<facsimile><surface ulx="0" uly="0" lrx="1000" lry="1000">"#
+    + #"<zone xml:id="z1" ulx="10" uly="20" lrx="40" lry="60"/><zone xml:id="z2" ulx="40" uly="60" lrx="160" lry="210"/>"#
+    + "</surface></facsimile>"
+
   func testTableInsideFigureIsNotSwallowedByDescription() {
     let lines = TEIRenderer.lines(
-      in:
-        "<figure bbox=\"10 20 30 40\"><figDesc>Device</figDesc><head>Original caption</head><table><row><cell>OXOX</cell></row></table></figure>"
+      in: Self.facsimile
+        + "<figure facs=\"#z1\"><figDesc>Device</figDesc><head>Original caption</head><table><row><cell>OXOX</cell></row></table></figure>"
     )
     XCTAssertEqual(lines.map(\.text), ["Device", "Original caption", "OXOX"])
-    guard case .figure(_, let bbox) = lines[0].kind else { return XCTFail("Missing crop") }
-    XCTAssertEqual(bbox, "10 20 30 40")
+    guard case .figure(_, let zone) = lines[0].kind else { return XCTFail("Missing crop") }
+    XCTAssertEqual(zone?.corners, "10 20 40 60")
     guard case .table = lines[2].kind else { return XCTFail("Missing figure table") }
   }
 
   /// A decorated initial is the first letter of its word, never a figure:
-  /// its box rides on the letter's run, and the letter reads with its word.
+  /// its zone rides on the letter's run, and the letter reads with its word.
   func testADecoratedInitialIsTheFirstLetterOfItsWord() throws {
     let lines = TEIRenderer.lines(
-      in: #"<p><w lemma="when"><hi rend="initial" bbox="40 60 120 150">W</hi>hen</w> in the course</p>"#,
+      in: Self.facsimile + ##"<p><w lemma="when"><hi rend="initial" facs="#z2">W</hi>hen</w> in the course</p>"##,
       marksWords: true)
     XCTAssertEqual(lines.count, 1)
     guard case .text = lines[0].kind else { return XCTFail("An initial is not a figure") }
@@ -149,24 +156,119 @@ final class TEIRendererTests: XCTestCase {
     let letter = try XCTUnwrap(lines[0].runs.first)
     XCTAssertEqual(letter.text, "W")
     XCTAssertEqual(letter.rend, "initial")
-    XCTAssertEqual(letter.bbox, "40 60 120 150")
+    XCTAssertEqual(letter.zone?.corners, "40 60 160 210")
     XCTAssertEqual(lines[0].runs[1].text, "hen")
-    XCTAssertEqual(lines[0].runs[1].bbox, "")
+    XCTAssertNil(lines[0].runs[1].zone)
     XCTAssertNotNil(letter.word)
     XCTAssertEqual(letter.word, lines[0].runs[1].word)
-    // Without a box (stripped at commit), the letter alone.
-    let bare = TEIRenderer.lines(in: #"<p><w><hi rend="initial">W</hi>hen</w></p>"#)
-    XCTAssertEqual(bare[0].runs.map(\.bbox), ["", ""])
+    // Naming no zone, the letter alone.
+    let bare = TEIRenderer.lines(in: ##"<p><w><hi rend="initial" facs="#z9">W</hi>hen</w></p>"##)
+    XCTAssertEqual(bare[0].runs.map { $0.zone == nil }, [true, true])
     // A figure typed "initial" is a figure like any other: its text is read.
-    let figure = TEIRenderer.lines(in: #"<figure type="initial" bbox="1 2 3 4"><head>W</head></figure>"#)
+    let figure = TEIRenderer.lines(in: #"<figure type="initial"><head>W</head></figure>"#)
     XCTAssertEqual(figure.map(\.text), ["", "W"])
   }
 
-  func testFigureWithoutDescriptionStillCarriesItsCrop() {
-    let lines = TEIRenderer.lines(in: "<figure bbox=\"10 20 30 40\"/>")
+  func testFigureWithoutDescriptionStillCarriesItsCrop() throws {
+    let lines = TEIRenderer.lines(in: Self.facsimile + "<figure facs=\"#z1\"/>")
     XCTAssertEqual(lines.count, 1)
-    guard case .figure(_, let bbox) = lines.first?.kind else { return XCTFail("Missing figure") }
-    XCTAssertEqual(bbox, "10 20 30 40")
+    guard case .figure(_, let zone) = lines.first?.kind else { return XCTFail("Missing figure") }
+    let found = try XCTUnwrap(zone)
+    XCTAssertEqual(
+      TEIRenderer.regionURL(ofFacsimile: "https://example.org/iiif/a/full/1300,/0/default.jpg", zone: found),
+      "https://example.org/iiif/a/pct:1,2,3,4/!600,600/0/default.jpg")
+    XCTAssertEqual(
+      TEIRenderer.fullResolutionRegionURL(ofFacsimile: "https://example.org/iiif/a/full/1300,/0/default.jpg", zone: found),
+      "https://example.org/iiif/a/pct:1,2,3,4/full/0/default.jpg")
+  }
+
+  /// A document's zones are in its facsimile, outside the body its pages are
+  /// cut from: each page carries them, and its figures and initials find
+  /// theirs; an excerpt keeps them.
+  func testADocumentsPagesFindTheirZonesInItsFacsimile() throws {
+    let document = """
+      <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader/>
+      <facsimile><surface n="1" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="https://example.org/iiif/a/full/1300,/0/default.jpg"/>\
+      <zone xml:id="p1-z1" ulx="100" uly="200" lrx="400" lry="600"/></surface>\
+      <surface n="2" ulx="0" uly="0" lrx="500" lry="500"><zone xml:id="p2-z1" ulx="50" uly="50" lrx="100" lry="150"/></surface></facsimile>
+      <text><body><pb n="1" facs="https://example.org/iiif/a/full/1300,/0/default.jpg"/><figure facs="#p1-z1"><figDesc>A woodcut.</figDesc></figure>
+      <pb n="2" facs="https://example.org/iiif/b/full/1300,/0/default.jpg"/><p><w><hi rend="initial" facs="#p2-z1">W</hi>hen</w></p></body></text></TEI>
+      """
+    let pages = TEIRenderer.pages(in: document)
+    XCTAssertEqual(pages.count, 2)
+    guard case .figure(_, let zone) = pages[0].lines[0].kind else { return XCTFail("Missing figure") }
+    XCTAssertEqual(
+      TEIRenderer.regionURL(ofFacsimile: pages[0].facsimileURL, zone: try XCTUnwrap(zone)),
+      "https://example.org/iiif/a/pct:10,20,30,40/!600,600/0/default.jpg")
+    // A surface of its own extent: a zone is a fraction of it.
+    let initial = try XCTUnwrap(pages[1].lines[0].runs[0].zone)
+    XCTAssertEqual(
+      TEIRenderer.regionURL(ofFacsimile: pages[1].facsimileURL, zone: initial),
+      "https://example.org/iiif/b/pct:10,10,10,20/!600,600/0/default.jpg")
+    XCTAssertEqual(Set(pages[1].zones.keys), ["p1-z1", "p2-z1"])
+    let excerpt = try XCTUnwrap(TEIRenderer.excerpt(of: document, around: "https://example.org/iiif/b", radius: 0))
+    XCTAssertNotNil(TEIRenderer.pages(in: excerpt)[0].lines[0].runs[0].zone)
+    // A page handed to the recognition carries the zones it names.
+    XCTAssertEqual(
+      TEIFacsimile.withZones(pages[1].markup, zones: pages[1].zones),
+      #"<facsimile><surface ulx="0" uly="0" lrx="500" lry="500"><zone xml:id="p2-z1" ulx="50" uly="50" lrx="100" lry="150"/></surface></facsimile>"#
+        + pages[1].markup)
+    // A stored page keeps its boxes as zones: a bbox, or a zone the document
+    // lacks, is a fault.
+    XCTAssertFalse(TEIRenderer.faults(in: pages[1]).contains { $0.kind == .zone })
+    let missing = TEIPage(label: "2", facsimileURL: pages[1].facsimileURL, lines: [], markup: ##"<figure facs="#p9-z1"/>"##)
+    XCTAssertEqual(TEIRenderer.faults(in: missing).filter { $0.kind == .zone }.map(\.detail), ["#p9-z1"])
+    let boxed = TEIPage(label: "2", facsimileURL: pages[1].facsimileURL, lines: [], markup: #"<figure bbox="1 2 3 4"/>"#)
+    XCTAssertEqual(TEIRenderer.faults(in: boxed).filter { $0.kind == .zone }.map(\.detail), ["bbox"])
+  }
+
+  /// A page read again is laid into the document with its zones: its body
+  /// where the old one stood, its surface in the old one's place, its ids
+  /// prefixed with its place (gnorium-python `document_surface`).
+  func testAPageReadAgainIsLaidInWithItsZones() throws {
+    let document = """
+      <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader/>
+      <facsimile><surface n="1" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="https://example.org/iiif/a/full/1300,/0/default.jpg"/><zone xml:id="p1-z1" ulx="1" uly="1" lrx="2" lry="2"/></surface>\
+      <surface n="2" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="https://example.org/iiif/b/full/1300,/0/default.jpg"/><zone xml:id="p2-z1" ulx="5" uly="5" lrx="9" lry="9"/></surface></facsimile>
+      <text><body><pb n="1" facs="https://example.org/iiif/a/full/1300,/0/default.jpg"/><figure facs="#p1-z1"/>
+      <pb n="2" facs="https://example.org/iiif/b/full/1300,/0/default.jpg"/><figure facs="#p2-z1"/></body></text></TEI>
+      """
+    let old = TEIRenderer.pages(in: document)[1]
+    let page = """
+      <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader/><facsimile><surface n="2" ulx="0" uly="0" lrx="1000" lry="1000">\
+      <zone xml:id="z1" ulx="100" uly="100" lrx="300" lry="300"/><zone xml:id="z2" ulx="10" uly="10" lrx="20" lry="30"/></surface></facsimile>\
+      <text><body><figure facs="#z1"/><p><w><hi rend="initial" facs="#z2">A</hi>nd</w></p></body></text></TEI>
+      """
+    let laid = TEIFacsimile.laying(
+      page: page, fragment: ##"<figure facs="#z1"/><p><w><hi rend="initial" facs="#z2">A</hi>nd</w></p>"##, over: old,
+      position: 2, in: document)
+    XCTAssertEqual(Set(TEIFacsimile.zones(in: TEIFacsimile.blocks(in: laid)).keys), ["p1-z1", "p2-z1", "p2-z2"])
+    XCTAssertFalse(laid.contains(#"ulx="5""#))
+    let pages = TEIRenderer.pages(in: laid)
+    guard case .figure(_, let zone) = pages[1].lines[0].kind else { return XCTFail("Missing figure") }
+    XCTAssertEqual(zone?.corners, "100 100 300 300")
+    XCTAssertEqual(pages[1].lines[1].runs[0].zone?.corners, "10 10 20 30")
+    guard case .figure(_, let first) = pages[0].lines[0].kind else { return XCTFail("Missing figure") }
+    XCTAssertEqual(first?.corners, "1 1 2 2")
+    XCTAssertTrue(laid.contains(#"<graphic url="https://example.org/iiif/b/full/1300,/0/default.jpg"/><zone xml:id="p2-z1""#))
+  }
+
+  /// A formula's MathML as a diff compares and draws it: its drawn content,
+  /// read back the same; an unreadable mark a gap.
+  func testAFormulaIsComparedAndDrawnAsItsMathML() throws {
+    let lines = TEIRenderer.lines(
+      in: #"<p><formula notation="mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="inline">"#
+        + #"<semantics><mrow><mi>sin</mi><mo rspace="0.1667em">\#u{2061}</mo><mi>x</mi><mo>&lt;</mo>"#
+        + #"<semantics><mrow/><annotation-xml encoding="application/tei+xml"><gap xmlns="http://www.tei-c.org/ns/1.0" reason="illegible"/></annotation-xml></semantics>"#
+        + #"</mrow><annotation encoding="application/x-tex">\sin x &lt; \text{[?]}</annotation></semantics></math></formula></p>"#)
+    guard case .math(let formula) = lines[0].runs[0].kind else { return XCTFail("Missing formula") }
+    XCTAssertEqual(
+      formula.markup,
+      #"<math xmlns="http://www.w3.org/1998/Math/MathML" display="inline"><mrow><mi>sin</mi><mo rspace="0.1667em">\#u{2061}</mo><mi>x</mi><mo>&lt;</mo>"#
+        + #"<semantics><mrow/><annotation-xml encoding="application/tei+xml"><gap xmlns="http://www.tei-c.org/ns/1.0" reason="illegible"/></annotation-xml></semantics></mrow></math>"#)
+    let read = try XCTUnwrap(TEIRenderer.math(markup: formula.markup))
+    XCTAssertEqual(read.markup, formula.markup)
+    XCTAssertEqual(read.runs.map(\.text), ["sin", "\u{2061}", "x", "<"])
   }
 
   func testFragmentsNamespacesAndQuotedAttributeDelimiters() {
