@@ -194,8 +194,43 @@ final class TEIUtteranceTests: XCTestCase {
       """
     let words = TEIRenderer.words(of: TEIRenderer.pages(in: page)[0])
     XCTAssertEqual(words.map(\.surface), ["A", "woodcut", "Fig", "of", "the", "hand", "and", "more"])
-    XCTAssertEqual(words.map(\.place.line), [1, 1, 2, 2, 2, 2, 3, 3])
-    XCTAssertEqual(words.map(\.place.word), [1, 2, 1, 2, 3, 4, 1, 2])
+    XCTAssertEqual(words.map(\.place.line), [1, 1, 2, 3, 3, 3, 4, 4])
+    XCTAssertEqual(words.map(\.place.word), [1, 2, 1, 1, 2, 3, 1, 2])
+  }
+
+  /// A `<figure>` starts a new line and so does what follows it: its caption
+  /// keeps its own line(s), and the text after the whole figure, caption
+  /// included, starts a new line; the same pages as gnorium-python
+  /// `test_a_figure_is_set_apart_on_its_own_lines`.
+  func testAFigureIsSetApartOnItsOwnLines() {
+    func places(_ body: String) -> [String] {
+      let page = #"<TEI><text><body><pb n="1" facs="https://example.org/iiif/g0/full/1300,/0/default.jpg"/>"#
+        + body + "</body></text></TEI>"
+      return TEIRenderer.words(of: TEIRenderer.pages(in: page)[0]).map {
+        "\($0.place.line).\($0.place.word) \($0.surface)"
+      }
+    }
+    XCTAssertEqual(
+      places("<p>see<figure><figDesc>A device</figDesc></figure>it</p>"), ["1.1 see", "2.1 it"])
+    XCTAssertEqual(
+      places("<p>A cut<lb/><figure><head>Fig. 2<lb/>The hand</head></figure>below</p>"),
+      ["1.1 A", "1.2 cut", "2.1 Fig", "3.1 The", "3.2 hand", "4.1 below"])
+  }
+
+  /// A `<formula>` is one word as anchors count it, whatever its TeX source
+  /// holds; the same page as gnorium-python `test_a_formula_is_one_word`.
+  func testAFormulaIsOneWord() {
+    let page = #"""
+      <TEI><text><body><pb n="1" facs="https://example.org/iiif/m0/full/1300,/0/default.jpg"/>\#
+      <p><s><w lemma="let" type="verb">Let</w> <formula notation="tex">\sin x=\frac{u}{w}</formula> \#
+      <w lemma="hold" type="verb">hold</w><pc>.</pc></s><lb/>and <formula>\log y</formula> so</p>\#
+      </body></text></TEI>
+      """#
+    let words = TEIRenderer.words(of: TEIRenderer.pages(in: page)[0])
+    XCTAssertEqual(
+      words.map { "\($0.place.line).\($0.place.word) \($0.surface)" },
+      ["1.1 Let", #"1.2 \sin x=\frac{u}{w}"#, "1.3 hold", "2.1 and", #"2.2 \log y"#, "2.3 so"])
+    XCTAssertEqual(words.map(\.element), ["w", "formula", "w", "", "formula", ""])
   }
 
   /// A line starts after each `<lb/>` and at each verse line, block and a

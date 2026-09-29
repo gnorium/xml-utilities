@@ -22,7 +22,7 @@
     }
   }
 
-  /// A page's text as the concordance counts it (`diplomatic-codepoints-v4`,
+  /// A page's text as the concordance counts it (`diplomatic-codepoints-v5`,
   /// gnorium-python `concordance/text.py` `diplomatic_text`), so that an
   /// utterance's anchor, which counts in it, can be found in the page's
   /// markup: Unicode scalars, not normalized; a `<choice>` reads its orig,
@@ -32,7 +32,9 @@
   /// and standoff are left out; `<lb/>` and `<pb/>` are a line end unless
   /// `break="no"`; a gap is one U+FFFC; a line-starting element (l, p, head,
   /// item, note, fw, cell, ab) and a speech's first child end with a line end
-  /// if they have none.
+  /// if they have none; a figure has one before and after it (it is set
+  /// apart: a line starts at it and after it); a `<formula>` is one word
+  /// (`units`), its TeX source kept in the text as written.
   struct TEIProjection {
     /// Where a text node starts, and whether the projection counts it: one it
     /// leaves out stands at the point where it would be.
@@ -97,10 +99,17 @@
     /// What starts a line (gnorium-python `LINE_STARTS`): a verse line and a
     /// block; the first child of an `<sp>` too.
     private static let lineStarts: Set<String> = ["l", "p", "head", "item", "note", "fw", "cell", "ab"]
+    /// What is set apart from the text around it (gnorium-python
+    /// `SET_APART`): a line starts at it and after it, so a figure's caption
+    /// keeps its own lines and the text after the whole figure starts a new one.
+    private static let setApart: Set<String> = ["figure"]
 
     private(set) var size = 0
     private(set) var sentences: [Sentence] = []
     private(set) var words: [Word] = []
+    /// Each `<formula>`'s span: one word as anchors count it (`units`), its
+    /// TeX source not printed words (gnorium-python `Projection.formulas`).
+    private(set) var formulas: [Range<Int>] = []
     /// Where each line after the first starts, in document order
     /// (`tei-line-word-v2`, gnorium-python `ANCHOR_VERSION`): after each
     /// `<lb/>` (`break="no"` too) and at the start of each verse line, block
@@ -140,6 +149,10 @@
       if text.unicodeScalars.contains(where: { !$0.properties.isWhitespace }) { read = true }
     }
 
+    private mutating func endLine() {
+      if endsLine == false { append("\n") }
+    }
+
     private mutating func startLine() {
       guard read else { return }
       breaks.append(size)
@@ -151,7 +164,10 @@
         leaveOut(element)
         return
       }
-      if Self.lineStarts.contains(element.name) || firstOfSpeech { startLine() }
+      if Self.setApart.contains(element.name) { endLine() }
+      if Self.lineStarts.contains(element.name) || Self.setApart.contains(element.name) || firstOfSpeech {
+        startLine()
+      }
       let language = element.attribute("xml:lang")
       if !language.isEmpty { languages.append(language) }
       defer { if !language.isEmpty { languages.removeLast() } }
@@ -194,6 +210,9 @@
       if element.name == "s", size > start {
         sentences.append(.init(range: start..<size, part: element.attribute("part")))
       }
+      if element.name == "formula", size > start {
+        formulas.append(start..<size)
+      }
       if element.name == "w" || element.name == "m", size > start {
         let word = Word(
           range: start..<size, part: element.attribute("part"), element: element.name,
@@ -207,9 +226,11 @@
       }
       // A line-starting element (and a speech's first child) ends its line,
       // so its last word never runs into the next line's first.
-      if Self.lineStarts.contains(element.name) || firstOfSpeech, endsLine == false {
-        append("\n")
+      if Self.lineStarts.contains(element.name) || Self.setApart.contains(element.name) || firstOfSpeech {
+        endLine()
       }
+      // What follows a figure starts a new line.
+      if Self.setApart.contains(element.name) { startLine() }
     }
 
     /// The line a point of the text is on: 1 + the line starts at or before it.
@@ -255,14 +276,28 @@
       return found
     }
 
-    /// The page's words as anchors count them, in order: its `<w>`s, and any
-    /// token of text no `<w>` covers. The parts of a word broken over lines
-    /// are one word; a page's leading continuation (`<w part="M|F">` before
-    /// any word of its own) is the previous page's word.
+    /// The page's words as anchors count them, in order: its `<w>`s, each
+    /// `<formula>` as one word whatever it holds (its surface its TeX source
+    /// as written), and any token of text neither covers. The parts of a
+    /// word broken over lines are one word; a page's leading continuation
+    /// (`<w part="M|F">` before any word of its own) is the previous page's
+    /// word.
     var units: [Unit] {
-      let covered = words.map(\.range)
+      func inFormula(_ range: Range<Int>) -> Bool {
+        formulas.contains { $0.lowerBound <= range.lowerBound && range.upperBound <= $0.upperBound }
+      }
+      let counted = words.filter { !inFormula($0.range) }
+      let whole = formulas.filter { formula in
+        !formulas.contains {
+          $0 != formula && $0.lowerBound <= formula.lowerBound && formula.upperBound <= $0.upperBound
+        }
+      }
+      let covered = counted.map(\.range) + formulas
       let loose = tokens.filter { token in !covered.contains { $0.overlaps(token) } }
-      let items = (words.map { ($0.range, Optional($0.part), Optional($0)) } + loose.map { ($0, String?.none, Word?.none) })
+      let items =
+        (counted.map { ($0.range, Optional($0.part), Optional($0)) }
+        + whole.map { ($0, String?.none, Optional(Word(range: $0, part: "", element: "formula"))) }
+        + loose.map { ($0, String?.none, Word?.none) })
         .sorted { $0.0.lowerBound < $1.0.lowerBound }
       var found: [Unit] = []
       var perLine: [Int: Int] = [:]
@@ -361,7 +396,8 @@
   public struct TEIWord: Sendable, Equatable {
     public let place: TEIWordPlace
     public let surface: String
-    /// "w", "m" (a form cited as a form), or "" for a token neither covers.
+    /// "w", "m" (a form cited as a form), "formula" (one word whatever its
+    /// TeX source holds), or "" for a token none of them covers.
     public let element: String
     public let lemma: String
     public let morphology: String
