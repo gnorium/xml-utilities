@@ -49,9 +49,9 @@ final class TEIUtteranceTests: XCTestCase {
   /// and punctuation between words are of none.
   func testARunSaysWhichWordItIsOf() {
     let markup = """
-      <p><w lemma="the" pos="DET" msd="Definite=Def|PronType=Art">The</w> \
-      <w lemma="computer" pos="NOUN" msd="Number=Plur">Compu-<lb break="no"/>tors</w><pc>,</pc> \
-      <w lemma="very" pos="ADV">v<supplied>e</supplied>ry</w></p>
+      <p><w lemma="the" type="article" msd="Definite=Def|PronType=Art">The</w> \
+      <w lemma="computer" type="noun" msd="Number=Plur">Compu-<lb break="no"/>tors</w><pc>,</pc> \
+      <w lemma="very" type="adverb">v<supplied>e</supplied>ry</w></p>
       """
     let lines = TEIRenderer.lines(in: markup, marksWords: true)
     let runs = lines.flatMap(\.runs)
@@ -64,17 +64,20 @@ final class TEIUtteranceTests: XCTestCase {
     XCTAssertNil(place(of: ","))
     let words = TEIRenderer.words(of: .init(label: "", facsimileURL: "", lines: [], markup: markup))
     XCTAssertEqual(words.map(\.surface), ["The", "Compu-tors", "vry"])
-    XCTAssertEqual(words[1].partOfSpeech, "NOUN")
+    XCTAssertEqual(words[1].type, "noun")
+    XCTAssertEqual(words[1].element, "w")
     XCTAssertEqual(words[1].morphology, "Number=Plur")
     XCTAssertEqual(words.map(\.language), ["", "", ""])
     XCTAssertFalse(words[1].isFragment)
     let mentioned = TEIRenderer.words(
       of: .init(
         label: "", facsimileURL: "", lines: [],
-        markup: #"<p xml:lang="eng">from <mentioned xml:lang="grc"><w lemma="με-" pos="X" type="prefix">με-</w></mentioned></p>"#))
-    XCTAssertEqual(mentioned.map(\.language), ["", "grc"], "a token no <w> covers says nothing")
-    XCTAssertEqual(mentioned.map(\.isFragment), [false, true])
-    XCTAssertEqual(mentioned.last?.type, "prefix")
+        markup: #"<p xml:lang="eng">from <mentioned xml:lang="grc"><m type="prefix" lemma="μετα-">με-</m></mentioned> <w lemma="measure" type="noun"><m type="root" lemma="meas">meas</m>ure</w></p>"#))
+    XCTAssertEqual(mentioned.map(\.surface), ["from", "με-", "measure"], "an <m> in a <w> is part of it")
+    XCTAssertEqual(mentioned.map(\.language), ["", "grc", "eng"], "a token no <w> covers says nothing")
+    XCTAssertEqual(mentioned.map(\.element), ["", "m", "w"])
+    XCTAssertEqual(mentioned.map(\.isFragment), [false, true, false])
+    XCTAssertEqual(mentioned.map(\.type), ["", "prefix", "noun"])
     // Read whole, no run is of a word.
     XCTAssertTrue(TEIRenderer.lines(in: markup).flatMap(\.runs).allSatisfy { $0.word == nil })
   }

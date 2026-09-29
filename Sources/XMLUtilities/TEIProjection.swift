@@ -47,21 +47,22 @@
       let part: String
     }
 
-    /// A `<w>`: its span, its `part` ("I", "M" or "F" for a word broken
-    /// over lines or pages; "" when whole), and what the transcription says
-    /// of it: its lemma, its part of speech and its morphology (`@lemma`,
-    /// `@pos`, `@msd`; "" when it says nothing).
+    /// A `<w>`, or a form cited as a form (an `<m>` outside any `<w>`): its
+    /// span, its `part` ("I", "M" or "F" for a word broken over lines or
+    /// pages; "" when whole), its element, and what the transcription says
+    /// of it: its lemma, its lexico type and its morphology (`@lemma`,
+    /// `@type`, `@msd`; "" when it says nothing).
     struct Word: Equatable {
       let range: Range<Int>
       let part: String
+      var element = "w"
       var lemma = ""
-      var pos = ""
       var msd = ""
       /// The language it is in, as the nearest `xml:lang` over it (its own
       /// included) names it; "" where none does.
       var language = ""
-      /// What kind of form it is where it is not a whole word (`@type`:
-      /// prefix, suffix, combining form, root, stem); "" otherwise.
+      /// Its lexico type (`@type`, a gnorium-shared PartOfSpeech raw value:
+      /// "noun", "preposition", "suffix"); "" where none is written.
       var type = ""
     }
 
@@ -75,10 +76,11 @@
       var ranges: [Range<Int>]
       var surface: String
       var runsOn: Bool
-      /// Its `<w>`'s lemma, part of speech, morphology and language, as its
-      /// first part carries them; "" for a token no `<w>` covers.
+      /// Its `<w>`'s (or cited form's `<m>`) element, lemma, type,
+      /// morphology and language, as its first part carries them; "" for a
+      /// token neither covers.
+      var element = ""
       var lemma = ""
-      var pos = ""
       var msd = ""
       var language = ""
       var type = ""
@@ -188,12 +190,16 @@
       if element.name == "s", size > start {
         sentences.append(.init(range: start..<size, part: element.attribute("part")))
       }
-      if element.name == "w", size > start {
-        words.append(
-          .init(
-            range: start..<size, part: element.attribute("part"), lemma: element.attribute("lemma"),
-            pos: element.attribute("pos"), msd: element.attribute("msd"), language: languages.last ?? "",
-            type: element.attribute("type")))
+      if element.name == "w" || element.name == "m", size > start {
+        let word = Word(
+          range: start..<size, part: element.attribute("part"), element: element.name,
+          lemma: element.attribute("lemma"), msd: element.attribute("msd"), language: languages.last ?? "",
+          type: element.attribute("type"))
+        if element.name == "w" {
+          // An <m> inside this <w> is part of it (gnorium-python `diplomatic_text`).
+          words.removeAll { $0.element == "m" && word.range.contains($0.range.lowerBound) }
+        }
+        words.append(word)
       }
       // A line-starting element (and a speech's first child) ends its line,
       // so its last word never runs into the next line's first.
@@ -272,7 +278,7 @@
         found.append(
           .init(
             line: line, number: perLine[line]!, ranges: [range], surface: text(range),
-            runsOn: part == "I" || part == "M", lemma: word?.lemma ?? "", pos: word?.pos ?? "",
+            runsOn: part == "I" || part == "M", element: word?.element ?? "", lemma: word?.lemma ?? "",
             msd: word?.msd ?? "", language: word?.language ?? "", type: word?.type ?? ""))
       }
       return found
@@ -343,28 +349,30 @@
   }
 
   /// A word of a page and what the transcription says of it: its place,
-  /// its surface as written on the page, and its `<w>`'s lemma, part of
-  /// speech (`@pos`, a Universal Dependencies tag) and morphology (`@msd`,
-  /// UD features); "" where the transcription says nothing (a token no
-  /// `<w>` covers says nothing).
+  /// its surface as written on the page, and its `<w>`'s (or a cited
+  /// form's `<m>`) lemma, lexico type (`@type`, a gnorium-shared
+  /// PartOfSpeech raw value; UD UPOS derives from it) and morphology
+  /// (`@msd`, UD features); "" where the transcription says nothing (a
+  /// token neither covers says nothing).
   public struct TEIWord: Sendable, Equatable {
     public let place: TEIWordPlace
     public let surface: String
+    /// "w", "m" (a form cited as a form), or "" for a token neither covers.
+    public let element: String
     public let lemma: String
-    public let partOfSpeech: String
     public let morphology: String
     /// Its language, as the nearest `xml:lang` over it names it (ISO 639-3,
     /// as recognition writes it); "" where none does.
     public let language: String
-    /// What kind of form it is where it is not a whole word (`@type`:
-    /// prefix, suffix, combining form, root, stem); "" otherwise.
+    /// Its lexico type (`@type`: "noun", "preposition", "suffix"); "" where
+    /// none is written.
     public let type: String
 
-    /// Whether it is not a whole word (user, 2026-09-29): tagged `X` (a
-    /// fragment, a root, a stem), typed as a form, or its lemma or surface
-    /// an affix ("με-", "-τρον").
+    /// Whether it is not a whole word (user, 2026-09-29): a form cited as a
+    /// form (`<m>`: an affix, a root, a stem), or its lemma or surface an
+    /// affix ("με-", "-τρον").
     public var isFragment: Bool {
-      partOfSpeech == "X" || !type.isEmpty || [lemma, surface].contains { $0.hasPrefix("-") || $0.hasSuffix("-") }
+      element == "m" || [lemma, surface].contains { $0.hasPrefix("-") || $0.hasSuffix("-") }
     }
   }
 
@@ -377,8 +385,8 @@
     public static func words(of page: TEIPage) -> [TEIWord] {
       TEIProjection.of(markup: page.markup).units.map {
         TEIWord(
-          place: .init(line: $0.line, word: $0.number), surface: $0.surface, lemma: $0.lemma,
-          partOfSpeech: $0.pos, morphology: $0.msd, language: $0.language, type: $0.type)
+          place: .init(line: $0.line, word: $0.number), surface: $0.surface, element: $0.element,
+          lemma: $0.lemma, morphology: $0.msd, language: $0.language, type: $0.type)
       }
     }
 
