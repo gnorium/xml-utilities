@@ -47,11 +47,22 @@
       let part: String
     }
 
-    /// A `<w>`: its span, and its `part` ("I", "M" or "F" for a word broken
-    /// over lines or pages; "" when whole).
+    /// A `<w>`: its span, its `part` ("I", "M" or "F" for a word broken
+    /// over lines or pages; "" when whole), and what the transcription says
+    /// of it: its lemma, its part of speech and its morphology (`@lemma`,
+    /// `@pos`, `@msd`; "" when it says nothing).
     struct Word: Equatable {
       let range: Range<Int>
       let part: String
+      var lemma = ""
+      var pos = ""
+      var msd = ""
+      /// The language it is in, as the nearest `xml:lang` over it (its own
+      /// included) names it; "" where none does.
+      var language = ""
+      /// What kind of form it is where it is not a whole word (`@type`:
+      /// prefix, suffix, combining form, root, stem); "" otherwise.
+      var type = ""
     }
 
     /// A word as an anchor counts it (gnorium-python `concordance/text.py`
@@ -64,6 +75,13 @@
       var ranges: [Range<Int>]
       var surface: String
       var runsOn: Bool
+      /// Its `<w>`'s lemma, part of speech, morphology and language, as its
+      /// first part carries them; "" for a token no `<w>` covers.
+      var lemma = ""
+      var pos = ""
+      var msd = ""
+      var language = ""
+      var type = ""
       var range: Range<Int> { ranges[0].lowerBound..<ranges[ranges.count - 1].upperBound }
     }
 
@@ -85,6 +103,8 @@
     private(set) var breaks: [Int] = []
     /// Whether text has been read since the last line start.
     private var read = false
+    /// The `xml:lang` of each element being visited that names one.
+    private var languages: [String] = []
     /// The text, scalar by scalar.
     private(set) var scalars: [Unicode.Scalar] = []
     /// Whether what was last added ends a line; nil before anything is.
@@ -126,6 +146,9 @@
         return
       }
       if Self.lineStarts.contains(element.name) || firstOfSpeech { startLine() }
+      let language = element.attribute("xml:lang")
+      if !language.isEmpty { languages.append(language) }
+      defer { if !language.isEmpty { languages.removeLast() } }
       let start = size
       element.projectedStart = start
       switch element.name {
@@ -166,7 +189,11 @@
         sentences.append(.init(range: start..<size, part: element.attribute("part")))
       }
       if element.name == "w", size > start {
-        words.append(.init(range: start..<size, part: element.attribute("part")))
+        words.append(
+          .init(
+            range: start..<size, part: element.attribute("part"), lemma: element.attribute("lemma"),
+            pos: element.attribute("pos"), msd: element.attribute("msd"), language: languages.last ?? "",
+            type: element.attribute("type")))
       }
       // A line-starting element (and a speech's first child) ends its line,
       // so its last word never runs into the next line's first.
@@ -225,11 +252,11 @@
     var units: [Unit] {
       let covered = words.map(\.range)
       let loose = tokens.filter { token in !covered.contains { $0.overlaps(token) } }
-      let items = (words.map { ($0.range, Optional($0.part)) } + loose.map { ($0, String?.none) })
+      let items = (words.map { ($0.range, Optional($0.part), Optional($0)) } + loose.map { ($0, String?.none, Word?.none) })
         .sorted { $0.0.lowerBound < $1.0.lowerBound }
       var found: [Unit] = []
       var perLine: [Int: Int] = [:]
-      for (range, part) in items {
+      for (range, part, word) in items {
         if let part, part == "M" || part == "F" {
           if var last = found.last, last.runsOn {
             last.ranges.append(range)
@@ -245,7 +272,8 @@
         found.append(
           .init(
             line: line, number: perLine[line]!, ranges: [range], surface: text(range),
-            runsOn: part == "I" || part == "M"))
+            runsOn: part == "I" || part == "M", lemma: word?.lemma ?? "", pos: word?.pos ?? "",
+            msd: word?.msd ?? "", language: word?.language ?? "", type: word?.type ?? ""))
       }
       return found
     }
@@ -301,15 +329,56 @@
     }
   }
 
+  /// Where a word stands on its page, as an utterance's anchor counts it
+  /// (`tei-line-word-v2`): its line and its place among the words starting
+  /// on that line. What a reader's word is found by.
+  public struct TEIWordPlace: Sendable, Hashable {
+    public let line: Int
+    public let word: Int
+
+    public init(line: Int, word: Int) {
+      self.line = line
+      self.word = word
+    }
+  }
+
+  /// A word of a page and what the transcription says of it: its place,
+  /// its surface as written on the page, and its `<w>`'s lemma, part of
+  /// speech (`@pos`, a Universal Dependencies tag) and morphology (`@msd`,
+  /// UD features); "" where the transcription says nothing (a token no
+  /// `<w>` covers says nothing).
+  public struct TEIWord: Sendable, Equatable {
+    public let place: TEIWordPlace
+    public let surface: String
+    public let lemma: String
+    public let partOfSpeech: String
+    public let morphology: String
+    /// Its language, as the nearest `xml:lang` over it names it (ISO 639-3,
+    /// as recognition writes it); "" where none does.
+    public let language: String
+    /// What kind of form it is where it is not a whole word (`@type`:
+    /// prefix, suffix, combining form, root, stem); "" otherwise.
+    public let type: String
+
+    /// Whether it is not a whole word (user, 2026-09-29): tagged `X` (a
+    /// fragment, a root, a stem), typed as a form, or its lemma or surface
+    /// an affix ("με-", "-τρον").
+    public var isFragment: Bool {
+      partOfSpeech == "X" || !type.isEmpty || [lemma, surface].contains { $0.hasPrefix("-") || $0.hasSuffix("-") }
+    }
+  }
+
   extension TEIRenderer {
     /// A page's words as an utterance's anchor counts them
-    /// (`tei-line-word-v2`), in reading order: each its line, its place among
-    /// the words starting on that line, and its surface as written on this
-    /// page. A word broken over the page break is its part on this page; the
-    /// part a page begins with belongs to the previous page's word.
-    public static func words(of page: TEIPage) -> [TEIWordPosition] {
+    /// (`tei-line-word-v2`), in reading order: each its place, its surface
+    /// as written on this page and what its `<w>` says of it. A word broken
+    /// over the page break is its part on this page; the part a page begins
+    /// with belongs to the previous page's word.
+    public static func words(of page: TEIPage) -> [TEIWord] {
       TEIProjection.of(markup: page.markup).units.map {
-        TEIWordPosition(line: $0.line, word: $0.number, surface: $0.surface)
+        TEIWord(
+          place: .init(line: $0.line, word: $0.number), surface: $0.surface, lemma: $0.lemma,
+          partOfSpeech: $0.pos, morphology: $0.msd, language: $0.language, type: $0.type)
       }
     }
 

@@ -116,16 +116,21 @@
       /// The highlight it falls in, when the reading has one: an utterance's
       /// sentence, or its word (`TEIRenderer.utterance`).
       public let highlight: TEIHighlight.Kind?
+      /// The word it is of, where the page is read word by word
+      /// (`marksWords`): its place as an anchor counts it. Nil for what
+      /// stands between words, and for every run of a page read whole.
+      public let word: TEIWordPlace?
 
       public init(
         text: String, rend: String = "", kind: Kind = .text, alternative: String = "",
-        highlight: TEIHighlight.Kind? = nil
+        highlight: TEIHighlight.Kind? = nil, word: TEIWordPlace? = nil
       ) {
         self.text = text
         self.rend = rend
         self.kind = kind
         self.alternative = alternative
         self.highlight = highlight
+        self.word = word
       }
     }
 
@@ -174,7 +179,10 @@
     /// the leaf, carrying only a label. Counting both made a 64-image quarto
     /// read as 162 pages. A page here is an image; the side marks are lines
     /// within it, where they belong.
-    public static func pages(in xml: String, highlights: [String: [TEIHighlight]] = [:]) -> [TEIPage] {
+    /// With `marksWords`, each run says which word it is of (`Run.word`).
+    public static func pages(
+      in xml: String, highlights: [String: [TEIHighlight]] = [:], marksWords: Bool = false
+    ) -> [TEIPage] {
       guard let body = XMLFormatter.body(of: xml) else { return [] }
       let breaks = pageBreaks(in: body)
       return breaks.enumerated().map { index, open in
@@ -183,7 +191,9 @@
         return TEIPage(
           label: open.label,
           facsimileURL: open.facsimileURL,
-          lines: lines(in: markup, highlights: highlights[serviceID(ofFacsimile: open.facsimileURL)] ?? []),
+          lines: lines(
+            in: markup, highlights: highlights[serviceID(ofFacsimile: open.facsimileURL)] ?? [],
+            marksWords: marksWords),
           markup: markup.trimmingCharacters(in: .whitespacesAndNewlines)
         )
       }
@@ -208,12 +218,45 @@
 
     /// One page's markup as the lines a reader sees; with `highlights`
     /// (counted in the page's projection, `TEIProjection`), each run says
-    /// which it falls in.
-    public static func lines(in markup: String, highlights: [TEIHighlight] = []) -> [TEILine] {
-      guard !highlights.isEmpty else { return reading(from: TEIMarkup.document(markup)) }
+    /// which it falls in; with `marksWords`, which word it is of, as an
+    /// anchor counts the page's words (`words(of:)`).
+    public static func lines(in markup: String, highlights: [TEIHighlight] = [], marksWords: Bool = false)
+      -> [TEILine]
+    {
+      guard !highlights.isEmpty || marksWords else { return reading(from: TEIMarkup.document(markup)) }
       let root = TEIMarkup.document(TEIProjection.normalized(markup))
-      _ = TEIProjection(root)
-      return reading(from: root, highlights: highlights)
+      let projection = TEIProjection(root)
+      return reading(from: root, highlights: highlights, words: marksWords ? Words(projection.units) : nil)
+    }
+
+    /// A page's words by where they are in its projection: which word a
+    /// point of the text is of.
+    struct Words {
+      let places: [TEIWordPlace]
+      /// Each word's parts, by the word's index in `places`.
+      let ranges: [[Range<Int>]]
+
+      init(_ units: [TEIProjection.Unit]) {
+        places = units.map { .init(line: $0.line, word: $0.number) }
+        ranges = units.map(\.ranges)
+      }
+
+      /// The word a counted point is of.
+      func at(_ offset: Int) -> TEIWordPlace? {
+        guard let index = ranges.firstIndex(where: { $0.contains { $0.contains(offset) } }) else { return nil }
+        return places[index]
+      }
+
+      /// The word a text the projection leaves out stands inside (what an
+      /// editor supplies in a word), not one it only borders.
+      func inside(_ offset: Int) -> TEIWordPlace? {
+        guard
+          let index = ranges.firstIndex(where: { parts in
+            parts.contains { $0.lowerBound < offset && offset < $0.upperBound }
+          })
+        else { return nil }
+        return places[index]
+      }
     }
 
     /// The highlight a point of the projection falls in, the word's before
@@ -223,36 +266,46 @@
       return holding.contains { $0.kind == .headword } ? .headword : holding.first?.kind
     }
 
-    /// A text node cut where a highlight begins or ends. A text the
-    /// projection leaves out (what an editor supplies) takes the highlight
-    /// it stands inside, not one it only borders.
+    /// A text node cut where a highlight or a word begins or ends. A text
+    /// the projection leaves out (what an editor supplies) takes the
+    /// highlight and the word it stands inside, not one it only borders.
     private static func pieces(
-      of text: String, at position: TEIProjection.Position?, in highlights: [TEIHighlight]
-    ) -> [(text: String, highlight: TEIHighlight.Kind?)] {
-      guard let position, !highlights.isEmpty else { return [(text, nil)] }
+      of text: String, at position: TEIProjection.Position?, in highlights: [TEIHighlight], words: Words? = nil
+    ) -> [(text: String, highlight: TEIHighlight.Kind?, word: TEIWordPlace?)] {
+      guard let position, !highlights.isEmpty || words != nil else { return [(text, nil, nil)] }
       guard position.counted else {
         let inside = highlights.filter {
           $0.range.lowerBound < position.start && position.start < $0.range.upperBound
         }
-        return [(text, inside.contains { $0.kind == .headword } ? .headword : inside.first?.kind)]
+        return [
+          (
+            text, inside.contains { $0.kind == .headword } ? .headword : inside.first?.kind,
+            words?.inside(position.start)
+          )
+        ]
       }
-      var pieces: [(text: String, highlight: TEIHighlight.Kind?)] = []
+      var pieces: [(text: String, highlight: TEIHighlight.Kind?, word: TEIWordPlace?)] = []
       var current = String.UnicodeScalarView()
       var currentKind: TEIHighlight.Kind?
+      var currentWord: TEIWordPlace?
       for (offset, scalar) in text.unicodeScalars.enumerated() {
         let kind = highlight(at: position.start + offset, in: highlights)
-        if kind != currentKind, !current.isEmpty {
-          pieces.append((String(current), currentKind))
+        let word = words?.at(position.start + offset)
+        if kind != currentKind || word != currentWord, !current.isEmpty {
+          pieces.append((String(current), currentKind, currentWord))
           current = String.UnicodeScalarView()
         }
         currentKind = kind
+        currentWord = word
         current.append(scalar)
       }
-      if !current.isEmpty { pieces.append((String(current), currentKind)) }
+      if !current.isEmpty { pieces.append((String(current), currentKind, currentWord)) }
       return pieces
     }
 
-    private static func reading(from owner: TEIMarkup.Element, highlights: [TEIHighlight] = []) -> [TEILine] {
+    private static func reading(
+      from owner: TEIMarkup.Element, highlights: [TEIHighlight] = [], words: Words? = nil
+    ) -> [TEILine] {
       var lines: [TEILine] = []
       var runs: [TEILine.Run] = []
       var currentKind: TEILine.Kind = .text
@@ -301,14 +354,17 @@
             currentRend = rend
             if !text.isEmpty {
               if alternative.isEmpty {
-                for piece in pieces(of: text, at: owner.projected[index], in: highlights) {
-                  runs.append(.init(text: piece.text, rend: inlineRend, highlight: piece.highlight))
+                for piece in pieces(of: text, at: owner.projected[index], in: highlights, words: words) {
+                  runs.append(.init(text: piece.text, rend: inlineRend, highlight: piece.highlight, word: piece.word))
                 }
               } else {
                 // A run with an alternative stays whole: it is read on hover
                 // as one.
-                let first = pieces(of: text, at: owner.projected[index], in: highlights).first?.highlight
-                runs.append(.init(text: text, rend: inlineRend, alternative: alternative, highlight: first))
+                let first = pieces(of: text, at: owner.projected[index], in: highlights, words: words).first
+                runs.append(
+                  .init(
+                    text: text, rend: inlineRend, alternative: alternative, highlight: first?.highlight,
+                    word: first?.word))
               }
             }
           case .element(let element):
@@ -351,11 +407,12 @@
               currentKind = kind
               currentRend = rend
               let bracket = pieces(
-                of: "[", at: element.projectedStart.map { .init(start: $0, counted: false) }, in: highlights
-              ).first?.highlight
-              runs.append(.init(text: "[", rend: joined("supplied"), highlight: bracket))
+                of: "[", at: element.projectedStart.map { .init(start: $0, counted: false) }, in: highlights,
+                words: words
+              ).first
+              runs.append(.init(text: "[", rend: joined("supplied"), highlight: bracket?.highlight, word: bracket?.word))
               walk(element, kind: kind, rend: rend, inlineRend: joined("supplied"))
-              runs.append(.init(text: "]", rend: joined("supplied"), highlight: bracket))
+              runs.append(.init(text: "]", rend: joined("supplied"), highlight: bracket?.highlight, word: bracket?.word))
             case "del", "add":
               // The makers' own deletions and additions, read in place.
               walk(
@@ -407,13 +464,13 @@
               flush()
               let children = element.elements
               let caption = children.filter { $0.name == "head" }.flatMap {
-                reading(from: $0, highlights: highlights)
+                reading(from: $0, highlights: highlights, words: words)
               }
               let rows = children.filter { $0.name == "row" }.map { row in
                 TEITable.Row(
                   cells: row.elements.filter { $0.name == "cell" }.map { cell in
                     TEITable.Cell(
-                      lines: reading(from: cell, highlights: highlights),
+                      lines: reading(from: cell, highlights: highlights, words: words),
                       isLabel: row.attribute("role") == "label"
                         || cell.attribute("role") == "label",
                       rows: max(1, Int(cell.attribute("rows")) ?? 1),

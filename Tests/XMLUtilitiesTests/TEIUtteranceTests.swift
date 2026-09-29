@@ -35,9 +35,48 @@ final class TEIUtteranceTests: XCTestCase {
     let pages = TEIRenderer.pages(in: document)
     let second = TEIRenderer.words(of: pages[1])
     XCTAssertEqual(second.map(\.surface), ["First", "sentence", "here", "A", "split", "word"])
-    XCTAssertEqual(second.map(\.line), [1, 1, 2, 2, 2, 2])
-    XCTAssertEqual(second.map(\.word), [1, 2, 1, 2, 3, 4])
+    XCTAssertEqual(second.map(\.place.line), [1, 1, 2, 2, 2, 2])
+    XCTAssertEqual(second.map(\.place.word), [1, 2, 1, 2, 3, 4])
     XCTAssertEqual(TEIRenderer.words(of: pages[2]).first?.surface, "goes")
+    // What its <w> says of it; nothing of a token no <w> covers.
+    XCTAssertEqual(second.last?.lemma, "word")
+    XCTAssertEqual(second.first?.lemma, "")
+  }
+
+  /// Read word by word, each run says which word it is of, as an anchor
+  /// counts the page: a word broken over a line is one word on both lines,
+  /// what an editor supplies inside a word is of that word, and the space
+  /// and punctuation between words are of none.
+  func testARunSaysWhichWordItIsOf() {
+    let markup = """
+      <p><w lemma="the" pos="DET" msd="Definite=Def|PronType=Art">The</w> \
+      <w lemma="computer" pos="NOUN" msd="Number=Plur">Compu-<lb break="no"/>tors</w><pc>,</pc> \
+      <w lemma="very" pos="ADV">v<supplied>e</supplied>ry</w></p>
+      """
+    let lines = TEIRenderer.lines(in: markup, marksWords: true)
+    let runs = lines.flatMap(\.runs)
+    func place(of text: String) -> TEIWordPlace? { runs.first { $0.text == text }?.word }
+    XCTAssertEqual(place(of: "The"), .init(line: 1, word: 1))
+    XCTAssertEqual(place(of: "Compu-"), .init(line: 1, word: 2))
+    XCTAssertEqual(place(of: "tors"), .init(line: 1, word: 2))
+    XCTAssertEqual(place(of: "e"), .init(line: 2, word: 1))
+    XCTAssertEqual(place(of: "ry"), .init(line: 2, word: 1))
+    XCTAssertNil(place(of: ","))
+    let words = TEIRenderer.words(of: .init(label: "", facsimileURL: "", lines: [], markup: markup))
+    XCTAssertEqual(words.map(\.surface), ["The", "Compu-tors", "vry"])
+    XCTAssertEqual(words[1].partOfSpeech, "NOUN")
+    XCTAssertEqual(words[1].morphology, "Number=Plur")
+    XCTAssertEqual(words.map(\.language), ["", "", ""])
+    XCTAssertFalse(words[1].isFragment)
+    let mentioned = TEIRenderer.words(
+      of: .init(
+        label: "", facsimileURL: "", lines: [],
+        markup: #"<p xml:lang="eng">from <mentioned xml:lang="grc"><w lemma="με-" pos="X" type="prefix">με-</w></mentioned></p>"#))
+    XCTAssertEqual(mentioned.map(\.language), ["", "grc"], "a token no <w> covers says nothing")
+    XCTAssertEqual(mentioned.map(\.isFragment), [false, true])
+    XCTAssertEqual(mentioned.last?.type, "prefix")
+    // Read whole, no run is of a word.
+    XCTAssertTrue(TEIRenderer.lines(in: markup).flatMap(\.runs).allSatisfy { $0.word == nil })
   }
 
   func testASplitSentenceIsHighlightedOnBothPagesAndItsWordMoreStrongly() throws {
