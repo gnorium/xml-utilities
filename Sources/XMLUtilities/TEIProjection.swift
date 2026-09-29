@@ -22,13 +22,14 @@
     }
   }
 
-  /// A page's text as the concordance counts it (`diplomatic-codepoints-v3`,
+  /// A page's text as the concordance counts it (`diplomatic-codepoints-v4`,
   /// gnorium-python `concordance/text.py` `diplomatic_text`), so that an
   /// utterance's anchor, which counts in it, can be found in the page's
   /// markup: Unicode scalars, not normalized; a `<choice>` reads its orig,
   /// sic or abbr (else its first child); what an editor adds beside the
-  /// surface (supplied, reg, expan, corr, ex) and the header, facsimile and
-  /// standoff are left out; `<lb/>` and `<pb/>` are a line end unless
+  /// surface (supplied, reg, expan, corr, ex), the encoder's descriptions
+  /// (figDesc, desc: gnorium-python `DESCRIPTIONS`) and the header, facsimile
+  /// and standoff are left out; `<lb/>` and `<pb/>` are a line end unless
   /// `break="no"`; a gap is one U+FFFC; a line-starting element (l, p, head,
   /// item, note, fw, cell, ab) and a speech's first child end with a line end
   /// if they have none.
@@ -89,6 +90,9 @@
 
     private static let excluded: Set<String> = [
       "teiHeader", "facsimile", "standOff", "supplied", "reg", "expan", "corr", "ex",
+      // What the encoder writes about the page, never on it: a figure's
+      // description, a sound's or an event's. Never a word of an anchor.
+      "figDesc", "desc",
     ]
     /// What starts a line (gnorium-python `LINE_STARTS`): a verse line and a
     /// block; the first child of an `<sp>` too.

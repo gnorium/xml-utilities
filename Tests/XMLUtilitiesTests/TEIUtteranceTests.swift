@@ -181,6 +181,23 @@ final class TEIUtteranceTests: XCTestCase {
     let rosae = TEIWordPosition(line: 1, word: 2, surface: "rosæ")
     XCTAssertNotNil(TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/t2", start: won, end: rosae))
   }
+  /// A figure's `<figDesc>` and an incident's `<desc>` are the encoder's
+  /// words about the page, never a word of it: the same page as
+  /// gnorium-python `test_the_encoders_descriptions_are_not_words`.
+  func testTheEncodersDescriptionsAreNotWords() {
+    let page = """
+      <TEI><text><body><pb n="1" facs="https://example.org/iiif/f0/full/1300,/0/default.jpg"/>\
+      <p>A woodcut <figure bbox="1 2 3 4"><head>Fig. 1</head>\
+      <figDesc>Bones of a right hand</figDesc></figure> of the hand<lb/>\
+      and <incident><desc>a cough</desc></incident>more</p>\
+      </body></text></TEI>
+      """
+    let words = TEIRenderer.words(of: TEIRenderer.pages(in: page)[0])
+    XCTAssertEqual(words.map(\.surface), ["A", "woodcut", "Fig", "of", "the", "hand", "and", "more"])
+    XCTAssertEqual(words.map(\.place.line), [1, 1, 2, 2, 2, 2, 3, 3])
+    XCTAssertEqual(words.map(\.place.word), [1, 2, 1, 2, 3, 4, 1, 2])
+  }
+
   /// A line starts after each `<lb/>` and at each verse line, block and a
   /// speech's first child, once text was read since the last start; the same
   /// page as gnorium-python `test_verse_lines_and_blocks_start_lines_without_line_breaks`.
