@@ -24,13 +24,13 @@
   }
 
   /// A line or structured block of a transcription, carrying what the markup said it was. Line
-  /// breaks are kept because they are evidence — a diplomatic transcript says
+  /// breaks are kept because they are evidence—a diplomatic transcript says
   /// where the compositor broke the line.
   public struct TEILine: Sendable {
     /// `mark` is a page turn inside the image: a source that photographs
     /// openings puts two sides of the book on one facsimile. `forme` is the
-    /// work's own apparatus — running head, catchword, signature, printed page
-    /// number — which the page carries but the text does not.
+    /// work's own apparatus—running head, catchword, signature, printed page
+    /// number—which the page carries but the text does not.
     public enum Kind: Sendable {
       case text, heading, speaker, stage, mark
       /// Forme work, by the job it does on the page. A catchword sits at the
@@ -51,7 +51,7 @@
       /// `Run.zone`).
       ///
       /// A figure is not a line of the text. Its `<figDesc>` describes the
-      /// object — "gold-tooled dark leather binding" — and setting that in the
+      /// object—"gold-tooled dark leather binding"—and setting that in the
       /// reading says the cover bears those words, which it does not.
       case figure(type: String, zone: TEIZone?)
       /// Rows and cells must survive parsing; their order alone cannot recover
@@ -83,19 +83,19 @@
     /// How the type was set, when the transcription says: TEI's `rend`.
     ///
     /// A diplomatic transcription records what is on the surface, and how the
-    /// compositor set it is part of that — a centered block on a title page is
+    /// compositor set it is part of that—a centered block on a title page is
     /// how an imprint statement or an epigraph is marked, and a reading that
     /// ranges it left has quietly dropped evidence.
     public let rend: String
     /// The line's runs, each with the setting the transcription gave it.
     ///
-    /// `<hi rend="…">` is inline — small caps in an author statement, an
-    /// italic speaker prefix — so it cannot be a property of the whole line.
+    /// `<hi rend="…">` is inline—small caps in an author statement, an
+    /// italic speaker prefix—so it cannot be a property of the whole line.
     /// The renderer used to drop `<hi>` and keep its text, which turned
     /// "By WILLIAM SHAKESPEARE" and every italicised speaker into plain prose.
     public let runs: [Run]
-    /// Whether the line opens a block — a paragraph, a verse line, a heading,
-    /// anything set apart — rather than following an `<lb/>` inside one. A
+    /// Whether the line opens a block—a paragraph, a verse line, a heading,
+    /// anything set apart—rather than following an `<lb/>` inside one. A
     /// line break and a paragraph break are different evidence, and a diff
     /// that turned one into the other has changed the page.
     public let opensBlock: Bool
@@ -271,8 +271,8 @@
     public let rows: [Row]
   }
 
-  /// Reads a TEI document as a document — pages, and the lines on them —
-  /// rather than as a tree.
+  /// Reads a TEI document as a document—pages, and the lines on them—rather
+  /// than as a tree.
   ///
   /// The counterpart of `MarkdownRenderer`: where that one turns a source
   /// format into HTML, this one turns it into the pages a view draws, because
@@ -704,7 +704,7 @@
     /// pass reads: a whole quarto page scaled to 1300 pixels puts a line of
     /// type at about fifteen pixels tall, and the last letters of a word are
     /// two or three of them. That is where "Ophelia." comes back as "Ophel."
-    /// and "ſleepe" as "ſleep" — the model is not misreading, it cannot see
+    /// and "ſleepe" as "ſleep"—the model is not misreading, it cannot see
     /// them. Reading one page is cheap enough to do at native size.
     public static func fullResolutionURL(ofFacsimile url: String) -> String {
       let service = serviceID(ofFacsimile: url)
@@ -715,7 +715,7 @@
     /// The region of a facsimile a zone names, as a IIIF Image API request.
     ///
     /// A zone is in its surface's coordinates, and IIIF takes a region as a
-    /// percentage of the full image — so the two meet as a fraction of the
+    /// percentage of the full image—so the two meet as a fraction of the
     /// surface (`TEIZone.percent`; the recognition's 0–1000 surface divides
     /// by ten), and nothing needs to know how many pixels wide the scan is.
     /// That matters: the pixel dimensions live in the manifest, which only
@@ -728,7 +728,7 @@
       guard !service.isEmpty else { return nil }
       // Best fit inside a square, not a fixed width. A spine ornament is a
       // narrow slice of a very tall scan, and asking for 600 wide returned it
-      // 1500 high — a thumbnail taller than the column it sits in.
+      // 1500 high—a thumbnail taller than the column it sits in.
       return "\(service)/\(region(zone))/!\(fitting),\(fitting)/0/default.jpg"
     }
 

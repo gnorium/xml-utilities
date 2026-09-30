@@ -3,7 +3,7 @@ import XMLUtilities
 
 /// A translation as a TEI parallel text: the source's skeleton, every
 /// element pointing back at its source with `@corresp`, only the text
-/// replaced — and a translation that loses a placeholder refused.
+/// replaced—and a translation that loses a placeholder refused.
 final class TEIParallelTests: XCTestCase {
   let source = """
     <TEI xmlns="http://www.tei-c.org/ns/1.0"><text><body><div type="book">\

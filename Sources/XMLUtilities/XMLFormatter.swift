@@ -47,7 +47,7 @@
       return String(tag[key.upperBound..<end.lowerBound])
     }
 
-    /// The five XML entities. Everything else is left as it stands — a long s
+    /// The five XML entities. Everything else is left as it stands—a long s
     /// is a long s, not an escape.
     public static func decodingEntities(_ text: String) -> String {
       text

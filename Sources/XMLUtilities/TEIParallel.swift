@@ -2,15 +2,15 @@
   import Foundation
 
   /// A transcript and its translation as TEI parallel texts: the translation
-  /// is a TEI document of its own whose body is the source body's skeleton —
-  /// every element, attribute and page break, in order — with only its text
+  /// is a TEI document of its own whose body is the source body's skeleton—every
+  /// element, attribute and page break, in order—with only its text
   /// replaced, and every element pointing back at the one it clones with
   /// `@corresp`. The source is never touched.
   ///
   /// A page is read as segments: its text-bearing blocks (a heading, a
   /// paragraph, a verse line, a cell), each as plain text in which every
-  /// element inside the block — a line break, a highlight, an abbreviation, a
-  /// formula kept as it is, a nested block — stands as a numbered
+  /// element inside the block—a line break, a highlight, an abbreviation, a
+  /// formula kept as it is, a nested block—stands as a numbered
   /// placeholder, `⟦1⟧`, `⟦2⟧`… A translation of a segment must keep its
   /// placeholders, all of them, in order; its text between them goes back
   /// into the clone where the source's text was. Text is never re-set as
@@ -19,11 +19,11 @@
   /// What is carried depends on the kind of document (`Profile`): a
   /// transcript carries every text-bearing block; a dictionary entry carries
   /// its definitions and the notes and etymology written in English, and
-  /// keeps everything else as it is — its forms, its title, its quotations
+  /// keeps everything else as it is—its forms, its title, its quotations
   /// and their sources, its labels, its dates and references.
   ///
-  /// `@corresp` names the source element by its `xml:id`, or — one without —
-  /// as `#{page}.e{n}`, the n-th element of its page counting the page break,
+  /// `@corresp` names the source element by its `xml:id`, or—one without—as
+  /// `#{page}.e{n}`, the n-th element of its page counting the page break,
   /// the page named by its image (`#e{n}` before the first page). A pointer
   /// scoped to its page stays put when another page's text changes.
   public struct TEIParallel: Sendable {
@@ -83,8 +83,8 @@
     }
 
     /// One page: its facsimile and label, as `TEIRenderer` pages the
-    /// document, and its segments. A document with no page breaks — a
-    /// dictionary entry — is one page, without one.
+    /// document, and its segments. A document with no page breaks—a
+    /// dictionary entry—is one page, without one.
     public struct Page: Sendable {
       public let facsimileURL: String
       public let segments: [Segment]
@@ -115,7 +115,7 @@
     }
 
     /// One item of a segment's flow: a text token, or what stands as a
-    /// placeholder — a tag, or a span of tokens kept as they are.
+    /// placeholder—a tag, or a span of tokens kept as they are.
     enum Item: Sendable {
       case text(Int)
       case placeholder(Range<Int>)
@@ -264,8 +264,8 @@
           index += 1
         case .other, .empty, .close:
           // A closing tag closes the block it names, when it is open on this
-          // page; otherwise — an element opened on the page before, or an
-          // inline one — it stands in the flow.
+          // page; otherwise—an element opened on the page before, or an
+          // inline one—it stands in the flow.
           // The block's closing tag stands in its parent's flow.
           if case .close(let name) = token.kind, let open = stack.lastIndex(where: { $0.name == name }) {
             stack.removeSubrange(open...)
@@ -404,8 +404,8 @@
         .replacingOccurrences(of: ">", with: "&gt;")
     }
 
-    /// One page of the translation — its page break and everything to the
-    /// next — cloned from the source's, its segments' text replaced by
+    /// One page of the translation—its page break and everything to the
+    /// next—cloned from the source's, its segments' text replaced by
     /// `texts`. The texts must keep the structure (`violations(of:for:)`).
     public func translatedPage(_ pageIndex: Int, texts: [String: String]) throws -> String {
       let page = pages[pageIndex]
@@ -476,8 +476,8 @@
       return out
     }
 
-    /// One page of this document as it stands — its page break and
-    /// everything to the next — for a translation to keep a page it does not
+    /// One page of this document as it stands—its page break and
+    /// everything to the next—for a translation to keep a page it does not
     /// translate again.
     public func rawPage(_ pageIndex: Int) -> String {
       let page = pages[pageIndex]
@@ -511,8 +511,8 @@
     }
 
     /// The translation as a TEI document of its own: a header saying what it
-    /// is in, who made it and from what, and a body that clones the source's
-    /// — what stands before the first page, then every page, in order, each
+    /// is in, who made it and from what, and a body that clones the source's—what
+    /// stands before the first page, then every page, in order, each
     /// page's text the one given.
     public func document(pages translated: [String], title: String, responsibility: Responsibility) -> String {
       let names = Self.escaped

@@ -11,7 +11,7 @@
   ///
   /// So: a line-wise three-way merge, the one a version control system does.
   /// Where only one side changed a line, that side wins. Where both changed the
-  /// same line to different text, nothing is guessed — the merge fails and a
+  /// same line to different text, nothing is guessed—the merge fails and a
   /// person decides, because a merge of two transcriptions is a third
   /// transcription that nobody made and nobody reviewed.
   public enum ThreeWayMerge {

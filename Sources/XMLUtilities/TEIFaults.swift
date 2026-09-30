@@ -16,10 +16,10 @@
       /// A surface whose whole reading is one word standing in for absence.
       ///
       /// The prompt once asked for `<p>blank</p>`, so documents carry it; but
-      /// the fault is general — a transcription that says a page is empty is
+      /// the fault is general—a transcription that says a page is empty is
       /// not a transcription of that page, whatever word it uses.
       case literalBlank
-      /// Prose about a surface — its binding, its tooling — in place of a
+      /// Prose about a surface—its binding, its tooling—in place of a
       /// transcription of what is written on it.
       case description
       /// An element opened and not closed, or closed and not opened.
@@ -60,7 +60,7 @@
           return
             "This is a paragraph about the surface rather than a transcription of it. Transcribe "
             + "what is written on it; keep decoration as <figure> with its bbox and a <figDesc> "
-            + "naming what it is in one plain sentence — do not shorten a description that is "
+            + "naming what it is in one plain sentence—do not shorten a description that is "
             + "already factual, and do not replace <figDesc> with <desc>; a surface bearing no "
             + "text carries <gap reason=\"blank\"/>."
         case .unbalanced:
@@ -87,7 +87,7 @@
     /// How much transcribed text a page carries, in characters.
     ///
     /// A change replaces a whole page, so it can take readings away as easily
-    /// as it can mend them — a model that loses its place returns a shorter
+    /// as it can mend them—a model that loses its place returns a shorter
     /// page and says nothing about it. Comparing this before and against after
     /// is how a reader is told, before they accept, that a correction of a
     /// label also dropped four lines of verse.
@@ -112,8 +112,8 @@
       let markup = page.markup
       let sides = sideLabels(in: markup)
 
-      // The semblance's label is the authority on what its sides are called —
-      // whatever the manifest that produced it happens to call them. No rule
+      // The semblance's label is the authority on what its sides are called—whatever
+      // the manifest that produced it happens to call them. No rule
       // here knows "recto" from "verso", or expects a Western signature: a side
       // is wrong when it is named something this semblance is not called.
       let named = namedSides(of: page.label)
@@ -170,8 +170,8 @@
 
     /// The sides a semblance's own label names.
     ///
-    /// A label for more than one surface joins them with a dash or a slash —
-    /// "A1 verso – A2 recto", "12/13", "表/裏". A label that joins nothing names
+    /// A label for more than one surface joins them with a dash or a slash—"A1
+    /// verso – A2 recto", "12/13", "表/裏". A label that joins nothing names
     /// one surface, and that surface is the semblance itself.
     public static func namedSides(of label: String) -> [String] {
       let separators: [String] = [" – ", " — ", " - ", "–", "—", " / ", "/", "|"]
@@ -186,7 +186,7 @@
     }
 
     /// Two names for one surface, allowing for spacing and case only. Anything
-    /// further — knowing that "B1v" and "B1 verso" are the same leaf — is a
+    /// further—knowing that "B1v" and "B1 verso" are the same leaf—is a
     /// convention, and a rule that assumed one would be wrong about every
     /// source that does not follow it.
     static func matches(_ a: String, _ b: String) -> Bool {

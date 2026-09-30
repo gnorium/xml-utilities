@@ -510,10 +510,10 @@
 
     /// Where an utterance reads in a document's pages: its words, found by
     /// their line and place in the line on the anchor's page (`start` to
-    /// `end`), and the sentence holding them — the smallest `<s>` of the page
+    /// `end`), and the sentence holding them—the smallest `<s>` of the page
     /// holding the words, a sentence split across pages (`<s part="I|M|F">`)
     /// joined over the pages it runs on, as the utterances service joins its
-    /// `sentence_parts` — by page (its image service). Where no `<s>` holds
+    /// `sentence_parts`—by page (its image service). Where no `<s>` holds
     /// the words, their lines stand for the sentence. Nil when the page is
     /// not among `pages`, or a word is not there or reads otherwise than its
     /// surface: nothing is highlighted rather than the wrong words.
