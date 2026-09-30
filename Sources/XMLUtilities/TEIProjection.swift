@@ -1,7 +1,7 @@
 #if SERVER
   import Foundation
 
-  /// A stretch of a page's reading to set apart, counted as the concordance
+  /// A stretch of a page's reading to set apart, counted as the utterances service
   /// counts a page (`TEIProjection`): an utterance's sentence, and its word.
   public struct TEIHighlight: Sendable, Equatable {
     public enum Kind: String, Sendable {
@@ -22,8 +22,8 @@
     }
   }
 
-  /// A page's text as the concordance counts it (`diplomatic-codepoints-v7`,
-  /// gnorium-python `concordance/text.py` `diplomatic_text`), so that an
+  /// A page's text as the utterances service counts it (`diplomatic-codepoints-v7`,
+  /// gnorium-python `utterances/text.py` `diplomatic_text`), so that an
   /// utterance's anchor, which counts in it, can be found in the page's
   /// markup: Unicode scalars, not normalized; a `<choice>` reads its orig,
   /// sic or abbr (else its first child); what an editor adds beside the
@@ -74,7 +74,7 @@
       var type = ""
     }
 
-    /// A word as an anchor counts it (gnorium-python `concordance/text.py`
+    /// A word as an anchor counts it (gnorium-python `utterances/text.py`
     /// `units`): its line (`breaks`), its place among
     /// the words starting on that line, its parts on this page, its surface
     /// as written here, and whether it runs on to the next page.
@@ -512,7 +512,7 @@
     /// their line and place in the line on the anchor's page (`start` to
     /// `end`), and the sentence holding them — the smallest `<s>` of the page
     /// holding the words, a sentence split across pages (`<s part="I|M|F">`)
-    /// joined over the pages it runs on, as the concordance joins its
+    /// joined over the pages it runs on, as the utterances service joins its
     /// `sentence_parts` — by page (its image service). Where no `<s>` holds
     /// the words, their lines stand for the sentence. Nil when the page is
     /// not among `pages`, or a word is not there or reads otherwise than its

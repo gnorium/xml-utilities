@@ -2,7 +2,7 @@ import XCTest
 import XMLUtilities
 
 /// An utterance read in its testament: its sentence (joined across a page
-/// break) and its word set apart in the reading, counted as the concordance
+/// break) and its word set apart in the reading, counted as the utterances service
 /// counts a page. The offsets below are gnorium-python's `diplomatic_text`
 /// of the same pages.
 final class TEIUtteranceTests: XCTestCase {
@@ -154,8 +154,8 @@ final class TEIUtteranceTests: XCTestCase {
   }
 
   /// The same pages as gnorium-python's `units` counts them
-  /// (tests/test_concordance.py `TAGGED`, test_anchor_alignment.py).
-  func testWordsAreCountedAsTheConcordanceCountsThem() throws {
+  /// (tests/test_utterances.py `TAGGED`, test_anchor_alignment.py).
+  func testWordsAreCountedAsTheUtterancesCountsThem() throws {
     let tagged = """
       <TEI><text><body><pb n="1" facs="https://example.org/iiif/t0/full/1300,/0/default.jpg"/><p>\
       <w lemma="the" pos="DET">The</w> <w lemma="computer" pos="NOUN">Computors</w> \
