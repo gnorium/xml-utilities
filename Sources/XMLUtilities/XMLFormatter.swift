@@ -69,10 +69,12 @@
         .replacingOccurrences(of: "'", with: "&apos;")
     }
 
-    /// The body of a document, or the whole of it when there is no `<body>`.
-    public static func body(of xml: String) -> String? {
-      guard let start = xml.range(of: "<body>")?.upperBound else { return nil }
-      let end = xml.range(of: "</body>")?.lowerBound ?? xml.endIndex
+    /// The outer text, including title pages and other front/back matter.
+    /// Nested floating texts remain within their containing page.
+    public static func text(of xml: String) -> String? {
+      guard let opening = xml.range(of: "<text(?=[\\s>])[^>]*>", options: .regularExpression) else { return nil }
+      let start = opening.upperBound
+      let end = xml.range(of: "</text>", options: .backwards)?.lowerBound ?? xml.endIndex
       guard start < end else { return nil }
       return String(xml[start..<end])
     }

@@ -290,7 +290,7 @@
     public static func pages(
       in xml: String, highlights: [String: [TEIHighlight]] = [:], marksWords: Bool = false
     ) -> [TEIPage] {
-      guard let body = XMLFormatter.body(of: xml) else { return [] }
+      guard let body = XMLFormatter.text(of: xml) else { return [] }
       let breaks = pageBreaks(in: body)
       let zones = TEIFacsimile.zones(in: TEIFacsimile.blocks(in: xml))
       return breaks.enumerated().map { index, open in

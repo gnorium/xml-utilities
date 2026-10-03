@@ -593,7 +593,7 @@
     /// exactly as the whole document has it (so offsets counted in a page
     /// hold in the excerpt). Nil when no page reads that image.
     public static func excerpt(of xml: String, around serviceID: String, radius: Int = 1) -> String? {
-      guard let body = XMLFormatter.body(of: xml) else { return nil }
+      guard let body = XMLFormatter.text(of: xml) else { return nil }
       let breaks = pageBreaks(in: body)
       guard
         let at = breaks.firstIndex(where: { self.serviceID(ofFacsimile: $0.facsimileURL) == serviceID })
@@ -602,8 +602,8 @@
       let last = min(breaks.count - 1, at + radius)
       let end = last + 1 < breaks.count ? breaks[last + 1].tag.lowerBound : body.endIndex
       // The document's facsimile comes along: its pages' zones are there.
-      return #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + TEIFacsimile.blocks(in: xml) + "<text><body>"
-        + body[breaks[first].tag.lowerBound..<end] + "</body></text></TEI>"
+      return #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + TEIFacsimile.blocks(in: xml) + "<text>"
+        + body[breaks[first].tag.lowerBound..<end] + "</text></TEI>"
     }
   }
 #endif

@@ -2,6 +2,19 @@ import XCTest
 import XMLUtilities
 
 final class TEIRendererTests: XCTestCase {
+  func testPagesIncludeTitlePagesAndBackMatter() {
+    let document = """
+      <TEI><text xml:lang="eng"><front><pb n="title" facs="https://example.org/title.jpg"/>
+      <titlePage><docTitle><titlePart><bibl><title><w>Letters</w></title></bibl><lb/></titlePart></docTitle></titlePage></front>
+      <body><pb n="1" facs="https://example.org/1.jpg"/><p><w>Begins</w><lb/></p></body>
+      <back><pb n="end" facs="https://example.org/end.jpg"/><div><p><w>End</w><lb/></p></div></back></text></TEI>
+      """
+    let pages = TEIRenderer.pages(in: document)
+    XCTAssertEqual(pages.map(\.label), ["title", "1", "end"])
+    XCTAssertTrue(pages[0].markup.contains("Letters"))
+    XCTAssertTrue(pages[2].markup.contains("End"))
+  }
+
   func testAnEditBreaksMarkupOnlyWhereItChangedTheBalance() {
     let page = "<div><p>To be,<lb/>or not</p>"
     XCTAssertFalse(TEIRenderer.breaksMarkup("<div><p>To be,<lb/>or not to be</p>", from: page))
