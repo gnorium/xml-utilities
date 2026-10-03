@@ -17,6 +17,32 @@ final class TEIUtteranceTests: XCTestCase {
     </body></text></TEI>
     """
 
+  func testSurroundingSentenceExcludesTheAnchorAndReadsOnlyHeldContinuation() throws {
+    let pages = TEIRenderer.pages(in: document)
+    let word = TEIWordPosition(line: 2, word: 4, surface: "word")
+    XCTAssertEqual(
+      TEIRenderer.surroundingSentence(
+        in: pages, canvasID: "https://example.org/iiif/p1",
+        start: word, end: word), "A split goes on here.")
+    let wrong = TEIWordPosition(line: 2, word: 4, surface: "other")
+    XCTAssertNil(
+      TEIRenderer.surroundingSentence(
+        in: pages, canvasID: "https://example.org/iiif/p1",
+        start: wrong, end: wrong))
+    XCTAssertEqual(
+      TEIRenderer.surroundingSentence(
+        in: Array(pages.prefix(2)), canvasID: "https://example.org/iiif/p1",
+        start: word, end: word), "A split")
+    let broken =
+      "<TEI><text><body><pb facs=\"a/full/100,/0/default.jpg\"/><p><s part=\"I\">Before <w part=\"I\">com</w></s></p>"
+      + "<pb facs=\"b/full/100,/0/default.jpg\"/><p><s part=\"F\"><w part=\"F\">puter</w> after.</s></p></body></text></TEI>"
+    let full = TEIWordPosition(line: 1, word: 2, surface: "computer")
+    XCTAssertEqual(
+      TEIRenderer.surroundingSentence(
+        in: TEIRenderer.pages(in: broken), canvasID: "a",
+        start: full, end: full), "Before after.")
+  }
+
   func testAnExcerptKeepsThePagesAroundOneAsTheDocumentHasThem() throws {
     let excerpt = try XCTUnwrap(TEIRenderer.excerpt(of: document, around: "https://example.org/iiif/p1"))
     let pages = TEIRenderer.pages(in: excerpt)

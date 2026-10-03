@@ -588,6 +588,55 @@
       return highlights
     }
 
+    /// The held sentence around an anchor, excluding the anchored text.
+    /// Uses the same validated surfaces, diplomatic projection and explicit
+    /// cross-page sentence continuation as the reader. No unseen text is added.
+    public static func surroundingSentence(
+      in pages: [TEIPage], canvasID: String, start: TEIWordPosition, end: TEIWordPosition
+    ) -> String? {
+      guard let highlights = utterance(in: pages, canvasID: canvasID, start: start, end: end) else {
+        return nil
+      }
+      var excludedByPage = highlights.mapValues { $0.filter { $0.kind == .title }.map(\.range) }
+      if let at = pages.firstIndex(where: { serviceID(ofFacsimile: $0.facsimileURL) == canvasID }),
+        TEIProjection.of(markup: pages[at].markup).units.first(where: {
+          $0.line == end.line && $0.number == end.word
+        })?.runsOn == true
+      {
+        for page in pages.dropFirst(at + 1) {
+          let projection = TEIProjection.of(markup: page.markup)
+          let id = serviceID(ofFacsimile: page.facsimileURL)
+          for word in projection.words {
+            guard word.part == "M" || word.part == "F" else { break }
+            excludedByPage[id, default: []].append(word.range)
+            if word.part == "F" { break }
+          }
+          if projection.leadingContinuation.ends { break }
+        }
+      }
+      var parts: [String] = []
+      for page in pages {
+        let id = serviceID(ofFacsimile: page.facsimileURL)
+        guard let marked = highlights[id] else { continue }
+        let projection = TEIProjection.of(markup: page.markup)
+        let excluded = excludedByPage[id] ?? []
+        for sentence in marked where sentence.kind == .sentence {
+          var fragment = ""
+          for offset in sentence.range {
+            if excluded.contains(where: { $0.contains(offset) }) {
+              fragment += " "
+            } else {
+              fragment.unicodeScalars.append(projection.scalars[offset])
+            }
+          }
+          parts.append(fragment)
+        }
+      }
+      let context = parts.joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(
+        separator: " ")
+      return context.isEmpty ? nil : context
+    }
+
     /// A document cut down to the pages around one: the page reading
     /// `serviceID` and up to `radius` pages either side, each page's markup
     /// exactly as the whole document has it (so offsets counted in a page
