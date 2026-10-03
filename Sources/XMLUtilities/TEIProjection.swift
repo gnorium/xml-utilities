@@ -602,8 +602,10 @@
       let last = min(breaks.count - 1, at + radius)
       let end = last + 1 < breaks.count ? breaks[last + 1].tag.lowerBound : body.endIndex
       // The document's facsimile comes along: its pages' zones are there.
-      return #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + TEIFacsimile.blocks(in: xml) + "<text>"
-        + body[breaks[first].tag.lowerBound..<end] + "</text></TEI>"
+      let root = XMLFormatter.opening("TEI", in: xml) ?? #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"#
+      let opening = XMLFormatter.opening("text", in: xml) ?? "<text>"
+      return root + TEIFacsimile.blocks(in: xml) + opening
+        + XMLFormatter.balancedSlice(of: body, range: breaks[first].tag.lowerBound..<end) + "</text></TEI>"
     }
   }
 #endif

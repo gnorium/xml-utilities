@@ -21,7 +21,10 @@ final class TEIUtteranceTests: XCTestCase {
     let excerpt = try XCTUnwrap(TEIRenderer.excerpt(of: document, around: "https://example.org/iiif/p1"))
     let pages = TEIRenderer.pages(in: excerpt)
     XCTAssertEqual(pages.map(\.label), ["1", "2", "3"])
-    XCTAssertEqual(pages.map(\.markup), Array(TEIRenderer.pages(in: document).prefix(3).map(\.markup)))
+    let original = Array(TEIRenderer.pages(in: document).prefix(3))
+    // Ancestors close at the excerpt boundary; the reading and anchors do not change.
+    XCTAssertEqual(pages.map { $0.lines.map { $0.runs.map(\.text) } }, original.map { $0.lines.map { $0.runs.map(\.text) } })
+    XCTAssertEqual(pages.map { TEIRenderer.words(of: $0) }, original.map { TEIRenderer.words(of: $0) })
     // At an edge, fewer.
     let last = try XCTUnwrap(TEIRenderer.excerpt(of: document, around: "https://example.org/iiif/p3"))
     XCTAssertEqual(TEIRenderer.pages(in: last).map(\.label), ["3", "4"])

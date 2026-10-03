@@ -69,6 +69,50 @@
         .replacingOccurrences(of: "'", with: "&apos;")
     }
 
+    /// Clip immutable markup without losing its structural ancestors. The
+    /// selected characters are unchanged; only ancestor tags are repeated and
+    /// closed at the boundary, so a page split inside a div remains XML.
+    static func balancedSlice(of markup: String, range selected: Range<String.Index>) -> String {
+      balancedSlices(of: markup, ranges: [selected])[0]
+    }
+
+    /// Ordered, disjoint slices share one tokenization and one ancestor walk,
+    /// so indexing a large book does not parse the whole book once per page.
+    static func balancedSlices(of markup: String, ranges selected: [Range<String.Index>]) -> [String] {
+      let expression = try! NSRegularExpression(
+        pattern: #"<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<(?:"[^"]*"|'[^']*'|[^'">])*>"#)
+      let tokens = expression.matches(in: markup, range: NSRange(markup.startIndex..., in: markup))
+        .compactMap { Range($0.range, in: markup) }
+      var stack: [(name: String, tag: String)] = []
+      func read(_ range: Range<String.Index>) {
+        let tag = String(markup[range])
+        guard !tag.hasPrefix("<!"), !tag.hasPrefix("<?"), !tag.hasSuffix("/>") else { return }
+        let closing = tag.hasPrefix("</")
+        let name = String(tag.dropFirst(closing ? 2 : 1).prefix { !$0.isWhitespace && $0 != "/" && $0 != ">" })
+        if closing {
+          if let index = stack.lastIndex(where: { $0.name == name }) { stack.removeSubrange(index...) }
+        } else { stack.append((name, tag)) }
+      }
+      var index = 0
+      return selected.map { range in
+        while index < tokens.count && tokens[index].upperBound <= range.lowerBound {
+          read(tokens[index])
+          index += 1
+        }
+        let prefix = stack.map(\.tag).joined()
+        while index < tokens.count && tokens[index].lowerBound < range.upperBound {
+          read(tokens[index])
+          index += 1
+        }
+        return prefix + markup[range] + stack.reversed().map { "</\($0.name)>" }.joined()
+      }
+    }
+
+    static func opening(_ name: String, in markup: String) -> String? {
+      guard let range = markup.range(of: "<\(name)(?=[\\s>])(?:\"[^\"]*\"|'[^']*'|[^'\">])*>", options: .regularExpression) else { return nil }
+      return String(markup[range])
+    }
+
     /// The outer text, including title pages and other front/back matter.
     /// Nested floating texts remain within their containing page.
     public static func text(of xml: String) -> String? {

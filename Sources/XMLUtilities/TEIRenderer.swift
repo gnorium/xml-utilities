@@ -308,6 +308,24 @@
       }
     }
 
+    /// Each canvas as a complete XML document, preserving front/body/back
+    /// matter and containers crossing the page boundary. The leading page
+    /// break is omitted, as the utterances service's page anchors require.
+    public static func pageDocuments(in xml: String) -> [(facsimileURL: String, xml: String)] {
+      guard let text = XMLFormatter.text(of: xml) else { return [] }
+      let breaks = pageBreaks(in: text)
+      let root = XMLFormatter.opening("TEI", in: xml) ?? #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"#
+      let opening = XMLFormatter.opening("text", in: xml) ?? "<text>"
+      let ranges = breaks.enumerated().map { index, page in
+        page.tag.upperBound..<(index + 1 < breaks.count ? breaks[index + 1].tag.lowerBound : text.endIndex)
+      }
+      let fragments = XMLFormatter.balancedSlices(of: text, ranges: ranges)
+      let facsimile = TEIFacsimile.blocks(in: xml)
+      return zip(breaks, fragments).map { page, fragment in
+        (page.facsimileURL, root + facsimile + opening + fragment + "</text></TEI>")
+      }
+    }
+
     /// The page breaks of a body that carry a facsimile, each with where its
     /// tag stands, its label and its image. A side mark (a `<pb>` with no
     /// `facs`) is left in its page, where `lines(in:)` turns it into a line.
