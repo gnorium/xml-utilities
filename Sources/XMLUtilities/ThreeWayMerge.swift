@@ -23,14 +23,17 @@
       case conflict(lines: [String])
     }
 
-    public static func merge(base: String, ours: String, theirs: String) -> Outcome {
+    /// `exact` keeps each line as written: a prompt's indentation is its
+    /// Markdown. Otherwise a line is compared, and kept, without the
+    /// whitespace around it—a page's markup, indented by its formatter.
+    public static func merge(base: String, ours: String, theirs: String, exact: Bool = false) -> Outcome {
       if ours == theirs { return .merged(ours) }
       if ours == base { return .merged(theirs) }
       if theirs == base { return .merged(ours) }
 
-      let baseLines = lines(of: base)
-      let ourLines = lines(of: ours)
-      let theirLines = lines(of: theirs)
+      let baseLines = lines(of: base, exact: exact)
+      let ourLines = lines(of: ours, exact: exact)
+      let theirLines = lines(of: theirs, exact: exact)
 
       // Line-wise, anchored on the lines all three still share. Anything else
       // is a guess about intent.
@@ -73,9 +76,9 @@
       return .merged(merged.joined(separator: "\n"))
     }
 
-    static func lines(of text: String) -> [String] {
+    static func lines(of text: String, exact: Bool = false) -> [String] {
       text.split(separator: "\n", omittingEmptySubsequences: false).map {
-        String($0).trimmingCharacters(in: .whitespaces)
+        exact ? String($0) : String($0).trimmingCharacters(in: .whitespaces)
       }
     }
 
