@@ -29,7 +29,8 @@
     /// Its attributes, by name.
     public let attributes: [TEIAttribute]
     /// Its text, white space single and trimmed; "" for a block (a
-    /// paragraph, a sentence), whose text is not what was opened.
+    /// paragraph, a sentence), whose text is not what was opened—but a
+    /// figure's heading, its caption.
     public let text: String
     public let relation: Relation
     /// The element it is directly in: a `<choice>` names its readings'.
@@ -152,7 +153,9 @@
       return all.compactMap { entry in
         guard let relation = relations[ObjectIdentifier(entry.element)] else { return nil }
         let element = entry.element
-        let text = blocks.contains(element.name)
+        // A figure's heading is its caption, read as its description is.
+        let caption = element.name == "head" && entry.path.last?.name == "figure"
+        let text = blocks.contains(element.name) && !caption
           ? "" : element.textContent.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return TEIEncoding(
           element: element.name,

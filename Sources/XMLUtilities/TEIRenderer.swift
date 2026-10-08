@@ -678,7 +678,9 @@
                   text: description, element: words?.index(of: element)))
               // Captions, tables, and diagram labels remain readable even when
               // the graphic has no usable crop. figDesc is descriptive metadata.
-              walk(element, kind: kind, rend: rend, inlineRend: inlineRend, gloss: gloss) { node in
+              // Its caption's text that is no word opens the figure's gloss.
+              walk(element, kind: kind, rend: rend, inlineRend: inlineRend, gloss: words?.index(of: element) ?? gloss) {
+                node in
                 if case .element(let child) = node {
                   return child.name != "figDesc" && child.name != "desc"
                 }

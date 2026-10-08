@@ -67,4 +67,24 @@ final class TEIEncodingTests: XCTestCase {
     XCTAssertEqual(TEIRenderer.encoding(of: page, element: gap)?.first?.attribute("reason"), "illegible")
     XCTAssertNil(TEIRenderer.encoding(of: page, element: 999))
   }
+
+  /// A figure's gloss reads its caption (`<head>`) and its description.
+  func testAFigureReadsItsCaption() throws {
+    let tei = """
+      <TEI><text><body><pb n="1" facs="https://example.org/iiif/p1/full/1300,/0/default.jpg"/>\
+      <figure type="illustration"><head>The Globe, 1612</head><figDesc>A round playhouse.</figDesc></figure>\
+      </body></text></TEI>
+      """
+    let page = try XCTUnwrap(TEIRenderer.pages(in: tei, marksWords: true).first)
+    let figure = try XCTUnwrap(
+      page.lines.first { if case .figure = $0.kind { return true } else { return false } }?.element)
+    let encoding = try XCTUnwrap(TEIRenderer.encoding(of: page, element: figure))
+    XCTAssertEqual(encoding.map(\.element), ["figure", "head", "figDesc"])
+    XCTAssertEqual(encoding.first { $0.element == "head" }?.text, "The Globe, 1612")
+    XCTAssertEqual(encoding.first { $0.element == "figDesc" }?.text, "A round playhouse.")
+    // The caption's words open their own glosses; what is no word, the figure's.
+    let runs = page.lines.flatMap(\.runs)
+    XCTAssertNil(runs.first { $0.text == "Globe" }?.element)
+    XCTAssertEqual(runs.first { $0.text.hasPrefix(",") }?.element, figure)
+  }
 }
