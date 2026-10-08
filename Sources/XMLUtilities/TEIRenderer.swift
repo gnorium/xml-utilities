@@ -106,6 +106,11 @@
     /// (`<lb break="no"/>`), so that read as running text it joins the line
     /// before with no space.
     public let joinsPrevious: Bool
+    /// The element it is, where a page read word by word (`marksWords`)
+    /// opens it as a whole: a gap, a figure, a side mark—its place among
+    /// the page's elements in document order (`TEIRenderer.encoding(of:element:)`).
+    /// Nil for every other line.
+    public let element: Int?
 
     /// A stretch of one line set one way.
     public struct Run: Sendable {
@@ -135,11 +140,17 @@
       /// (`marksWords`): its place as an anchor counts it. Nil for what
       /// stands between words, and for every run of a page read whole.
       public let word: TEIWordPlace?
+      /// The innermost element it is set in that is not a block, where it is
+      /// of no word and the page is read word by word (`marksWords`): a
+      /// number, a date, a running head's page number, opened as a whole
+      /// (`TEIRenderer.encoding(of:element:)`). Nil for a word's runs.
+      public let element: Int?
 
       public init(
         text: String, rend: String = "", kind: Kind = .text, alternative: String = "",
-        highlight: TEIHighlight.Kind? = nil, word: TEIWordPlace? = nil, zone: TEIZone? = nil
+        highlight: TEIHighlight.Kind? = nil, word: TEIWordPlace? = nil, zone: TEIZone? = nil, element: Int? = nil
       ) {
+        self.element = element
         self.text = text
         self.rend = rend
         self.kind = kind
@@ -152,8 +163,9 @@
 
     public init(
       kind: Kind, text: String, rend: String = "", runs: [Run] = [], opensBlock: Bool = true,
-      sharesLine: Bool = false, joinsPrevious: Bool = false
+      sharesLine: Bool = false, joinsPrevious: Bool = false, element: Int? = nil
     ) {
+      self.element = element
       self.kind = kind
       self.text = text
       self.rend = rend
@@ -358,7 +370,8 @@
       let root = TEIMarkup.document(TEIProjection.normalized(markup))
       let projection = TEIProjection(root)
       return reading(
-        from: root, highlights: highlights, words: marksWords ? Words(projection.units) : nil, zones: zones)
+        from: root, highlights: highlights, words: marksWords ? Words(projection.units, root: root) : nil,
+        zones: zones)
     }
 
     /// A page's words by where they are in its projection: which word a
@@ -367,11 +380,23 @@
       let places: [TEIWordPlace]
       /// Each word's parts, by the word's index in `places`.
       let ranges: [[Range<Int>]]
+      /// Each element of the page by its place in document order
+      /// (`TEIRenderer.elements(of:)`): what a line or a run that is no word
+      /// is opened by.
+      let elements: [ObjectIdentifier: Int]
 
-      init(_ units: [TEIProjection.Unit]) {
+      init(_ units: [TEIProjection.Unit], root: TEIMarkup.Element) {
         places = units.map { .init(line: $0.line, word: $0.number) }
         ranges = units.map(\.ranges)
+        var elements: [ObjectIdentifier: Int] = [:]
+        for (index, element) in TEIRenderer.elements(of: root).enumerated() {
+          elements[ObjectIdentifier(element.element)] = index
+        }
+        self.elements = elements
       }
+
+      /// An element's place in document order.
+      func index(of element: TEIMarkup.Element) -> Int? { elements[ObjectIdentifier(element)] }
 
       /// The word a counted point is of.
       func at(_ offset: Int) -> TEIWordPlace? {
@@ -481,8 +506,15 @@
       func walk(
         _ owner: TEIMarkup.Element, kind: TEILine.Kind = .text,
         rend: String = "", inlineRend: String = "", alternative: String = "", zone initialZone: TEIZone? = nil,
-        including: (TEIMarkup.Node) -> Bool = { _ in true }
+        gloss: Int? = nil, including: (TEIMarkup.Node) -> Bool = { _ in true }
       ) {
+        /// What a run of no word inside `element` is opened by: the element,
+        /// unless it is a block, whose runs keep the one around it.
+        func glossing(_ element: TEIMarkup.Element) -> Int? {
+          TEIRenderer.blocks.contains(element.name) ? gloss : words?.index(of: element) ?? gloss
+        }
+        /// A run's element: none for a word's runs.
+        func runElement(of word: TEIWordPlace?) -> Int? { word == nil ? gloss : nil }
         func joined(_ extra: String) -> String {
           [inlineRend, extra].filter { !$0.isEmpty }.joined(separator: " ")
         }
@@ -497,7 +529,7 @@
                   runs.append(
                     .init(
                       text: piece.text, rend: inlineRend, highlight: piece.highlight, word: piece.word,
-                      zone: initialZone))
+                      zone: initialZone, element: runElement(of: piece.word)))
                 }
               } else {
                 // A run with an alternative stays whole: it is read on hover
@@ -506,7 +538,7 @@
                 runs.append(
                   .init(
                     text: text, rend: inlineRend, alternative: alternative, highlight: first?.highlight,
-                    word: first?.word, zone: initialZone))
+                    word: first?.word, zone: initialZone, element: runElement(of: first?.word)))
               }
             }
           case .element(let element):
@@ -526,7 +558,7 @@
               let initial = ownRend.split(whereSeparator: \.isWhitespace).contains("initial")
               walk(
                 element, kind: kind, rend: rend, inlineRend: joined(ownRend),
-                alternative: alternative, zone: initial ? zone(of: element) : initialZone)
+                alternative: alternative, zone: initial ? zone(of: element) : initialZone, gloss: glossing(element))
             case "facsimile":
               // Where the page's figures sit, not what it reads.
               continue
@@ -541,7 +573,7 @@
               if let surface {
                 walk(
                   surface, kind: kind, rend: rend, inlineRend: inlineRend,
-                  alternative: beside.map { $0.textContent } ?? alternative)
+                  alternative: beside.map { $0.textContent } ?? alternative, gloss: glossing(surface))
               }
             case "supplied":
               // Not on the surface: set apart in square brackets, as an
@@ -552,20 +584,27 @@
                 of: "[", at: element.projectedStart.map { .init(start: $0, counted: false) }, in: highlights,
                 words: words
               ).first
-              runs.append(.init(text: "[", rend: joined("supplied"), highlight: bracket?.highlight, word: bracket?.word))
-              walk(element, kind: kind, rend: rend, inlineRend: joined("supplied"))
-              runs.append(.init(text: "]", rend: joined("supplied"), highlight: bracket?.highlight, word: bracket?.word))
+              let supplied = words?.index(of: element) ?? gloss
+              runs.append(
+                .init(
+                  text: "[", rend: joined("supplied"), highlight: bracket?.highlight, word: bracket?.word,
+                  element: bracket?.word == nil ? supplied : nil))
+              walk(element, kind: kind, rend: rend, inlineRend: joined("supplied"), gloss: supplied)
+              runs.append(
+                .init(
+                  text: "]", rend: joined("supplied"), highlight: bracket?.highlight, word: bracket?.word,
+                  element: bracket?.word == nil ? supplied : nil))
             case "del", "add":
               // The makers' own deletions and additions, read in place.
               walk(
                 element, kind: kind, rend: rend, inlineRend: joined(element.name),
-                alternative: alternative)
+                alternative: alternative, gloss: glossing(element))
             case "note":
               flush()
               blockPending = true
               walk(
                 element, kind: .note(place: element.attribute("place")), rend: blockRend,
-                inlineRend: inlineRend)
+                inlineRend: inlineRend, gloss: glossing(element))
               flush()
               blockPending = true
             case "lb", "cb":
@@ -576,11 +615,13 @@
               flush()
               lineBroken = true
               let label = expandedLeafLabel(element.attribute("n"))
-              if !label.isEmpty { append(.init(kind: .mark, text: label)) }
+              if !label.isEmpty { append(.init(kind: .mark, text: label, element: words?.index(of: element))) }
             case "gap":
               flush()
               let reason = element.attribute("reason")
-              append(.init(kind: .gap(reason: reason), text: reason.isEmpty ? "gap" : reason))
+              append(
+                .init(
+                  kind: .gap(reason: reason), text: reason.isEmpty ? "gap" : reason, element: words?.index(of: element)))
             case "milestone" where element.attribute("unit") == "document":
               flush()
               append(.init(kind: .documentBoundary, text: ""))
@@ -598,7 +639,7 @@
               case "fw": blockKind = .forme(.from(element.attribute("type")))
               default: blockKind = kind
               }
-              walk(element, kind: blockKind, rend: blockRend, inlineRend: inlineRend)
+              walk(element, kind: blockKind, rend: blockRend, inlineRend: inlineRend, gloss: glossing(element))
               flush()
               blockPending = true
               if element.name != "fw" { lineBroken = true }
@@ -634,10 +675,10 @@
               append(
                 .init(
                   kind: .figure(type: element.attribute("type"), zone: zone(of: element)),
-                  text: description))
+                  text: description, element: words?.index(of: element)))
               // Captions, tables, and diagram labels remain readable even when
               // the graphic has no usable crop. figDesc is descriptive metadata.
-              walk(element, kind: kind, rend: rend, inlineRend: inlineRend) { node in
+              walk(element, kind: kind, rend: rend, inlineRend: inlineRend, gloss: gloss) { node in
                 if case .element(let child) = node {
                   return child.name != "figDesc" && child.name != "desc"
                 }
@@ -651,7 +692,7 @@
               // their text.
               walk(
                 element, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative,
-                zone: initialZone)
+                zone: initialZone, gloss: glossing(element))
             }
           }
         }
