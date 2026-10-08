@@ -625,7 +625,14 @@
             case "milestone" where element.attribute("unit") == "document":
               flush()
               append(.init(kind: .documentBoundary, text: ""))
-            case "p", "lg", "l", "head", "div", "speaker", "stage", "fw", "item":
+            case "docAuthor", "docDate", "docEdition"
+            where !TEIRenderer.titlePageStructure.contains(owner.name):
+              // Within a byline, an imprint or a title, a phrase of it.
+              walk(
+                element, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative,
+                zone: initialZone, gloss: glossing(element))
+            case "p", "lg", "l", "head", "div", "speaker", "stage", "fw", "item", "docTitle", "titlePart",
+              "docImprint", "byline", "docAuthor", "docDate", "docEdition", "epigraph", "argument", "imprimatur":
               flush()
               blockPending = true
               // A block begins a line of its own; only furniture set beside
@@ -703,6 +710,13 @@
       flush()
       return lines
     }
+
+    /// What a title page's parts can stand in as blocks of their own: a
+    /// `docAuthor`, `docDate` or `docEdition` here starts its own line, and
+    /// within a byline, an imprint or a title it is a phrase of it.
+    static let titlePageStructure: Set<String> = [
+      "root", "titlePage", "front", "back", "body", "div", "text",
+    ]
 
     /// A `<formula>`'s MathML as a view draws it, and the symbols it prints
     /// run together (the run's text).

@@ -364,4 +364,18 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(lines[2].rend, "indent(1)")
     XCTAssertEqual(lines[5].rend, "align(right)")
   }
+
+  /// A title page's parts are blocks, as TEI has them: each starts a line.
+  /// A `docAuthor` in a byline is a phrase of it.
+  func testATitlePagesPartsStartTheirOwnLines() {
+    let lines = TEIRenderer.lines(
+      in: "<titlePage><docTitle><titlePart type=\"main\">DICTIONARY</titlePart><titlePart>OF WORDS</titlePart></docTitle>"
+        + "<byline>by <docAuthor>W. Skeat</docAuthor></byline><docEdition>Second edition</docEdition>"
+        + "<epigraph>Motto</epigraph><docImprint>Oxford: <docDate>1888</docDate></docImprint>"
+        + "<docDate>1888</docDate><argument>Argument</argument><imprimatur>Licensed</imprimatur></titlePage>")
+    XCTAssertEqual(
+      lines.map(\.text),
+      ["DICTIONARY", "OF WORDS", "by W. Skeat", "Second edition", "Motto", "Oxford: 1888", "1888", "Argument", "Licensed"])
+    XCTAssertTrue(lines.allSatisfy(\.opensBlock))
+  }
 }

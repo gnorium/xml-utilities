@@ -1,5 +1,6 @@
 import XCTest
-import XMLUtilities
+
+@testable import XMLUtilities
 
 /// `XMLFormatter.prettified`: text stays on its line as written, elements
 /// holding only elements open one child per line, and nothing a reader
@@ -30,9 +31,16 @@ final class XMLFormatterTests: XCTestCase {
     return described(TEIRenderer.lines(in: markup))
   }
 
+  /// Each word an anchor can name (`TEIProjection.units`): its line, its
+  /// number there, its surface.
+  private func anchors(_ markup: String) -> [String] {
+    TEIProjection.of(markup: markup).units.map { "\($0.line).\($0.number)=\($0.surface)" }
+  }
+
   private func assertSameReading(_ markup: String, file: StaticString = #filePath, line: UInt = #line) {
     let pretty = XMLFormatter.prettified(markup)
     XCTAssertEqual(reading(pretty), reading(markup), "The reading changed:\n\(pretty)", file: file, line: line)
+    XCTAssertEqual(anchors(pretty), anchors(markup), "An anchor moved:\n\(pretty)", file: file, line: line)
     XCTAssertEqual(XMLFormatter.prettified(pretty), pretty, "Not idempotent", file: file, line: line)
   }
 
@@ -147,7 +155,7 @@ final class XMLFormatterTests: XCTestCase {
   }
 
   func testIdempotence() {
-    for markup in [Self.titlePage] + Self.ordinances {
+    for markup in [Self.titlePage] + Self.ordinances + Self.edges {
       let once = XMLFormatter.prettified(markup)
       XCTAssertEqual(XMLFormatter.prettified(once), once)
     }
@@ -162,6 +170,22 @@ final class XMLFormatterTests: XCTestCase {
     ##"<div><p><s part="F">was flooded.</s></p><note place="foot"><s>After.</s></note><figure><head><w>Plate</w> <w>I</w></head><figDesc>A map</figDesc></figure><table><row role="label"><cell><w>Year</w></cell><cell><w>Sum</w></cell></row><row><cell><num>1603</num></cell><cell><num>12</num></cell></row></table><p><gap reason="illegible"/><w>torn</w></p></div>"##,
     ##"<p><s><w>Let</w> <formula notation="mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="inline"><semantics><mrow><mi>x</mi><mo>=</mo><mi>a</mi></mrow><annotation encoding="application/x-tex">x=a</annotation></semantics></math></formula> <w>hold</w><pc>.</pc></s></p>"##,
   ]
+
+  /// Pages whose letters abut across tags, as only their projection
+  /// counts them: a page without `<w>`s, a word broken over a line inside
+  /// it, a note against the text before it, a gap, a title page's parts.
+  static let edges = [
+    #"<div><p><hi>Fir</hi><hi>st</hi><lb/><hi>line</hi></p><p><hi>Second</hi></p></div>"#,
+    #"<p><s><w part="I"><hi>con</hi><lb break="no"/><hi>tin</hi></w><w><hi>ue</hi> <hi>d</hi></w></s></p>"#,
+    #"<p><s><hi>word</hi><note place="foot"><hi>n</hi></note><hi>after</hi></s></p>"#,
+    #"<p><s><hi>be</hi><gap reason="illegible"/><hi>fore</hi></s></p>"#,
+    #"<titlePage><docTitle><titlePart><s><w>DICTIONARY</w></s></titlePart></docTitle><docImprint><s><w>FROWDE</w></s></docImprint><byline><hi>by</hi><docAuthor><hi>Skeat</hi></docAuthor></byline></titlePage>"#,
+    #"<sp><speaker><w>HAM</w></speaker><p><hi>To</hi></p></sp><figure><head><hi>Plate</hi></head></figure><hi>after</hi>"#,
+  ]
+
+  func testNoAnchorMovesWhereLettersAbut() {
+    for markup in Self.edges { assertSameReading(markup) }
+  }
 
   func testOrdinancesReadTheSameFormatted() {
     for markup in Self.ordinances { assertSameReading(markup) }
