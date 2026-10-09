@@ -313,7 +313,13 @@
       let zones = TEIFacsimile.zones(in: TEIFacsimile.blocks(in: xml))
       return breaks.enumerated().map { index, open in
         let end = index + 1 < breaks.count ? breaks[index + 1].tag.lowerBound : body.endIndex
-        let markup = String(body[open.tag.upperBound..<end])
+        // The document's own closing structure after the last page break
+        // (`</front>`, `<body>`, `</body>`) belongs to no page (user,
+        // 2026-10-09): on a work laid in blank past its reading, the last
+        // canvas would otherwise read as explicated.
+        let markup = index + 1 < breaks.count
+          ? String(body[open.tag.upperBound..<end])
+          : withoutTrailingStructure(String(body[open.tag.upperBound..<end]))
         return TEIPage(
           label: open.label,
           facsimileURL: open.facsimileURL,
@@ -342,6 +348,53 @@
       return zip(breaks, fragments).map { page, fragment in
         (page.facsimileURL, root + facsimile + opening + fragment + "</text></TEI>")
       }
+    }
+
+    /// The document's containers, whose bare open and close tags after a
+    /// page's last content are the document's structure, not the page's.
+    static let documentContainers: Set<String> = ["TEI", "text", "front", "body", "back", "group"]
+
+    /// `markup` without the run of bare document-container tags (`</front>`,
+    /// `<body>`, `</body>`, `</text>`) at its end, and the white space
+    /// between them; empty when it held nothing else.
+    public static func withoutTrailingStructure(_ markup: String) -> String {
+      var text = Substring(markup)
+      while true {
+        let trimmed = text.drop(while: { _ in false })
+        var end = trimmed.endIndex
+        while end > trimmed.startIndex, trimmed[trimmed.index(before: end)].isWhitespace { end = trimmed.index(before: end) }
+        guard end > trimmed.startIndex, trimmed[trimmed.index(before: end)] == ">",
+          let open = trimmed[..<end].lastIndex(of: "<")
+        else { return String(text) }
+        let tag = trimmed[open..<end]
+        guard !tag.hasSuffix("/>"), !tag.hasPrefix("<!"), !tag.hasPrefix("<?") else { return String(text) }
+        let name = tag.dropFirst(tag.hasPrefix("</") ? 2 : 1).prefix { !$0.isWhitespace && $0 != ">" }
+        guard documentContainers.contains(String(name)) else { return String(text) }
+        text = trimmed[..<open]
+      }
+    }
+
+    /// Whether a page's markup holds anything of its own: text outside its
+    /// tags, or an element beyond bare container open and close tags (a
+    /// `<gap/>`, a `<figure>`'s graphic)—never a page, line or column break
+    /// alone, nor the containers a page laid in blank is wrapped in (user,
+    /// 2026-10-09). A page with none is unexplicated.
+    public static func hasMarkup(_ markup: String) -> Bool {
+      var cursor = markup.startIndex
+      while cursor < markup.endIndex {
+        guard let open = markup[cursor...].firstIndex(of: "<") else {
+          return markup[cursor...].contains { !$0.isWhitespace }
+        }
+        if markup[cursor..<open].contains(where: { !$0.isWhitespace }) { return true }
+        guard let close = markup[open...].firstIndex(of: ">") else { return false }
+        let tag = markup[open...close]
+        if tag.hasSuffix("/>") {
+          let name = tag.dropFirst().prefix { !$0.isWhitespace && $0 != "/" && $0 != ">" }
+          if !["pb", "lb", "cb", "milestone", "anchor"].contains(String(name)) { return true }
+        }
+        cursor = markup.index(after: close)
+      }
+      return false
     }
 
     /// The page breaks of a body that carry a facsimile, each with where its

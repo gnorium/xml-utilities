@@ -436,4 +436,38 @@ final class TEIRendererTests: XCTestCase {
     let pretty = XMLFormatter.prettified(markup)
     XCTAssertTrue(pretty.contains("<ab xml:space=\"preserve\"><w>a</w>  <w>b</w>\n   <lb/></ab>"), pretty)
   }
+
+  /// A work laid in blank past its reading (user, 2026-10-09): four pages
+  /// read of six canvases. The document's closing structure after the last
+  /// page break belongs to no page, so the sixth canvas reads empty and
+  /// unexplicated, as the fifth does; the fourth is read.
+  func testTheDocumentsClosingStructureBelongsToNoPage() {
+    let xml = """
+      <TEI xmlns="http://www.tei-c.org/ns/1.0"><text><front>
+      <pb n="1" facs="https://example.org/iiif/p1/full/full/0/default.jpg"/><p>One.</p>
+      <pb n="2" facs="https://example.org/iiif/p2/full/full/0/default.jpg"/><p>Two.</p>
+      </front><body>
+      <pb n="3" facs="https://example.org/iiif/p3/full/full/0/default.jpg"/><p>Three.</p>
+      <pb n="4" facs="https://example.org/iiif/p4/full/full/0/default.jpg"/><p>Four.</p>
+      <pb n="5" facs="https://example.org/iiif/p5/full/full/0/default.jpg"/>
+      <pb n="6" facs="https://example.org/iiif/p6/full/full/0/default.jpg"/>
+      </body></text></TEI>
+      """
+    let pages = TEIRenderer.pages(in: xml)
+    XCTAssertEqual(pages.count, 6)
+    XCTAssertEqual(pages[3].markup, "<p>Four.</p>")
+    XCTAssertEqual(pages[4].markup, "")
+    XCTAssertEqual(pages[5].markup, "", "the raw view of the last canvas is empty")
+    XCTAssertEqual(pages.map { TEIRenderer.hasMarkup($0.markup) }, [true, true, true, true, false, false])
+    // The second page's markup keeps its own content; the structure that
+    // follows it is the document's.
+    XCTAssertEqual(pages[1].markup, "<p>Two.</p>\n</front><body>")
+    XCTAssertEqual(TEIRenderer.withoutTrailingStructure("</front>\n<body>\n</body>"), "")
+    XCTAssertEqual(TEIRenderer.withoutTrailingStructure("<p>a</p></div></front><body>"), "<p>a</p></div>")
+    // A gap or a figure is markup; breaks alone are not.
+    XCTAssertTrue(TEIRenderer.hasMarkup("<gap reason=\"illegible\"/>"))
+    XCTAssertTrue(TEIRenderer.hasMarkup("<figure><graphic url=\"x\"/></figure>"))
+    XCTAssertFalse(TEIRenderer.hasMarkup("<pb n=\"1v\"/>\n<lb/>"))
+    XCTAssertFalse(TEIRenderer.hasMarkup("<div><p></p></div>"))
+  }
 }
