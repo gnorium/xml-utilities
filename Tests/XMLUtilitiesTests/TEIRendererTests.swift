@@ -378,4 +378,62 @@ final class TEIRendererTests: XCTestCase {
       ["DICTIONARY", "OF WORDS", "by W. Skeat", "Second edition", "Motto", "Oxford: 1888", "1888", "Argument", "Licensed"])
     XCTAssertTrue(lines.allSatisfy(\.opensBlock))
   }
+
+  /// Laid out over lines and indented, as a person or the formatter writes
+  /// it, a page reads as XML text is displayed: one space wherever white
+  /// space stood, none at a line's edges, the runs drawn as the line reads.
+  func testIndentedMarkupReadsWithOneSpaceAndNoneAtTheEdges() {
+    let markup = """
+      <titlePage>
+        <docImprint>
+          <s>
+            <persName>
+              <w>HENRY</w>
+              <w>FROWDE</w></persName><pc>,</pc>
+            <w>M.A.</w>
+            <lb/>
+            <w>LONDON</w>   <w>NEW</w>
+            <lb/>
+              <w>YORK</w>
+          </s>
+        </docImprint>
+      </titlePage>
+      """
+    let lines = TEIRenderer.lines(in: markup)
+    XCTAssertEqual(lines.map(\.text), ["HENRY FROWDE, M.A.", "LONDON NEW", "YORK"])
+    for line in lines {
+      XCTAssertEqual(line.runs.map(\.text).joined(), line.text, "The runs draw the line as it reads")
+    }
+    // As marked words too: each word's runs are its surface.
+    let marked = TEIRenderer.lines(in: markup, marksWords: true)
+    XCTAssertEqual(marked.map { $0.runs.map(\.text).joined() }, ["HENRY FROWDE, M.A.", "LONDON NEW", "YORK"])
+  }
+
+  /// White space inside a name before its close is white space, by XML's
+  /// rules: one space before the comma. The cure is markup without it.
+  func testWhiteSpaceBeforeAClosingTagStillReadsAsASpace() {
+    let markup = "<p><s><persName>\n  <w>HENRY</w>\n  <w>FROWDE</w>\n</persName><pc>,</pc> <w>M.A.</w></s></p>"
+    XCTAssertEqual(TEIRenderer.lines(in: markup).map(\.text), ["HENRY FROWDE , M.A."])
+  }
+
+  /// Space the source leaves is drawn as that much space, never collapsed;
+  /// white space under `xml:space="preserve"` is kept exactly; indentation
+  /// elsewhere still collapses.
+  func testEncodedSpaceAndPreservedWhiteSpaceAreKept() {
+    let spaced = TEIRenderer.lines(in: "<p>\n  <w>one</w><space quantity=\"3\" unit=\"chars\"/><w>two</w>\n</p>")
+    XCTAssertEqual(spaced.map(\.text), ["one   two"])
+    XCTAssertTrue(spaced[0].runs.contains { $0.preserved && $0.text == "   " })
+
+    let preserved = TEIRenderer.lines(in: "<p>\n  <seg xml:space=\"preserve\">a  b</seg>\n  <w>c</w>   <w>d</w>\n</p>")
+    XCTAssertEqual(preserved.map(\.text), ["a  b c d"])
+
+    let lines = TEIRenderer.lines(in: #"<p><w>above</w></p><space quantity="2" unit="lines"/><p><w>below</w></p>"#)
+    XCTAssertEqual(lines.map(\.text), ["above", " ", " ", "below"])
+  }
+
+  func testTheFormatterLeavesPreservedWhiteSpaceAlone() {
+    let markup = "<div><ab xml:space=\"preserve\"><w>a</w>  <w>b</w>\n   <lb/></ab><p><w>c</w></p></div>"
+    let pretty = XMLFormatter.prettified(markup)
+    XCTAssertTrue(pretty.contains("<ab xml:space=\"preserve\"><w>a</w>  <w>b</w>\n   <lb/></ab>"), pretty)
+  }
 }

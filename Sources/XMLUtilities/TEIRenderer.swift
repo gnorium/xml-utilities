@@ -145,11 +145,17 @@
       /// number, a date, a running head's page number, opened as a whole
       /// (`TEIRenderer.encoding(of:element:)`). Nil for a word's runs.
       public let element: Int?
+      /// Whether its white space is the source's own, kept exactly: inside
+      /// `xml:space="preserve"`, or a `<space/>`'s width. Drawn as written
+      /// (`white-space: pre-wrap`), never collapsed.
+      public let preserved: Bool
 
       public init(
         text: String, rend: String = "", kind: Kind = .text, alternative: String = "",
-        highlight: TEIHighlight.Kind? = nil, word: TEIWordPlace? = nil, zone: TEIZone? = nil, element: Int? = nil
+        highlight: TEIHighlight.Kind? = nil, word: TEIWordPlace? = nil, zone: TEIZone? = nil, element: Int? = nil,
+        preserved: Bool = false
       ) {
+        self.preserved = preserved
         self.element = element
         self.text = text
         self.rend = rend
@@ -470,6 +476,16 @@
         guard facs.hasPrefix("#") else { return nil }
         return zones[String(facs.dropFirst())]
       }
+      // The elements whose white space is kept as written: inside an
+      // `xml:space="preserve"`, until an `xml:space="default"` says otherwise.
+      var preserving: Set<ObjectIdentifier> = []
+      func mark(_ element: TEIMarkup.Element, _ inherited: Bool) {
+        let declared = element.attribute("xml:space")
+        let preserve = declared == "preserve" ? true : (declared == "default" ? false : inherited)
+        if preserve { preserving.insert(ObjectIdentifier(element)) }
+        for child in element.elements { mark(child, preserve) }
+      }
+      mark(owner, false)
       var lines: [TEILine] = []
       var runs: [TEILine.Run] = []
       var currentKind: TEILine.Kind = .text
@@ -483,7 +499,8 @@
       var breakInWord = false
 
       func flush() {
-        let text = runs.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        runs = TEIRenderer.spaced(runs)
+        let text = runs.map(\.text).joined()
         if !text.isEmpty {
           lines.append(
             TEILine(
@@ -523,13 +540,14 @@
           case .text(let text):
             currentKind = kind
             currentRend = rend
+            let preserved = preserving.contains(ObjectIdentifier(owner))
             if !text.isEmpty {
               if alternative.isEmpty {
                 for piece in pieces(of: text, at: owner.projected[index], in: highlights, words: words) {
                   runs.append(
                     .init(
                       text: piece.text, rend: inlineRend, highlight: piece.highlight, word: piece.word,
-                      zone: initialZone, element: runElement(of: piece.word)))
+                      zone: initialZone, element: runElement(of: piece.word), preserved: preserved))
                 }
               } else {
                 // A run with an alternative stays whole: it is read on hover
@@ -538,7 +556,7 @@
                 runs.append(
                   .init(
                     text: text, rend: inlineRend, alternative: alternative, highlight: first?.highlight,
-                    word: first?.word, zone: initialZone, element: runElement(of: first?.word)))
+                    word: first?.word, zone: initialZone, element: runElement(of: first?.word), preserved: preserved))
               }
             }
           case .element(let element):
@@ -607,6 +625,25 @@
                 inlineRend: inlineRend, gloss: glossing(element))
               flush()
               blockPending = true
+            case "space":
+              // Space the source leaves, as much as it says: so many
+              // characters' width in the line, or so many blank lines.
+              // Never collapsed.
+              let quantity = max(1, Int(element.attribute("quantity")) ?? 1)
+              let unit = element.attribute("unit")
+              if unit == "lines" || element.attribute("dim") == "vertical" {
+                flush()
+                for _ in 0..<(unit == "lines" ? quantity : 1) {
+                  append(.init(kind: kind, text: " ", runs: [.init(text: " ", preserved: true)]))
+                }
+              } else {
+                currentKind = kind
+                currentRend = rend
+                runs.append(
+                  .init(
+                    text: String(repeating: " ", count: quantity), rend: joined("space"),
+                    element: words?.index(of: element) ?? gloss, preserved: true))
+              }
             case "lb", "cb":
               flush()
               lineBroken = true
@@ -709,6 +746,70 @@
       walk(owner)
       flush()
       return lines
+    }
+
+    /// A line's runs as XML text is displayed (HTML's `white-space:
+    /// normal`, as TEI prose is read): each stretch of white space—space,
+    /// tab, line feed, carriage return—one space, across the runs' edges
+    /// too, and none at the line's start or end. A run that is white space
+    /// alone after white space is gone. So markup laid out over lines and
+    /// indented reads as the same markup on one line; a no-break space is
+    /// no white space here, as it is none in HTML. Only what is drawn
+    /// changes: a word's surface and the projection anchors count in
+    /// (`TEIProjection`) are read from the markup, not from these runs.
+    static func spaced(_ runs: [TEILine.Run]) -> [TEILine.Run] {
+      func isSpace(_ scalar: Unicode.Scalar) -> Bool {
+        scalar == " " || scalar == "\t" || scalar == "\n" || scalar == "\r"
+      }
+      var out: [TEILine.Run] = []
+      // Whether what was last kept ends in white space, or nothing was kept.
+      var afterSpace = true
+      for run in runs {
+        guard case .text = run.kind else {
+          out.append(run)
+          afterSpace = false
+          continue
+        }
+        // The source's own white space, kept as it is.
+        if run.preserved {
+          out.append(run)
+          afterSpace = run.text.unicodeScalars.last.map(isSpace) ?? afterSpace
+          continue
+        }
+        var text = String.UnicodeScalarView()
+        for scalar in run.text.unicodeScalars {
+          if isSpace(scalar) {
+            if !afterSpace { text.append(" ") }
+            afterSpace = true
+          } else {
+            text.append(scalar)
+            afterSpace = false
+          }
+        }
+        guard !text.isEmpty else { continue }
+        out.append(
+          .init(
+            text: String(text), rend: run.rend, kind: run.kind, alternative: run.alternative,
+            highlight: run.highlight, word: run.word, zone: run.zone, element: run.element))
+      }
+      // None at the end: the last text run's trailing space, unless it is
+      // the source's own.
+      if let index = out.lastIndex(where: { if case .text = $0.kind { return true } else { return false } }),
+        index == out.count - 1, !out[index].preserved, out[index].text.unicodeScalars.last == " "
+      {
+        let run = out[index]
+        var text = run.text.unicodeScalars
+        text.removeLast()
+        out.remove(at: index)
+        if !text.isEmpty {
+          out.insert(
+            .init(
+              text: String(text), rend: run.rend, kind: run.kind, alternative: run.alternative,
+              highlight: run.highlight, word: run.word, zone: run.zone, element: run.element,
+              preserved: run.preserved), at: index)
+        }
+      }
+      return out
     }
 
     /// What a title page's parts can stand in as blocks of their own: a

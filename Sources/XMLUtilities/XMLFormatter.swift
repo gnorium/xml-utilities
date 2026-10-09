@@ -314,9 +314,11 @@
       ["lb", "pb"].contains(localName) && XMLFormatter.attribute("break", in: raw) != "no"
     }
 
-    /// Kept on one line: it holds text, or nothing to lay out.
+    /// Kept exactly as written: it holds text, or nothing to lay out, or
+    /// says its white space is its own (`xml:space="preserve"`).
     var isWhole: Bool {
       selfClosing || holdsText || PrettyNode.whole.contains(localName)
+        || XMLFormatter.attribute("xml:space", in: raw) == "preserve"
         || !children.contains { $0.kind == .element || $0.kind == .other }
     }
 
