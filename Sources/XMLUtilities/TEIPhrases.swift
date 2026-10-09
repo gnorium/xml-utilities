@@ -2,7 +2,7 @@
   import Foundation
 
   /// A multi-word unit of a page (user, 2026-09-29): a `<phr>` (an idiom, a
-  /// phrase, …) and the words in it, as an utterance's anchor counts them,
+  /// phrase, …) and the words in it, as a quotation's anchor counts them,
   /// so the words a reader opens can open the phrase they are in.
   public struct TEIPhrase: Sendable, Equatable {
     /// Its words in reading order, each by its place on the page.

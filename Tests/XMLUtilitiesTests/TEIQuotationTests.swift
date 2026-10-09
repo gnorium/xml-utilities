@@ -1,11 +1,11 @@
 import XCTest
 import XMLUtilities
 
-/// An utterance read in its testament: its sentence (joined across a page
-/// break) and its word set apart in the reading, counted as the utterances service
+/// A quotation read in its testament: its sentence (joined across a page
+/// break) and its word set apart in the reading, counted as the quotations service
 /// counts a page. The offsets below are gnorium-python's `diplomatic_text`
 /// of the same pages.
-final class TEIUtteranceTests: XCTestCase {
+final class TEIQuotationTests: XCTestCase {
   let document = """
     <TEI><text><body>\
     <pb n="1" facs="https://example.org/iiif/p0/full/1300,/0/default.jpg"/><p><s>Before.</s></p>\
@@ -116,7 +116,7 @@ final class TEIUtteranceTests: XCTestCase {
     // "word": line 2 (after the <lb/>), after "here", "A" and "split".
     let word = TEIWordPosition(line: 2, word: 4, surface: "word")
     let highlights = try XCTUnwrap(
-      TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/p1", start: word, end: word))
+      TEIRenderer.quotation(in: pages, canvasID: "https://example.org/iiif/p1", start: word, end: word))
     XCTAssertEqual(highlights["https://example.org/iiif/p1"], [.init(22..<34, kind: .sentence), .init(30..<34, kind: .title)])
     XCTAssertEqual(highlights["https://example.org/iiif/p2"], [.init(0..<13, kind: .sentence)])
     XCTAssertNil(highlights["https://example.org/iiif/p0"])
@@ -144,7 +144,7 @@ final class TEIUtteranceTests: XCTestCase {
       """
     let here = TEIWordPosition(line: 2, word: 1, surface: "here")
     let highlights = try XCTUnwrap(
-      TEIRenderer.utterance(
+      TEIRenderer.quotation(
         in: TEIRenderer.pages(in: document), canvasID: "https://example.org/iiif/q0", start: here, end: here))
     XCTAssertEqual(highlights["https://example.org/iiif/q0"], [.init(11..<24, kind: .sentence), .init(12..<16, kind: .title)])
   }
@@ -154,7 +154,7 @@ final class TEIUtteranceTests: XCTestCase {
     // "sentence" in "First  sentence\nhere.": the supplied word is not counted.
     let sentence = TEIWordPosition(line: 1, word: 2, surface: "sentence")
     let highlights = try XCTUnwrap(
-      TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/p1", start: sentence, end: sentence))
+      TEIRenderer.quotation(in: pages, canvasID: "https://example.org/iiif/p1", start: sentence, end: sentence))
     XCTAssertEqual(highlights["https://example.org/iiif/p1"], [.init(0..<21, kind: .sentence), .init(7..<15, kind: .title)])
     let read = TEIRenderer.pages(in: document, highlights: highlights)
     let runs = read[1].lines.flatMap(\.runs)
@@ -166,7 +166,7 @@ final class TEIUtteranceTests: XCTestCase {
   func testSeveralWordsAreHighlightedFromTheFirstToTheLast() throws {
     let pages = TEIRenderer.pages(in: document)
     let highlights = try XCTUnwrap(
-      TEIRenderer.utterance(
+      TEIRenderer.quotation(
         in: pages, canvasID: "https://example.org/iiif/p1",
         start: .init(line: 2, word: 2, surface: "A"), end: .init(line: 2, word: 4, surface: "word")))
     XCTAssertEqual(highlights["https://example.org/iiif/p1"]?.last, .init(22..<34, kind: .title))
@@ -175,16 +175,16 @@ final class TEIUtteranceTests: XCTestCase {
   func testAWordThatReadsOtherwiseIsNotHighlighted() {
     let pages = TEIRenderer.pages(in: document)
     let moved = TEIWordPosition(line: 2, word: 3, surface: "word")
-    XCTAssertNil(TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/p1", start: moved, end: moved))
+    XCTAssertNil(TEIRenderer.quotation(in: pages, canvasID: "https://example.org/iiif/p1", start: moved, end: moved))
     let absent = TEIWordPosition(line: 9, word: 1, surface: "word")
-    XCTAssertNil(TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/p1", start: absent, end: absent))
+    XCTAssertNil(TEIRenderer.quotation(in: pages, canvasID: "https://example.org/iiif/p1", start: absent, end: absent))
     let word = TEIWordPosition(line: 2, word: 4, surface: "word")
-    XCTAssertNil(TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/nowhere", start: word, end: word))
+    XCTAssertNil(TEIRenderer.quotation(in: pages, canvasID: "https://example.org/iiif/nowhere", start: word, end: word))
   }
 
   /// The same pages as gnorium-python's `units` counts them
-  /// (tests/test_utterances.py `TAGGED`, test_anchor_alignment.py).
-  func testWordsAreCountedAsTheUtterancesCountsThem() throws {
+  /// (tests/test_quotations.py `TAGGED`, test_anchor_alignment.py).
+  func testWordsAreCountedAsTheQuotationsCountsThem() throws {
     let tagged = """
       <TEI><text><body><pb n="1" facs="https://example.org/iiif/t0/full/1300,/0/default.jpg"/><p>\
       <w lemma="the" pos="DET">The</w> <w lemma="computer" pos="NOUN">Computors</w> \
@@ -200,15 +200,15 @@ final class TEIUtteranceTests: XCTestCase {
     let pages = TEIRenderer.pages(in: tagged)
     let computor = TEIWordPosition(line: 2, word: 1, surface: "computor")
     XCTAssertEqual(
-      TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/t0", start: computor, end: computor)?[
+      TEIRenderer.quotation(in: pages, canvasID: "https://example.org/iiif/t0", start: computor, end: computor)?[
         "https://example.org/iiif/t0"]?.last?.kind, .title)
     // A word broken over a page is counted where it starts, its surface both parts.
     let broken = TEIWordPosition(line: 1, word: 2, surface: "compu-ter")
-    XCTAssertNotNil(TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/t1", start: broken, end: broken))
+    XCTAssertNotNil(TEIRenderer.quotation(in: pages, canvasID: "https://example.org/iiif/t1", start: broken, end: broken))
     // The next page counts from its own first word; untagged text is counted by its tokens.
     let won = TEIWordPosition(line: 1, word: 1, surface: "won")
     let rosae = TEIWordPosition(line: 1, word: 2, surface: "rosæ")
-    XCTAssertNotNil(TEIRenderer.utterance(in: pages, canvasID: "https://example.org/iiif/t2", start: won, end: rosae))
+    XCTAssertNotNil(TEIRenderer.quotation(in: pages, canvasID: "https://example.org/iiif/t2", start: won, end: rosae))
   }
   /// A figure's `<figDesc>` and an incident's `<desc>` are the encoder's
   /// words about the page, never a word of it: the same page as
@@ -278,7 +278,7 @@ final class TEIUtteranceTests: XCTestCase {
     let pages = TEIRenderer.pages(in: page)
     for (word, surface, offset) in [(3, "x", 9), (4, "=", 11), (8, "c", 19), (9, "hold", 21)] {
       let at = TEIWordPosition(line: 1, word: word, surface: surface)
-      let title = TEIRenderer.utterance(
+      let title = TEIRenderer.quotation(
         in: pages, canvasID: "https://example.org/iiif/f0", start: at, end: at)?["https://example.org/iiif/f0"]?
         .first { $0.kind == .title }
       XCTAssertEqual(title?.range, offset..<(offset + surface.unicodeScalars.count), surface)
@@ -302,7 +302,7 @@ final class TEIUtteranceTests: XCTestCase {
       ["1.1 a", "1.2 +", "1.3 b", "1.4 end"])
     // "a + \u{FFFC} b end": b at 6.
     let at = TEIWordPosition(line: 1, word: 3, surface: "b")
-    let title = TEIRenderer.utterance(
+    let title = TEIRenderer.quotation(
       in: pages, canvasID: "https://example.org/iiif/g0", start: at, end: at)?["https://example.org/iiif/g0"]?
       .first { $0.kind == .title }
     XCTAssertEqual(title?.range, 6..<7)
@@ -326,10 +326,10 @@ final class TEIUtteranceTests: XCTestCase {
     for (line, word, surface) in [(1, 2, "Tragedy"), (2, 1, "King."), (3, 2, "thy"), (4, 2, "king"), (5, 1, "But")] {
       let at = TEIWordPosition(line: line, word: word, surface: surface)
       XCTAssertNotNil(
-        TEIRenderer.utterance(in: pages, canvasID: page, start: at, end: at), "\(surface) is not line \(line), word \(word)")
+        TEIRenderer.quotation(in: pages, canvasID: page, start: at, end: at), "\(surface) is not line \(line), word \(word)")
     }
     // The <lb/> ending line 4 and the one opening the next verse line are one line.
     let none = TEIWordPosition(line: 6, word: 1, surface: "But")
-    XCTAssertNil(TEIRenderer.utterance(in: pages, canvasID: page, start: none, end: none))
+    XCTAssertNil(TEIRenderer.quotation(in: pages, canvasID: page, start: none, end: none))
   }
 }

@@ -155,15 +155,15 @@ final class XMLFormatterTests: XCTestCase {
   }
 
   func testIdempotence() {
-    for markup in [Self.titlePage] + Self.ordinances + Self.edges {
+    for markup in [Self.titlePage] + Self.markups + Self.edges {
       let once = XMLFormatter.prettified(markup)
       XCTAssertEqual(XMLFormatter.prettified(once), once)
     }
   }
 
-  /// Ordinances as recognition writes them: one line, words spaced, notes,
+  /// Markups as recognition writes them: one line, words spaced, notes,
   /// footnotes, verse, furniture, choices, figures, tables.
-  static let ordinances = [
+  static let markups = [
     ##"<fw type="header" place="top"><w>THE</w> <w>PREFACE</w><pc>.</pc></fw><fw type="pageNum" place="top-right">vii</fw><div type="preface"><head><w>PREFACE</w></head><p><s><w lemma="the" pos="DET"><choice><abbr>yͤ</abbr><expan>the</expan></choice></w> <w lemma="virtue" pos="NOUN"><choice><orig>vertue</orig><reg>virtue</reg></choice></w> <w lemma="of" pos="ADP">of</w> <persName><w lemma="John" pos="PROPN">Iohn</w></persName> <w lemma="show" pos="VERB"><g ref="#slong">ſ</g>hewed</w> <w lemma="bank" pos="NOUN">ba<supplied reason="damage">nk</supplied></w><pc>,</pc> <del rend="strikethrough">not</del> <date when="1603"><num value="1603">1603</num></date><pc>.</pc><note place="foot" n="1"><s><w>See</w> <w>below</w><pc>.</pc></s></note></s><note place="margin"><s><w lemma="mark" pos="VERB">Marke</w></s></note></p><list><item>First</item><item>Second</item></list><handShift new="#h2"/></div><fw type="catch" place="bottom">THE</fw>"##,
     ##"<pb n="7"/><p><s><w lemma="be" pos="VERB">Been</w> <w lemma="thus" pos="ADV">thus</w><pc>,</pc><lb/><w lemma="encounter" pos="VERB">encountred</w><pc>:</pc></s></p>"##,
     ##"<lg><l rend="indent(1)"><s><w lemma="the" pos="DET">The</w> <w lemma="computer" pos="NOUN">compu-<lb break="no"/>ter</w> <w lemma="stand" pos="VERB">stands</w><lb/><w lemma="here" pos="ADV">here</w></s></l><l><s><w>And</w> <w>there</w><pc>.</pc></s></l></lg><sp><speaker><w>HAM</w><pc>.</pc></speaker><p><s><w>To</w> <w>be</w></s><s><w>or</w> <w>not</w><pc>.</pc></s></p></sp><stage><w>Exit</w><pc>.</pc></stage>"##,
@@ -187,13 +187,13 @@ final class XMLFormatterTests: XCTestCase {
     for markup in Self.edges { assertSameReading(markup) }
   }
 
-  func testOrdinancesReadTheSameFormatted() {
-    for markup in Self.ordinances { assertSameReading(markup) }
+  func testMarkupsReadTheSameFormatted() {
+    for markup in Self.markups { assertSameReading(markup) }
   }
 
   /// A reading that marks words counts the same words formatted.
   func testWordsAreTheSameFormatted() {
-    for markup in Self.ordinances {
+    for markup in Self.markups {
       // Each word's place and its text, white space collapsed.
       let words = { (text: String) -> [String] in
         var out: [String: String] = [:]

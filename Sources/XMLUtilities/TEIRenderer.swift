@@ -128,8 +128,8 @@
       /// place: a `<choice>`'s regularized spelling, expansion or
       /// correction ("the" for "yͤ"). Empty when there is none.
       public let alternative: String
-      /// The highlight it falls in, when the reading has one: an utterance's
-      /// sentence, or its word (`TEIRenderer.utterance`).
+      /// The highlight it falls in, when the reading has one: a quotation's
+      /// sentence, or its word (`TEIRenderer.quotation`).
       public let highlight: TEIHighlight.Kind?
       /// Where a decorated initial sits on the surface (the zone its `<hi
       /// rend="initial" facs="#…">` names), so its decoration can be cut from
@@ -328,7 +328,7 @@
 
     /// Each canvas as a complete XML document, preserving front/body/back
     /// matter and containers crossing the page boundary. The leading page
-    /// break is omitted, as the utterances service's page anchors require.
+    /// break is omitted, as the quotations service's page anchors require.
     public static func pageDocuments(in xml: String) -> [(facsimileURL: String, xml: String)] {
       guard let text = XMLFormatter.text(of: xml) else { return [] }
       let breaks = pageBreaks(in: text)
@@ -930,7 +930,7 @@
     /// The image service a facsimile URL is a request against: everything
     /// before the IIIF Image API parameters. `…/iiif/2/<id>/full/1300,/0/default.jpg`
     /// and `…/iiif/2/<id>/full/max/0/default.jpg` are two requests for one
-    /// image, and it is the image that identifies a semblance.
+    /// image, and it is the image that identifies a canvas.
     public static func serviceID(ofFacsimile url: String) -> String {
       guard let cut = url.range(of: "/full/") else { return url }
       return String(url[url.startIndex..<cut.lowerBound])
