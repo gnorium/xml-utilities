@@ -470,4 +470,62 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertFalse(TEIRenderer.hasMarkup("<pb n=\"1v\"/>\n<lb/>"))
     XCTAssertFalse(TEIRenderer.hasMarkup("<div><p></p></div>"))
   }
+
+  func testExcessiveSpaceQuantitiesAreRejectedBeforeExpansion() {
+    for quantity in ["9223372036854775807", "9223372036854775808", "999999999999999999999999999999999"] {
+      for attributes in ["unit='chars'", "unit='lines'", "dim='vertical'"] {
+        let markup = "<p>before<space quantity='\(quantity)' \(attributes)/><w>after</w></p>"
+        XCTAssertTrue(TEIRenderer.lines(in: markup).isEmpty)
+        XCTAssertTrue(TEIRenderer.lines(in: markup, marksWords: true).isEmpty)
+        let document = "<TEI><text><body><pb n='1' facs='https://example.org/p1'/>" + markup + "</body></text></TEI>"
+        let page = TEIRenderer.pages(in: document).first
+        XCTAssertEqual(page?.markup, markup, "Rejecting an expansion must not rewrite source markup")
+        XCTAssertEqual(page?.lines.count, 0)
+      }
+    }
+    XCTAssertTrue(TEIRenderer.lines(in: "<space quantity='4097' unit='chars'/>").isEmpty)
+    XCTAssertTrue(TEIRenderer.lines(in: "<space quantity='129' unit='lines'/>").isEmpty)
+  }
+
+  func testSpaceExpansionBudgetIsSharedAcrossNestedTablesAndFigures() {
+    let characters = "<space quantity='4096' unit='chars'/>"
+    XCTAssertEqual(TEIRenderer.lines(in: "<p>" + String(repeating: characters, count: 16) + "</p>").first?.text.count, 65_536)
+    let excessiveCharacters = "<table><row><cell>" + String(repeating: characters, count: 16)
+      + "</cell><cell><table><row><cell>" + characters + "</cell></row></table></cell></row></table>"
+    XCTAssertTrue(TEIRenderer.lines(in: excessiveCharacters).isEmpty)
+
+    let lines = "<space quantity='128' unit='lines'/>"
+    XCTAssertEqual(TEIRenderer.lines(in: String(repeating: lines, count: 8)).count, 1_024)
+    let excessiveLines = "<figure><figDesc>" + String(repeating: lines, count: 8) + "</figDesc><head>" + lines + "</head></figure>"
+    XCTAssertTrue(TEIRenderer.lines(in: excessiveLines).isEmpty)
+  }
+
+  func testTablesInheritPreservedWhitespaceAndHonorDefaultOverrides() throws {
+    let markup = "<table xml:space='preserve'><head> caption  text </head><row>"
+      + "<cell> a  b <table><head> nested  caption </head><row><cell> c  d </cell>"
+      + "<cell xml:space='default'> e  f </cell></row></table></cell>"
+      + "<cell xml:space='default'> g  h </cell></row></table>"
+    let lines = TEIRenderer.lines(in: markup)
+    guard case .table(let table) = try XCTUnwrap(lines.first).kind else { return XCTFail("Missing table") }
+    XCTAssertEqual(table.caption.map(\.text), [" caption  text "])
+    XCTAssertTrue(table.caption.flatMap(\.runs).allSatisfy(\.preserved))
+    XCTAssertEqual(table.rows[0].cells[0].lines[0].text, " a  b ")
+    XCTAssertTrue(table.rows[0].cells[0].lines[0].runs.allSatisfy(\.preserved))
+    guard case .table(let nested) = table.rows[0].cells[0].lines[1].kind else { return XCTFail("Missing nested table") }
+    XCTAssertEqual(nested.caption.map(\.text), [" nested  caption "])
+    XCTAssertEqual(nested.rows[0].cells[0].lines.map(\.text), [" c  d "])
+    XCTAssertTrue(nested.rows[0].cells[0].lines.flatMap(\.runs).allSatisfy(\.preserved))
+    XCTAssertEqual(nested.rows[0].cells[1].lines.map(\.text), ["e f"])
+    XCTAssertFalse(nested.rows[0].cells[1].lines.flatMap(\.runs).contains(where: \.preserved))
+    XCTAssertEqual(table.rows[0].cells[1].lines.map(\.text), ["g h"])
+  }
+
+  func testAdjacentTitlePageAuthorsDatesAndEditionsAreSeparateBlocks() {
+    let standalone = TEIRenderer.lines(in: "<titlePage><docAuthor>A</docAuthor><docDate>1888</docDate><docEdition>Second</docEdition></titlePage>")
+    XCTAssertEqual(standalone.map(\.text), ["A", "1888", "Second"])
+    XCTAssertTrue(standalone.allSatisfy(\.opensBlock))
+    let inline = TEIRenderer.lines(in: "<titlePage><byline>by <docAuthor>A</docAuthor> in <docDate>1888</docDate>, <docEdition>Second</docEdition></byline>"
+      + "<docImprint><docAuthor>B</docAuthor>, <docDate>1889</docDate>, <docEdition>Third</docEdition></docImprint></titlePage>")
+    XCTAssertEqual(inline.map(\.text), ["by A in 1888, Second", "B, 1889, Third"])
+  }
 }

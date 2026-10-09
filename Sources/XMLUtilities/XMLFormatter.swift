@@ -47,9 +47,7 @@
     /// attribute, which is a meaningful answer: a page break without `facs`
     /// is a different thing from one with it.
     public static func attribute(_ name: String, in tag: String) -> String {
-      guard let key = tag.range(of: "\(name)=\"") else { return "" }
-      guard let end = tag.range(of: "\"", range: key.upperBound..<tag.endIndex) else { return "" }
-      return String(tag[key.upperBound..<end.lowerBound])
+      TEIMarkup.attributes(in: tag)[name] ?? ""
     }
 
     /// The five XML entities. Everything else is left as it stands—a long s
@@ -256,8 +254,9 @@
     static let empty: Set<String> = ["pb", "cb", "lb", "gap", "milestone", "graphic"]
     /// Elements kept whole whatever they hold: a formula reads as its
     /// MathML, white space and all, and a word's surface is everything in
-    /// it, white space too, as an anchor names it.
-    static let whole: Set<String> = ["formula", "math", "w", "m", "pc"]
+    /// it, white space too, as an anchor names it. A choice stays whole so
+    /// an unselected reading cannot introduce breaks into its surface.
+    static let whole: Set<String> = ["formula", "math", "w", "m", "pc", "choice"]
 
     let kind: Kind
     let name: String
@@ -279,10 +278,11 @@
     /// The name without its prefix (`tei:p` is `p`).
     var localName: String { name.split(separator: ":").last.map(String.init) ?? name }
 
-    /// Whether this node holds text of its own, not only white space.
+    /// Whether this node holds text of its own, not only XML whitespace.
+    /// Nonbreaking spaces remain text, just as the renderer reads them.
     var holdsText: Bool {
       children.contains {
-        ($0.kind == .text && $0.raw.contains { !$0.isWhitespace }) || $0.kind == .cdata
+        ($0.kind == .text && $0.raw.contains { !" \t\r\n".contains($0) }) || $0.kind == .cdata
       }
     }
 

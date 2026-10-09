@@ -87,4 +87,29 @@ final class TEIEncodingTests: XCTestCase {
     XCTAssertNil(runs.first { $0.text == "Globe" }?.element)
     XCTAssertEqual(runs.first { $0.text.hasPrefix(",") }?.element, figure)
   }
+
+  func testSplitWordsKeepTheAncestorsOfEveryOwnedPart() throws {
+    let markup = "<p><hi rend='italic'><w part='I'>hap</w></hi><lb/><seg type='suffix'><w part='F'>py</w></seg> <w>after</w></p>"
+    let page = TEIPage(label: "1", facsimileURL: "", lines: [], markup: markup)
+    let words = TEIRenderer.words(of: page)
+    XCTAssertEqual(words.map(\.surface), ["happy", "after"])
+    let encoding = try XCTUnwrap(TEIRenderer.encoding(of: page, at: words[0].place))
+    XCTAssertEqual(encoding.map(\.element), ["p", "hi", "w", "seg", "w"])
+    XCTAssertEqual(encoding.map(\.relation), [.around, .around, .own, .around, .own])
+    XCTAssertEqual(encoding.first { $0.element == "hi" }?.attribute("rend"), "italic")
+    XCTAssertEqual(encoding.first { $0.element == "seg" }?.attribute("type"), "suffix")
+  }
+
+  func testGapOnlyAndLeadingOrTrailingGapWordsKeepOwnershipAndMetadata() throws {
+    for content in ["<gap reason='illegible'/>", "<gap reason='illegible'/>at", "at<gap reason='illegible'/>"] {
+      let page = TEIPage(label: "1", facsimileURL: "", lines: [], markup: "<p><w lemma='lost'>" + content + "</w></p>")
+      let words = TEIRenderer.words(of: page)
+      XCTAssertEqual(words.count, 1)
+      let encoding = try XCTUnwrap(TEIRenderer.encoding(of: page, at: try XCTUnwrap(words.first).place))
+      XCTAssertEqual(encoding.map(\.element), ["p", "w", "gap"])
+      XCTAssertEqual(encoding.map(\.relation), [.around, .own, .within])
+      XCTAssertEqual(encoding.first { $0.element == "w" }?.attribute("lemma"), "lost")
+      XCTAssertEqual(encoding.first { $0.element == "gap" }?.attribute("reason"), "illegible")
+    }
+  }
 }

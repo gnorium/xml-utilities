@@ -6,10 +6,9 @@ import XCTest
 /// holding only elements open one child per line, and nothing a reader
 /// reads changes.
 final class XMLFormatterTests: XCTestCase {
-  /// Each line a reading sets, its kind and its text with white space
-  /// collapsed, as a browser draws it.
+  /// Each line a reading sets, its kind and exact rendered text. The
+  /// renderer already collapses ordinary XML whitespace.
   private func reading(_ markup: String) -> [String] {
-    func collapsed(_ text: String) -> String { text.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
     func described(_ lines: [TEILine]) -> [String] {
       lines.flatMap { line -> [String] in
         let kind: String
@@ -25,7 +24,7 @@ final class XMLFormatterTests: XCTestCase {
         default: kind = "\(line.kind)"
         }
         let flags = "\(line.rend)|\(line.opensBlock)|\(line.joinsPrevious)|"
-        return [kind + "|" + flags + collapsed(line.text)]
+        return [kind + "|" + flags + line.text]
       }
     }
     return described(TEIRenderer.lines(in: markup))
@@ -204,6 +203,41 @@ final class XMLFormatterTests: XCTestCase {
         return out.map { "\($0.key)=\($0.value.split(whereSeparator: \.isWhitespace).joined(separator: " "))" }.sorted()
       }
       XCTAssertEqual(words(XMLFormatter.prettified(markup)), words(markup))
+    }
+  }
+
+  func testPreservationAttributesAcceptBothQuotesAndWhitespaceAroundEquals() {
+    for attribute in ["xml:space='preserve'", "xml:space = \"preserve\"", "xml:space \t=\n 'preserve'"] {
+      let markup = "<p \(attribute)><w>a</w>  <w>b</w>\n </p>"
+      XCTAssertEqual(XMLFormatter.prettified(markup), markup)
+      XCTAssertEqual(TEIRenderer.lines(in: markup).map(\.text), ["a  b\n "])
+      assertSameReading(markup)
+    }
+  }
+
+  func testAttributeNamesAndQuotedValuesAreParsedAsWholeAttributes() {
+    let tag = #"<p not-xml:space="preserve" note="xml:space='default'" xml:space = 'preserve' n = 'a &amp; b'>"#
+    XCTAssertEqual(XMLFormatter.attribute("xml:space", in: tag), "preserve")
+    XCTAssertEqual(XMLFormatter.attribute("space", in: tag), "")
+    XCTAssertEqual(XMLFormatter.attribute("n", in: tag), "a & b")
+  }
+
+  func testNonbreakingSpacesAreNotReplacedByIndentation() {
+    let markup = "<p><w>a</w>\u{00A0}<w>b</w></p>"
+    XCTAssertEqual(XMLFormatter.prettified(markup), markup)
+    XCTAssertEqual(TEIRenderer.lines(in: XMLFormatter.prettified(markup)).map(\.text), ["a\u{00A0}b"])
+    assertSameReading(markup)
+  }
+
+  func testUnselectedChoiceBreakCannotSplitTheSelectedWord() {
+    let markup = "<p><choice><orig>be</orig><reg><lb/></reg></choice><hi>fore</hi></p>"
+    XCTAssertEqual(TEIRenderer.lines(in: XMLFormatter.prettified(markup)).map(\.text), ["before"])
+    assertSameReading(markup)
+  }
+
+  func testNoBreakAttributesAcceptBothQuotesAndWhitespaceAroundEquals() {
+    for attribute in ["break='no'", "break = \"no\""] {
+      assertSameReading("<p><hi>be</hi><lb \(attribute)/><hi>fore</hi></p>")
     }
   }
 }

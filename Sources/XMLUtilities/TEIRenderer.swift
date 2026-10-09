@@ -419,18 +419,50 @@
     /// which it falls in; with `marksWords`, which word it is of, as an
     /// anchor counts the page's words (`words(of:)`). `zones` are the
     /// document's (`TEIPage.zones`); nil reads the markup's own facsimile.
+    /// Returns no lines for invalid or excessive `<space>` quantities:
+    /// at most 4,096 characters or 128 lines per element, and 65,536
+    /// characters or 1,024 lines over the reading. Source markup is unchanged.
     public static func lines(
       in markup: String, highlights: [TEIHighlight] = [], marksWords: Bool = false, zones: [String: TEIZone]? = nil
     ) -> [TEILine] {
       let zones = zones ?? TEIFacsimile.zones(in: TEIFacsimile.blocks(in: markup))
+      let root = TEIMarkup.document(!highlights.isEmpty || marksWords ? TEIProjection.normalized(markup) : markup)
+      // Check all expansions together before constructing any rendered
+      // spaces or lines, including expansions in nested tables and figures.
+      guard spacesAreBounded(in: root) else { return [] }
       guard !highlights.isEmpty || marksWords else {
-        return reading(from: TEIMarkup.document(markup), zones: zones)
+        return reading(from: root, zones: zones)
       }
-      let root = TEIMarkup.document(TEIProjection.normalized(markup))
       let projection = TEIProjection(root)
       return reading(
         from: root, highlights: highlights, words: marksWords ? Words(projection.units, root: root) : nil,
         zones: zones)
+    }
+
+    /// Expansion limits apply to the complete reading, not separately to
+    /// table cells. Oversized or invalid quantities reject the reading;
+    /// the source markup remains available unchanged on its page.
+    private static func spacesAreBounded(in root: TEIMarkup.Element) -> Bool {
+      var charactersLeft = 65_536
+      var linesLeft = 1_024
+      func visit(_ element: TEIMarkup.Element) -> Bool {
+        if element.name == "space" {
+          let source = element.attribute("quantity")
+          guard let quantity = source.isEmpty ? 1 : Int(source), quantity > 0 else { return false }
+          let unit = element.attribute("unit")
+          if unit == "lines" || element.attribute("dim") == "vertical" {
+            guard quantity <= 128 else { return false }
+            let count = unit == "lines" ? quantity : 1
+            guard count <= linesLeft else { return false }
+            linesLeft -= count
+          } else {
+            guard quantity <= 4_096, quantity <= charactersLeft else { return false }
+            charactersLeft -= quantity
+          }
+        }
+        return element.elements.allSatisfy(visit)
+      }
+      return visit(root)
     }
 
     /// A page's words by where they are in its projection: which word a
@@ -521,7 +553,7 @@
 
     private static func reading(
       from owner: TEIMarkup.Element, highlights: [TEIHighlight] = [], words: Words? = nil,
-      zones: [String: TEIZone] = [:]
+      zones: [String: TEIZone] = [:], inheritedPreservation: Bool = false
     ) -> [TEILine] {
       /// The zone an element names by `facs="#…"`.
       func zone(of element: TEIMarkup.Element) -> TEIZone? {
@@ -538,7 +570,7 @@
         if preserve { preserving.insert(ObjectIdentifier(element)) }
         for child in element.elements { mark(child, preserve) }
       }
-      mark(owner, false)
+      mark(owner, inheritedPreservation)
       var lines: [TEILine] = []
       var runs: [TEILine.Run] = []
       var currentKind: TEILine.Kind = .text
@@ -715,8 +747,8 @@
             case "milestone" where element.attribute("unit") == "document":
               flush()
               append(.init(kind: .documentBoundary, text: ""))
-            case "docAuthor", "docDate", "docEdition"
-            where !TEIRenderer.titlePageStructure.contains(owner.name):
+            case let name where ["docAuthor", "docDate", "docEdition"].contains(name)
+              && !TEIRenderer.titlePageStructure.contains(owner.name):
               // Within a byline, an imprint or a title, a phrase of it.
               walk(
                 element, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative,
@@ -744,13 +776,17 @@
               flush()
               let children = element.elements
               let caption = children.filter { $0.name == "head" }.flatMap {
-                reading(from: $0, highlights: highlights, words: words, zones: zones)
+                reading(
+                  from: $0, highlights: highlights, words: words, zones: zones,
+                  inheritedPreservation: preserving.contains(ObjectIdentifier($0)))
               }
               let rows = children.filter { $0.name == "row" }.map { row in
                 TEITable.Row(
                   cells: row.elements.filter { $0.name == "cell" }.map { cell in
                     TEITable.Cell(
-                      lines: reading(from: cell, highlights: highlights, words: words, zones: zones),
+                      lines: reading(
+                        from: cell, highlights: highlights, words: words, zones: zones,
+                        inheritedPreservation: preserving.contains(ObjectIdentifier(cell))),
                       isLabel: row.attribute("role") == "label"
                         || cell.attribute("role") == "label",
                       rows: max(1, Int(cell.attribute("rows")) ?? 1),
@@ -767,7 +803,9 @@
               let descriptions = element.elements.filter {
                 $0.name == "figDesc" || $0.name == "desc"
               }
-              let description = descriptions.flatMap { reading(from: $0) }.map(\.text)
+              let description = descriptions.flatMap {
+                reading(from: $0, inheritedPreservation: preserving.contains(ObjectIdentifier($0)))
+              }.map(\.text)
                 .joined(separator: " ")
               append(
                 .init(

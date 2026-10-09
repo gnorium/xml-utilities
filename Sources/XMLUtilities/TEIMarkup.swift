@@ -20,6 +20,8 @@
       var projected: [Int: TEIProjection.Position] = [:]
       /// Where the element starts in the projection, likewise.
       var projectedStart: Int?
+      /// Counted characters synthesized by the projection, such as a gap.
+      var projectedSynthetic: Range<Int>?
 
       init(name: String, attributes: [String: String] = [:]) {
         self.name = name
@@ -45,13 +47,28 @@
       }
     }
 
+    private static let attributePattern = try! NSRegularExpression(
+      pattern: #"([^\s=<>/]+)\s*=\s*("[^"]*"|'[^']*')"#)
+
+    /// Quoted XML attributes, including whitespace around `=`. Both the
+    /// fragment reader and formatter use these boundaries and entity rules.
+    static func attributes(in tag: String) -> [String: String] {
+      var values: [String: String] = [:]
+      for attribute in attributePattern.matches(in: tag, range: NSRange(tag.startIndex..., in: tag)) {
+        guard let key = Range(attribute.range(at: 1), in: tag),
+          let value = Range(attribute.range(at: 2), in: tag)
+        else { continue }
+        values[String(tag[key])] = XMLFormatter.decodingEntities(String(tag[value].dropFirst().dropLast()))
+      }
+      return values
+    }
+
     /// The markup under one root element, which holds it as its children.
     static func document(_ markup: String) -> Element {
       let root = Element(name: "root")
       var stack = [root]
       let tokens = try! NSRegularExpression(
         pattern: #"<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<(?:"[^"]*"|'[^']*'|[^'">])*>|[^<]+"#)
-      let attributes = try! NSRegularExpression(pattern: #"([^\s=<>/]+)\s*=\s*("[^"]*"|'[^']*')"#)
       let emptyElements: Set<String> = ["pb", "cb", "lb", "gap", "milestone", "graphic"]
       for match in tokens.matches(in: markup, range: NSRange(markup.startIndex..., in: markup)) {
         guard let range = Range(match.range, in: markup) else { continue }
@@ -74,17 +91,7 @@
             }
             continue
           }
-          var values: [String: String] = [:]
-          for attribute in attributes.matches(
-            in: token, range: NSRange(token.startIndex..., in: token))
-          {
-            guard let key = Range(attribute.range(at: 1), in: token),
-              let value = Range(attribute.range(at: 2), in: token)
-            else { continue }
-            values[String(token[key])] = XMLFormatter.decodingEntities(
-              String(token[value].dropFirst().dropLast()))
-          }
-          let element = Element(name: name, attributes: values)
+          let element = Element(name: name, attributes: attributes(in: token))
           stack.last?.children.append(.element(element))
           if !token.hasSuffix("/>") && !emptyElements.contains(name) { stack.append(element) }
         }

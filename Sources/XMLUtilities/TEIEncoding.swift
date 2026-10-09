@@ -96,6 +96,10 @@
         else { continue }
         own.insert(ObjectIdentifier(entry.element))
       }
+      // Every part owns its ancestors, even when an annotation encloses
+      // only one component of a word continued across a line break.
+      let around = Set(all.filter { own.contains(ObjectIdentifier($0.element)) }
+        .flatMap { $0.path.map(ObjectIdentifier.init) })
       let whole = unit.range
       var relations: [ObjectIdentifier: TEIEncoding.Relation] = [:]
       for entry in all {
@@ -104,6 +108,8 @@
           relations[id] = .own
         } else if entry.path.contains(where: { relations[ObjectIdentifier($0)] == .own || relations[ObjectIdentifier($0)] == .within }) {
           relations[id] = .within
+        } else if around.contains(id) {
+          relations[id] = .around
         } else if let span = spans[id] {
           if span.lowerBound <= whole.lowerBound, whole.upperBound <= span.upperBound {
             relations[id] = .around
@@ -170,8 +176,8 @@
     private static func measure(_ element: TEIMarkup.Element, into spans: inout [ObjectIdentifier: Range<Int>])
       -> Range<Int>?
     {
-      var low: Int?
-      var high: Int?
+      var low = element.projectedSynthetic?.lowerBound
+      var high = element.projectedSynthetic?.upperBound
       for (index, node) in element.children.enumerated() {
         var range: Range<Int>?
         switch node {

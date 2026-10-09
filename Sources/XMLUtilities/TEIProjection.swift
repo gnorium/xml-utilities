@@ -221,11 +221,13 @@
       switch element.name {
       case "gap":
         append("\u{FFFC}")
+        element.projectedSynthetic = start..<size
       case "semantics" where inMath && Self.isMathGap(element):
         separate()
         start = size
         element.projectedStart = start
         append("\u{FFFC}")
+        element.projectedSynthetic = start..<size
         leaveOut(element, at: start)
       case "lb", "pb":
         if element.name == "lb" { startLine() }
