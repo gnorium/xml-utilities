@@ -826,10 +826,13 @@
             default:
               // Words, punctuation, sentences, glyphs, names, dates, numbers,
               // quotations and references add nothing to the reading but
-              // their text.
+              // their text. How an element around a block's text is set
+              // (a title page's, a closer's: align, indent, hanging) is
+              // its lines' setting; its inline rendition is none of it.
+              let setting = TEIRenderer.blockSetting(of: ownRend)
               walk(
-                element, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative,
-                zone: initialZone, gloss: glossing(element))
+                element, kind: kind, rend: setting.isEmpty ? rend : setting, inlineRend: inlineRend,
+                alternative: alternative, zone: initialZone, gloss: glossing(element))
             }
           }
         }
@@ -901,6 +904,15 @@
         }
       }
       return out
+    }
+
+    /// The block setting in a `rend`, TEI's rendition style as the
+    /// explication writes it: `align(…)`, `indent(…)` and `hanging`, in
+    /// the order written; nothing of an inline rendition (`italic`).
+    public static func blockSetting(of rend: String) -> String {
+      rend.split(whereSeparator: \.isWhitespace).filter {
+        $0.hasPrefix("align(") || $0.hasPrefix("indent(") || $0 == "hanging"
+      }.joined(separator: " ")
     }
 
     /// What a title page's parts can stand in as blocks of their own: a

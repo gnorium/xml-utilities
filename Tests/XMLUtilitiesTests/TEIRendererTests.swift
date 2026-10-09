@@ -528,4 +528,35 @@ final class TEIRendererTests: XCTestCase {
       + "<docImprint><docAuthor>B</docAuthor>, <docDate>1889</docDate>, <docEdition>Third</docEdition></docImprint></titlePage>")
     XCTAssertEqual(inline.map(\.text), ["by A in 1888, Second", "B, 1889, Third"])
   }
+
+  /// Every `<lb/>` ends a line of the reading (user, 2026-10-10): in a
+  /// note, on a title page, in a paragraph and in verse alike; a word
+  /// broken with `<lb break="no"/>` still joins. The block's setting
+  /// (`rend="align(center)"`) is every line's.
+  func testEveryLineBreakEndsALineInNotesAndOnTitlePages() {
+    let note = TEIRenderer.lines(
+      in: #"<p><w>Text</w><note place="foot" rend="align(center)"><w>Bought</w><lb/><w>in</w> <w>1800</w><lb/><w>by</w><lb/><w>me</w></note></p>"#)
+    XCTAssertEqual(note.map(\.text), ["Text", "Bought", "in 1800", "by", "me"])
+    XCTAssertEqual(note.map(\.opensBlock), [true, true, false, false, false])
+    for line in note.dropFirst() {
+      guard case .note(place: "foot") = line.kind else { return XCTFail("Not a note's line: \(line.text)") }
+      XCTAssertEqual(line.rend, "align(center)")
+    }
+    let title = TEIRenderer.lines(
+      in: #"<titlePage><docTitle rend="align(center)"><titlePart type="main"><w>A</w><lb/><w>DICTIONARY</w><lb/><w>OF THE</w><lb/><w>ENGLISH</w> <w>LAN-</w><lb break="no"/><w>GUAGE</w></titlePart></docTitle></titlePage>"#)
+    XCTAssertEqual(title.map(\.text), ["A", "DICTIONARY", "OF THE", "ENGLISH LAN-", "GUAGE"])
+    XCTAssertEqual(title.map(\.opensBlock), [true, false, false, false, false])
+    XCTAssertEqual(title.map(\.joinsPrevious), [false, false, false, false, true])
+    XCTAssertEqual(title.map(\.rend), Array(repeating: "align(center)", count: 5))
+  }
+
+  /// A setting on what is no block of its own—a title page, a closer, a
+  /// sentence—is its lines' setting; an inline rendition on it is not.
+  func testABlockSettingCarriesThroughElementsAroundTheText() {
+    let lines = TEIRenderer.lines(
+      in: #"<titlePage rend="align(center)"><docTitle><titlePart><w>TITLE</w></titlePart></docTitle></titlePage><closer rend="align(right) italic"><w>Yours</w><lb/><w>truly</w></closer>"#)
+    XCTAssertEqual(lines.map(\.text), ["TITLE", "Yours", "truly"])
+    XCTAssertEqual(lines.map(\.rend), ["align(center)", "align(right)", "align(right)"])
+    XCTAssertEqual(TEIRenderer.blockSetting(of: "italic align(left) indent(2) hanging"), "align(left) indent(2) hanging")
+  }
 }
