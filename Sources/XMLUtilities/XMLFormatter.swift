@@ -164,13 +164,13 @@
 
     /// Whether a break may be put before `index` where the markup had no
     /// white space: only where it changes neither the reading nor any
-    /// anchor's word. A reading starts a line on one side (a block, white
-    /// space already there or the fragment's edge reached across what prints
+    /// anchor's word. A reading starts a line on one side (a block or the
+    /// fragment's edge reached across what prints
     /// nothing), so the space is no space; and the projection has no letter
     /// on one side—or a word's own on both—so no word is split or joined.
     static func breakable(before index: Int, in items: [PrettyItem]) -> Bool {
-      // Leftward, the right edges; rightward, the left edges. White space
-      // already there, or the edge, counts as a line start and no letter.
+      // Leftward, the right edges; rightward, the left edges. Existing white
+      // space separates words but cannot move across an inline style boundary.
       var readingLeft = Reading.block
       var projectionLeft = Projection.separator
       var resolvedReading = false
@@ -187,7 +187,7 @@
           resolvedProjection = true
         }
         if !item.space.isEmpty {
-          if !resolvedReading { readingLeft = .block }
+          if !resolvedReading { readingLeft = .text }
           if !resolvedProjection { projectionLeft = .separator }
           break
         }
@@ -200,7 +200,10 @@
       var right = index
       while right < items.count, !(resolvedReading && resolvedProjection) {
         let item = items[right]
-        if right > index, !item.space.isEmpty { break }
+        if right > index, !item.space.isEmpty {
+          if !resolvedReading { readingRight = .text }
+          break
+        }
         if !resolvedReading, item.reading.left != .silent {
           readingRight = item.reading.left
           resolvedReading = true

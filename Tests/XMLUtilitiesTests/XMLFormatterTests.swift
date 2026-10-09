@@ -39,6 +39,21 @@ final class XMLFormatterTests: XCTestCase {
   private func assertSameReading(_ markup: String, file: StaticString = #filePath, line: UInt = #line) {
     let pretty = XMLFormatter.prettified(markup)
     XCTAssertEqual(reading(pretty), reading(markup), "The reading changed:\n\(pretty)", file: file, line: line)
+    for marksWords in [false, true] {
+      XCTAssertEqual(
+        TEIRenderer.lines(in: pretty, marksWords: marksWords).map { String(reflecting: $0) },
+        TEIRenderer.lines(in: markup, marksWords: marksWords).map { String(reflecting: $0) },
+        "Rendered lines or runs changed:\n\(pretty)", file: file, line: line)
+    }
+    func units(_ source: String) -> [TEIProjection.Unit] {
+      TEIProjection.of(markup: source).units.map {
+        var unit = $0
+        // Indentation moves source offsets, never a unit's semantic identity.
+        unit.ranges = []
+        return unit
+      }
+    }
+    XCTAssertEqual(units(pretty), units(markup), file: file, line: line)
     XCTAssertEqual(anchors(pretty), anchors(markup), "An anchor moved:\n\(pretty)", file: file, line: line)
     XCTAssertEqual(XMLFormatter.prettified(pretty), pretty, "Not idempotent", file: file, line: line)
   }
@@ -73,8 +88,7 @@ final class XMLFormatterTests: XCTestCase {
         <docImprint>
           <s>
             <w lemma="Frowde">FROWDE</w><pc>,</pc>
-            <persName>
-              <w>Henry</w></persName><pc>.</pc>
+            <persName><w>Henry</w></persName><pc>.</pc>
           </s>
         </docImprint>
       </titlePage>
@@ -114,8 +128,7 @@ final class XMLFormatterTests: XCTestCase {
           <hi rend="italic">
             <w>This</w>
             <w>book</w>
-            <w>is</w>
-          </hi>
+            <w>is</w></hi>
           <w>a</w>
           <w>gift</w><pc>.</pc>
         </s>
@@ -204,6 +217,15 @@ final class XMLFormatterTests: XCTestCase {
       }
       XCTAssertEqual(words(XMLFormatter.prettified(markup)), words(markup))
     }
+  }
+
+  func testFormattingKeepsWhitespaceInItsInlineScope() {
+    for markup in [
+      #"<p><hi rend="italic"><w>a</w> <w>b</w></hi> <w>c</w></p>"#,
+      #"<p><hi rend="italic"><w>a</w> <w>b</w> </hi><w>c</w></p>"#,
+      #"<p><w>a</w> <hi rend="italic"><w>b</w> <w>c</w></hi></p>"#,
+      #"<div xml:space="preserve"><p><w>a</w>  <hi rend="italic">b</hi> </p></div>"#,
+    ] { assertSameReading(markup) }
   }
 
   func testPreservationAttributesAcceptBothQuotesAndWhitespaceAroundEquals() {
