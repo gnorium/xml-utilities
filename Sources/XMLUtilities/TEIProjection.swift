@@ -588,6 +588,33 @@
       return highlights
     }
 
+    /// The words an utterance reads, in reading order (user, 2026-10-09):
+    /// each page's words (`words(of:)`) that its sentence highlight
+    /// (`utterance`) covers, by the page they start on. Empty where the
+    /// anchor no longer reads.
+    public static func utteranceWords(
+      in pages: [TEIPage], canvasID: String, start: TEIWordPosition, end: TEIWordPosition
+    ) -> [(canvasID: String, word: TEIWord)] {
+      guard let highlights = utterance(in: pages, canvasID: canvasID, start: start, end: end) else { return [] }
+      var found: [(canvasID: String, word: TEIWord)] = []
+      for page in pages {
+        let id = serviceID(ofFacsimile: page.facsimileURL)
+        let sentences = (highlights[id] ?? []).filter { $0.kind == .sentence }.map(\.range)
+        guard !sentences.isEmpty else { continue }
+        for unit in TEIProjection.of(markup: page.markup).units
+        where sentences.contains(where: { $0.overlaps(unit.range) }) {
+          found.append(
+            (
+              id,
+              TEIWord(
+                place: .init(line: unit.line, word: unit.number), surface: unit.surface, element: unit.element,
+                lemma: unit.lemma, morphology: unit.msd, language: unit.language, type: unit.type)
+            ))
+        }
+      }
+      return found
+    }
+
     /// The held sentence around an anchor, excluding the anchored text.
     /// Uses the same validated surfaces, diplomatic projection and explicit
     /// cross-page sentence continuation as the reader. No unseen text is added.
