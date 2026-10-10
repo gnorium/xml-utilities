@@ -9,7 +9,7 @@
   /// so the page can offer to have it corrected rather than only complain.
   public struct TEIFault: Sendable {
     public enum Kind: String, Sendable {
-      /// A side named something the canvas does not call it.
+      /// A side named something the resemblance does not call it.
       case labelMismatch
       /// An opening that names two sides and marks neither.
       case sidesUnmarked
@@ -31,7 +31,7 @@
 
       public var summary: String {
         switch self {
-        case .labelMismatch: return "Side named differently from the canvas"
+        case .labelMismatch: return "Side named differently from the resemblance"
         case .sidesUnmarked: return "Opening does not mark its sides"
         case .literalBlank: return "\"blank\" transcribed as text"
         case .description: return "Described rather than transcribed"
@@ -41,7 +41,7 @@
       }
 
       /// What to ask for. The model is given this verbatim, so it speaks of the
-      /// canvas image label, never of a canvas.
+      /// canvas image label, never of a canvas (a model-facing word).
       public var instruction: String {
         switch self {
         case .labelMismatch:
@@ -112,10 +112,10 @@
       let markup = page.markup
       let sides = sideLabels(in: markup)
 
-      // The canvas's label is the authority on what its sides are called—whatever
+      // The resemblance's label is the authority on what its sides are called—whatever
       // the manifest that produced it happens to call them. No rule
       // here knows "recto" from "verso", or expects a Western signature: a side
-      // is wrong when it is named something this canvas is not called.
+      // is wrong when it is named something this resemblance is not called.
       let named = namedSides(of: page.label)
       if let stray = sides.first(where: { side in
         !named.contains { matches($0, side) }
@@ -168,11 +168,11 @@
       return labels
     }
 
-    /// The sides a canvas's own label names.
+    /// The sides a resemblance's own label names.
     ///
     /// A label for more than one surface joins them with a dash or a slash—"A1
     /// verso – A2 recto", "12/13", "表/裏". A label that joins nothing names
-    /// one surface, and that surface is the canvas itself.
+    /// one surface, and that surface is the resemblance itself.
     public static func namedSides(of label: String) -> [String] {
       let separators: [String] = [" – ", " — ", " - ", "–", "—", " / ", "/", "|"]
       for separator in separators where label.contains(separator) {

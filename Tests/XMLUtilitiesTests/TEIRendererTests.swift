@@ -499,8 +499,8 @@ final class TEIRendererTests: XCTestCase {
   }
 
   /// A work laid in blank past its reading (user, 2026-10-09): four pages
-  /// read of six canvases. The document's closing structure after the last
-  /// page break belongs to no page, so the sixth canvas reads empty and
+  /// read of six resemblances. The document's closing structure after the last
+  /// page break belongs to no page, so the sixth resemblance reads empty and
   /// unexplicated, as the fifth does; the fourth is read.
   func testTheDocumentsClosingStructureBelongsToNoPage() {
     let xml = """

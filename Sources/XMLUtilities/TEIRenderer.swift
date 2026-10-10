@@ -328,7 +328,7 @@
     /// the next one, within the outer `<text>`. The document's own closing
     /// structure after the last page break (`</front>`, `<body>`, `</body>`)
     /// belongs to no page (user, 2026-10-09): on a work laid in blank past
-    /// its reading, the last canvas would otherwise read as explicated. Each
+    /// its reading, the last resemblance would otherwise read as explicated. Each
     /// page's `markup` is its range's text, trimmed. The one definition a
     /// page is read, laid or spliced by: never a search for its text, which
     /// an empty page is not found by, and which finds identical markup on
@@ -370,7 +370,7 @@
       return out
     }
 
-    /// Each canvas as a complete XML document, preserving front/body/back
+    /// Each resemblance as a complete XML document, preserving front/body/back
     /// matter and containers crossing the page boundary. The leading page
     /// break is omitted, as the quotations service's page anchors require.
     public static func pageDocuments(in xml: String) -> [(facsimileURL: String, xml: String)] {
@@ -1076,7 +1076,7 @@
     /// The image service a facsimile URL is a request against: everything
     /// before the IIIF Image API parameters. `…/iiif/2/<id>/full/1300,/0/default.jpg`
     /// and `…/iiif/2/<id>/full/max/0/default.jpg` are two requests for one
-    /// image, and it is the image that identifies a canvas.
+    /// image, and it is the image that identifies a resemblance.
     public static func serviceID(ofFacsimile url: String) -> String {
       guard let cut = url.range(of: "/full/") else { return url }
       return String(url[url.startIndex..<cut.lowerBound])

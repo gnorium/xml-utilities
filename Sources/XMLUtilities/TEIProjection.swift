@@ -520,10 +520,10 @@
     /// not among `pages`, or a word is not there or reads otherwise than its
     /// surface: nothing is highlighted rather than the wrong words.
     public static func quotation(
-      in pages: [TEIPage], canvasID: String, start: TEIWordPosition, end: TEIWordPosition
+      in pages: [TEIPage], resemblanceID: String, start: TEIWordPosition, end: TEIWordPosition
     ) -> [String: [TEIHighlight]]? {
       let ids = pages.map { serviceID(ofFacsimile: $0.facsimileURL) }
-      guard let at = ids.firstIndex(of: canvasID) else { return nil }
+      guard let at = ids.firstIndex(of: resemblanceID) else { return nil }
       let projections = pages.map { TEIProjection.of(markup: $0.markup) }
       let projection = projections[at]
       // Each word's whole surface: a word broken over the page break is its
@@ -584,9 +584,9 @@
         let breaks = projection.breaks
         let from = first.line >= 2 && first.line - 2 < breaks.count ? breaks[first.line - 2] : 0
         let to = last.line - 1 < breaks.count ? breaks[last.line - 1] : projection.size
-        highlights[canvasID, default: []].append(.init(min(from, title.lowerBound)..<max(to, title.upperBound), kind: .sentence))
+        highlights[resemblanceID, default: []].append(.init(min(from, title.lowerBound)..<max(to, title.upperBound), kind: .sentence))
       }
-      highlights[canvasID, default: []].append(.init(title, kind: .title))
+      highlights[resemblanceID, default: []].append(.init(title, kind: .title))
       return highlights
     }
 
@@ -595,10 +595,10 @@
     /// (`quotation`) covers, by the page they start on. Empty where the
     /// anchor no longer reads.
     public static func quotationWords(
-      in pages: [TEIPage], canvasID: String, start: TEIWordPosition, end: TEIWordPosition
-    ) -> [(canvasID: String, word: TEIWord)] {
-      guard let highlights = quotation(in: pages, canvasID: canvasID, start: start, end: end) else { return [] }
-      var found: [(canvasID: String, word: TEIWord)] = []
+      in pages: [TEIPage], resemblanceID: String, start: TEIWordPosition, end: TEIWordPosition
+    ) -> [(resemblanceID: String, word: TEIWord)] {
+      guard let highlights = quotation(in: pages, resemblanceID: resemblanceID, start: start, end: end) else { return [] }
+      var found: [(resemblanceID: String, word: TEIWord)] = []
       for page in pages {
         let id = serviceID(ofFacsimile: page.facsimileURL)
         let sentences = (highlights[id] ?? []).filter { $0.kind == .sentence }.map(\.range)
@@ -621,13 +621,13 @@
     /// Uses the same validated surfaces, diplomatic projection and explicit
     /// cross-page sentence continuation as the reader. No unseen text is added.
     public static func surroundingSentence(
-      in pages: [TEIPage], canvasID: String, start: TEIWordPosition, end: TEIWordPosition
+      in pages: [TEIPage], resemblanceID: String, start: TEIWordPosition, end: TEIWordPosition
     ) -> String? {
-      guard let highlights = quotation(in: pages, canvasID: canvasID, start: start, end: end) else {
+      guard let highlights = quotation(in: pages, resemblanceID: resemblanceID, start: start, end: end) else {
         return nil
       }
       var excludedByPage = highlights.mapValues { $0.filter { $0.kind == .title }.map(\.range) }
-      if let at = pages.firstIndex(where: { serviceID(ofFacsimile: $0.facsimileURL) == canvasID }),
+      if let at = pages.firstIndex(where: { serviceID(ofFacsimile: $0.facsimileURL) == resemblanceID }),
         TEIProjection.of(markup: pages[at].markup).units.first(where: {
           $0.line == end.line && $0.number == end.word
         })?.runsOn == true
