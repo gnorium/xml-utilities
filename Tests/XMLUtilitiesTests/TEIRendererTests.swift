@@ -252,9 +252,9 @@ final class TEIRendererTests: XCTestCase {
       <zone xml:id="z1" ulx="100" uly="100" lrx="300" lry="300"/><zone xml:id="z2" ulx="10" uly="10" lrx="20" lry="30"/></surface></facsimile>\
       <text><body><figure facs="#z1"/><p><w><hi rend="initial" facs="#z2">A</hi>nd</w></p></body></text></TEI>
       """
-    let laid = TEIFacsimile.laying(
+    let laid = try XCTUnwrap(TEIFacsimile.laying(
       page: page, fragment: ##"<figure facs="#z1"/><p><w><hi rend="initial" facs="#z2">A</hi>nd</w></p>"##, over: old,
-      position: 2, in: document)
+      position: 2, in: document))
     XCTAssertEqual(Set(TEIFacsimile.zones(in: TEIFacsimile.blocks(in: laid)).keys), ["p1-z1", "p2-z1", "p2-z2"])
     XCTAssertFalse(laid.contains(#"ulx="5""#))
     let pages = TEIRenderer.pages(in: laid)
@@ -264,6 +264,67 @@ final class TEIRendererTests: XCTestCase {
     guard case .figure(_, let first) = pages[0].lines[0].kind else { return XCTFail("Missing figure") }
     XCTAssertEqual(first?.corners, "1 1 2 2")
     XCTAssertTrue(laid.contains(#"<graphic url="https://example.org/iiif/b/full/1300,/0/default.jpg"/><zone xml:id="p2-z1""#))
+  }
+
+  private static func laidDocument(_ pages: [String]) -> String {
+    let breaks = pages.enumerated().map { index, inner in
+      "<pb n=\"\(index + 1)\" facs=\"https://example.org/iiif/p\(index + 1)/full/1300,/0/default.jpg\"/>\n\(inner)\n"
+    }
+    return """
+      <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader/>
+      <text>
+          <front>
+      \(breaks.joined())
+          </front>
+          <body>
+
+          </body>
+        </text>
+      </TEI>
+      """
+  }
+
+  /// Each page's range is where its markup stands, the last stopping
+  /// before the document's closing structure.
+  func testPageRangesHoldEachPagesMarkup() {
+    let document = Self.laidDocument(["<p>One.</p>", "", "<p>Three.</p>"])
+    let ranges = TEIRenderer.pageRanges(in: document)
+    let pages = TEIRenderer.pages(in: document)
+    XCTAssertEqual(ranges.count, 3)
+    XCTAssertEqual(
+      ranges.map { document[$0].trimmingCharacters(in: .whitespacesAndNewlines) }, pages.map(\.markup))
+    XCTAssertFalse(document[ranges[2]].contains("</front>"))
+  }
+
+  /// A blank page—in the middle, and at the end before `</front>`—is laid
+  /// into: its empty markup is in no document, and a search for it skipped
+  /// every blank page (prod, 2026-10-10).
+  func testAPageIsLaidIntoABlankPage() throws {
+    let document = Self.laidDocument(["<p>One.</p>", "", "<p>Three.</p>", ""])
+    var laid = document
+    for (position, text) in [(2, "Two."), (4, "Four.")] {
+      let old = TEIRenderer.pages(in: laid)[position - 1]
+      XCTAssertEqual(old.markup, "")
+      laid = try XCTUnwrap(
+        TEIFacsimile.laying(
+          page: "<TEI/>", fragment: "<pb n=\"\(position)\"/>\n<p>\(text)</p>", over: old, position: position, in: laid))
+    }
+    let pages = TEIRenderer.pages(in: laid)
+    XCTAssertEqual(
+      pages.map(\.markup), ["<p>One.</p>", "<pb n=\"2\"/>\n<p>Two.</p>", "<p>Three.</p>", "<pb n=\"4\"/>\n<p>Four.</p>"])
+    XCTAssertTrue(laid.contains("<p>Four.</p>\n\n    </front>"))
+    // A place that reads another image is no place to lay it.
+    let other = TEIRenderer.pages(in: document)[1]
+    XCTAssertNil(TEIFacsimile.laying(page: "<TEI/>", fragment: "<p>X</p>", over: other, position: 3, in: document))
+  }
+
+  /// Identical markup on two pages is two pages: only the named one changes.
+  func testLayingChangesOnlyTheNamedPageWhenTwoReadTheSame() throws {
+    let document = Self.laidDocument(["<p>Same.</p>", "<p>Same.</p>", "<p>Same.</p>"])
+    let old = TEIRenderer.pages(in: document)[1]
+    let laid = try XCTUnwrap(
+      TEIFacsimile.laying(page: "<TEI/>", fragment: "<p>Changed.</p>", over: old, position: 2, in: document))
+    XCTAssertEqual(TEIRenderer.pages(in: laid).map(\.markup), ["<p>Same.</p>", "<p>Changed.</p>", "<p>Same.</p>"])
   }
 
   /// A formula's MathML as a diff compares and draws it: its drawn content,

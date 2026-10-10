@@ -119,11 +119,17 @@
     /// The outer text, including title pages and other front/back matter.
     /// Nested floating texts remain within their containing page.
     public static func text(of xml: String) -> String? {
+      textRange(of: xml).map { String(xml[$0]) }
+    }
+
+    /// Where the outer text's content stands in `xml`: after its opening
+    /// tag, up to its closing one (or the end); nil without one.
+    public static func textRange(of xml: String) -> Range<String.Index>? {
       guard let opening = xml.range(of: "<text(?=[\\s>])[^>]*>", options: .regularExpression) else { return nil }
       let start = opening.upperBound
       let end = xml.range(of: "</text>", options: .backwards)?.lowerBound ?? xml.endIndex
       guard start < end else { return nil }
-      return String(xml[start..<end])
+      return start..<end
     }
   }
   /// A line of `XMLFormatter.prettified`'s layout, before it is joined: a

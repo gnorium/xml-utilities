@@ -120,16 +120,19 @@
     }
 
     /// A page laid into a document in place of a page it holds: `fragment`
-    /// (the new page's body) where `old.markup` stands, and the new page's
+    /// (the new page's body) in place of the old page's content, and the new page's
     /// zones (its whole TEI, `page`, holds them as `z1`, `z2`…) in the
     /// document's facsimile in place of the old page's surface, each id
     /// prefixed with the page's place (`p3-z1`, gnorium-python
     /// `document_surface`) and the fragment's references renamed to match.
-    /// The document unchanged where `old.markup` is not in it.
+    /// The page is found by its place (`position`, counted from 1, in
+    /// `TEIRenderer.pageRanges`), never by searching for its text: a blank
+    /// page's empty markup is in no document, and identical markup on an
+    /// earlier page would be found first (prod, 2026-10-10). Nil when that
+    /// place holds no page reading `old`'s image.
     public static func laying(
       page: String, fragment: String, over old: TEIPage, position: Int, in document: String
-    ) -> String {
-      guard document.contains(old.markup) else { return document }
+    ) -> String? {
       let service = TEIRenderer.serviceID(ofFacsimile: old.facsimileURL)
       // The old page's surface goes; the other pages' zones stay.
       var laid = document
@@ -154,8 +157,13 @@
         renamed.replaceSubrange(range, with: prefix + renamed[range])
       }
       // The body first (the facsimile precedes it, so its range moves).
-      guard let bodyRange = laid.range(of: old.markup) else { return document }
-      laid.replaceSubrange(bodyRange, with: renamed)
+      let index = position - 1
+      let pages = TEIRenderer.pages(in: laid)
+      guard pages.indices.contains(index),
+        TEIRenderer.serviceID(ofFacsimile: pages[index].facsimileURL) == service,
+        let replaced = TEIRenderer.replacingPage(index, with: renamed, in: laid)
+      else { return nil }
+      laid = replaced
       let surfaces =
         own.isEmpty
         ? ""

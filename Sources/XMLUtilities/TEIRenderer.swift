@@ -308,18 +308,9 @@
     public static func pages(
       in xml: String, highlights: [String: [TEIHighlight]] = [:], marksWords: Bool = false
     ) -> [TEIPage] {
-      guard let body = XMLFormatter.text(of: xml) else { return [] }
-      let breaks = pageBreaks(in: body)
       let zones = TEIFacsimile.zones(in: TEIFacsimile.blocks(in: xml))
-      return breaks.enumerated().map { index, open in
-        let end = index + 1 < breaks.count ? breaks[index + 1].tag.lowerBound : body.endIndex
-        // The document's own closing structure after the last page break
-        // (`</front>`, `<body>`, `</body>`) belongs to no page (user,
-        // 2026-10-09): on a work laid in blank past its reading, the last
-        // canvas would otherwise read as explicated.
-        let markup = index + 1 < breaks.count
-          ? String(body[open.tag.upperBound..<end])
-          : withoutTrailingStructure(String(body[open.tag.upperBound..<end]))
+      return pageSpans(in: xml).map { open, range in
+        let markup = String(xml[range])
         return TEIPage(
           label: open.label,
           facsimileURL: open.facsimileURL,
@@ -330,6 +321,53 @@
           zones: zones
         )
       }
+    }
+
+    /// Where each page's own content stands in the whole document, in the
+    /// order `pages` gives them: from the end of its facsimile page break to
+    /// the next one, within the outer `<text>`. The document's own closing
+    /// structure after the last page break (`</front>`, `<body>`, `</body>`)
+    /// belongs to no page (user, 2026-10-09): on a work laid in blank past
+    /// its reading, the last canvas would otherwise read as explicated. Each
+    /// page's `markup` is its range's text, trimmed. The one definition a
+    /// page is read, laid or spliced by: never a search for its text, which
+    /// an empty page is not found by, and which finds identical markup on
+    /// another page first (prod, 2026-10-10).
+    public static func pageRanges(in xml: String) -> [Range<String.Index>] {
+      pageSpans(in: xml).map(\.range)
+    }
+
+    private static func pageSpans(
+      in xml: String
+    ) -> [(open: (tag: Range<String.Index>, label: String, facsimileURL: String), range: Range<String.Index>)] {
+      guard let text = XMLFormatter.textRange(of: xml) else { return [] }
+      let breaks = pageBreaks(in: xml[text])
+      return breaks.indices.map { index in
+        let start = breaks[index].tag.upperBound
+        guard index + 1 == breaks.count else { return (breaks[index], start..<breaks[index + 1].tag.lowerBound) }
+        let kept = withoutTrailingStructure(String(xml[start..<text.upperBound]))
+        return (breaks[index], start..<xml.utf8.index(start, offsetBy: kept.utf8.count))
+      }
+    }
+
+    /// `xml` with page `index` (as `pageRanges` places it) holding `markup`
+    /// in place of its own: its content between the white space at its
+    /// edges replaced, or, on a page with none, set on the line after its
+    /// page break. Nil when there is no such page.
+    public static func replacingPage(_ index: Int, with markup: String, in xml: String) -> String? {
+      let ranges = pageRanges(in: xml)
+      guard ranges.indices.contains(index) else { return nil }
+      let range = ranges[index]
+      var out = xml
+      if let first = xml[range].firstIndex(where: { !$0.isWhitespace }),
+        let last = xml[range].lastIndex(where: { !$0.isWhitespace })
+      {
+        out.replaceSubrange(first...last, with: markup)
+      } else {
+        let at = xml[range].firstIndex(where: \.isNewline).map { xml.index(after: $0) } ?? range.lowerBound
+        out.insert(contentsOf: markup, at: at)
+      }
+      return out
     }
 
     /// Each canvas as a complete XML document, preserving front/body/back
@@ -401,6 +439,11 @@
     /// tag stands, its label and its image. A side mark (a `<pb>` with no
     /// `facs`) is left in its page, where `lines(in:)` turns it into a line.
     static func pageBreaks(in body: String) -> [(tag: Range<String.Index>, label: String, facsimileURL: String)] {
+      pageBreaks(in: body[...])
+    }
+
+    /// The same, for a stretch of a larger string, its ranges in that string.
+    static func pageBreaks(in body: Substring) -> [(tag: Range<String.Index>, label: String, facsimileURL: String)] {
       var breaks: [(tag: Range<String.Index>, label: String, facsimileURL: String)] = []
       var cursor = body.startIndex
       while let open = body.range(of: "<pb", range: cursor..<body.endIndex) {
