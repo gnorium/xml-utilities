@@ -58,7 +58,7 @@
             + "nothing on it carries <gap reason=\"blank\"/> instead."
         case .description:
           return
-            "This is a paragraph about the surface rather than a transcription of it. Transcribe "
+            "This is a paragraph about the surface rather than the markup of what it shows. Transcribe "
             + "what is written on it; keep decoration as <figure> with its bbox and a <figDesc> "
             + "naming what it is in one plain sentence—do not shorten a description that is "
             + "already factual, and do not replace <figDesc> with <desc>; a surface bearing no "
@@ -91,7 +91,7 @@
     /// page and says nothing about it. Comparing this before and against after
     /// is how a reader is told, before they accept, that a correction of a
     /// label also dropped four lines of verse.
-    public static func readingWeight(of markup: String) -> Int {
+    public static func textWeight(of markup: String) -> Int {
       lines(in: markup)
         .filter { line in
           switch line.kind {
@@ -128,7 +128,7 @@
       // A reading that is one short word and nothing else is a statement about
       // the page rather than a transcription of it. The threshold is what makes
       // this general: no list of words to keep in step with a prompt.
-      let reading = readingWeight(of: markup)
+      let reading = textWeight(of: markup)
       let readingLines = lines(in: markup).filter { line in
         if case .text = line.kind { return true }
         return false

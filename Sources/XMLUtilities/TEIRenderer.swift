@@ -431,10 +431,10 @@
       // spaces or lines, including expansions in nested tables and figures.
       guard spacesAreBounded(in: root) else { return [] }
       guard !highlights.isEmpty || marksWords else {
-        return reading(from: root, zones: zones)
+        return rendering(from: root, zones: zones)
       }
       let projection = TEIProjection(root)
-      return reading(
+      return rendering(
         from: root, highlights: highlights, words: marksWords ? Words(projection.units, root: root) : nil,
         zones: zones)
     }
@@ -551,7 +551,7 @@
       return pieces
     }
 
-    private static func reading(
+    private static func rendering(
       from owner: TEIMarkup.Element, highlights: [TEIHighlight] = [], words: Words? = nil,
       zones: [String: TEIZone] = [:], inheritedPreservation: Bool = false
     ) -> [TEILine] {
@@ -776,7 +776,7 @@
               flush()
               let children = element.elements
               let caption = children.filter { $0.name == "head" }.flatMap {
-                reading(
+                rendering(
                   from: $0, highlights: highlights, words: words, zones: zones,
                   inheritedPreservation: preserving.contains(ObjectIdentifier($0)))
               }
@@ -784,7 +784,7 @@
                 TEITable.Row(
                   cells: row.elements.filter { $0.name == "cell" }.map { cell in
                     TEITable.Cell(
-                      lines: reading(
+                      lines: rendering(
                         from: cell, highlights: highlights, words: words, zones: zones,
                         inheritedPreservation: preserving.contains(ObjectIdentifier(cell))),
                       isLabel: row.attribute("role") == "label"
@@ -804,7 +804,7 @@
                 $0.name == "figDesc" || $0.name == "desc"
               }
               let description = descriptions.flatMap {
-                reading(from: $0, inheritedPreservation: preserving.contains(ObjectIdentifier($0)))
+                rendering(from: $0, inheritedPreservation: preserving.contains(ObjectIdentifier($0)))
               }.map(\.text)
                 .joined(separator: " ")
               append(

@@ -42,9 +42,9 @@
 
     /// What a kind of document carries into a translation.
     public enum Profile: Sendable {
-      /// A diplomatic transcript: every text-bearing block, all but a
+      /// A testament's markup: every text-bearing block, all but a
       /// formula, a figure, forme work other than a running head.
-      case transcript
+      case markup
       /// A dictionary entry (TEI dictionaries): its definitions, and the
       /// notes and etymology written in English. Its forms, title and
       /// pronunciations, its quotations and their sources, its equivalents,
@@ -55,7 +55,7 @@
       /// block's text.
       func opaque(_ name: String, tag: String) -> Bool {
         switch self {
-        case .transcript:
+        case .markup:
           switch name {
           case "formula", "figure": return true
           case "fw":
@@ -76,7 +76,7 @@
       /// definition, a note or an etymology of a dictionary entry.
       func carries(_ element: String) -> Bool {
         switch self {
-        case .transcript: return true
+        case .markup: return true
         case .dictionary: return ["def", "note", "etym"].contains(element)
         }
       }
@@ -139,7 +139,7 @@
 
     /// The source document, read into pages and segments as its kind
     /// carries them.
-    public init(source teiXml: String, profile: Profile = .transcript) {
+    public init(source teiXml: String, profile: Profile = .markup) {
       let bodyOpen = teiXml.range(of: "<body", options: .caseInsensitive)
       let bodyStart = bodyOpen.flatMap { teiXml.range(of: ">", range: $0.upperBound..<teiXml.endIndex) }?.upperBound
       let bodyEnd = teiXml.range(of: "</body>", options: [.caseInsensitive, .backwards])?.lowerBound

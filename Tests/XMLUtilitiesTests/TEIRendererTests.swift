@@ -311,7 +311,7 @@ final class TEIRendererTests: XCTestCase {
     guard case .table = outer.rows[0].cells[0].lines[1].kind else {
       return XCTFail("Missing nested table")
     }
-    XCTAssertEqual(TEIRenderer.readingWeight(of: markup), "Outer Inner X".count)
+    XCTAssertEqual(TEIRenderer.textWeight(of: markup), "Outer Inner X".count)
   }
 
   func testSmallTableIsNotReportedAsLiteralBlankText() {
@@ -346,8 +346,8 @@ final class TEIRendererTests: XCTestCase {
       markup: #"<pb n="7"/><p><s><w lemma="be" pos="VERB">Been</w> <w lemma="thus" pos="ADV">thus</w><pc>,</pc><lb/><w lemma="encounter" pos="VERB">encountred</w><pc>:</pc></s></p>"#)
     XCTAssertTrue(TEIRenderer.faults(in: tagged).isEmpty)
     XCTAssertEqual(
-      TEIRenderer.readingWeight(of: tagged.markup),
-      TEIRenderer.readingWeight(of: #"<pb n="7"/><p>Been thus,<lb/>encountred:</p>"#))
+      TEIRenderer.textWeight(of: tagged.markup),
+      TEIRenderer.textWeight(of: #"<pb n="7"/><p>Been thus,<lb/>encountred:</p>"#))
   }
 
   func testLinesKnowWhetherTheyShareALineOrJoinAWord() {
