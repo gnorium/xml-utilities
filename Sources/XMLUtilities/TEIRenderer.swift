@@ -1112,12 +1112,13 @@
       }.joined(separator: " ")
     }
 
-    /// The inks a rend's `color(NAME)` may name (user, 2026-10-11): the
-    /// ISCC–NBS basic color names (Kelly & Judd, NBS SP 440, 1976), so a
-    /// transcription names the ink it sees, and violet. Yellow green is
-    /// written `yellow-green`: a rend's words are separated by spaces.
+    /// The inks a rend's `color(NAME)` may name (user, 2026-10-11): exactly
+    /// the 13 ISCC–NBS basic color names (Kelly & Judd, NBS SP 440, 1976),
+    /// so a transcription names the ink it sees in the system's own words.
+    /// Yellow green is written `yellow-green`: a rend's words are separated
+    /// by spaces.
     public static let inks = [
-      "pink", "red", "orange", "brown", "yellow", "olive", "yellow-green", "green", "blue", "violet", "purple",
+      "pink", "red", "orange", "brown", "yellow", "olive", "yellow-green", "green", "blue", "purple",
       "white", "gray", "black",
     ]
 
