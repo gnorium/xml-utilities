@@ -92,6 +92,11 @@
       /// An original note, set apart from the text it annotates, and where
       /// the page puts it: TEI's `<note place="margin|foot|inline">`.
       case note(place: String)
+      /// Vertical space the source leaves (`<space dim="vertical"/>`, or
+      /// one whose unit is `lines`): so much of it, in its unit—`lines`
+      /// where it names none. Drawn as that much blank height, never as
+      /// text.
+      case space(quantity: Int, unit: String)
     }
 
     public enum FormeRole: String, Sendable {
@@ -130,6 +135,12 @@
     /// line break and a paragraph break are different evidence, and a diff
     /// that turned one into the other has changed the page.
     public let opensBlock: Bool
+    /// Whether a paragraph's space stands before it, as a TEI reader sets a
+    /// `<p>` (CETEIcean, TEI Boilerplate: about a line above and below):
+    /// the first line of a paragraph or a stanza (`<p>`, `<lg>`), and the
+    /// first line after one. A verse line, or a line after an `<lb/>`, has
+    /// none.
+    public internal(set) var opensParagraph: Bool
     /// Whether it follows the line before with no line break between them:
     /// furniture set on one line (a page number, then a running head).
     public let sharesLine: Bool
@@ -200,8 +211,9 @@
 
     public init(
       kind: Kind, text: String, rend: String = "", runs: [Run] = [], opensBlock: Bool = true,
-      sharesLine: Bool = false, joinsPrevious: Bool = false, element: Int? = nil
+      opensParagraph: Bool = false, sharesLine: Bool = false, joinsPrevious: Bool = false, element: Int? = nil
     ) {
+      self.opensParagraph = opensParagraph
       self.element = element
       self.kind = kind
       self.text = text
@@ -728,6 +740,9 @@
       // Whether the next line opens a block: true until a line is set, and
       // again at every block's edge; an `<lb/>` leaves it false.
       var blockPending = true
+      // Whether the next line opens a paragraph's space: at a paragraph's
+      // or a stanza's start and after its end.
+      var paragraphPending = false
       // Whether a line break (`<lb/>`, `<cb/>`, `<pb/>`) came since the last
       // line was set, and whether it fell inside a word.
       var lineBroken = true
@@ -740,8 +755,9 @@
           lines.append(
             TEILine(
               kind: currentKind, text: text, rend: currentRend, runs: runs, opensBlock: blockPending,
-              sharesLine: !lineBroken, joinsPrevious: breakInWord))
+              opensParagraph: paragraphPending, sharesLine: !lineBroken, joinsPrevious: breakInWord))
           blockPending = false
+          paragraphPending = false
           lineBroken = false
           breakInWord = false
         }
@@ -749,6 +765,9 @@
       }
 
       func append(_ line: TEILine) {
+        var line = line
+        line.opensParagraph = paragraphPending
+        paragraphPending = false
         lines.append(line)
         blockPending = true
         lineBroken = true
@@ -868,9 +887,9 @@
               let unit = element.attribute("unit")
               if unit == "lines" || element.attribute("dim") == "vertical" {
                 flush()
-                for _ in 0..<(unit == "lines" ? quantity : 1) {
-                  append(.init(kind: kind, text: " ", runs: [.init(text: " ", preserved: true)]))
-                }
+                append(
+                  .init(
+                    kind: .space(quantity: quantity, unit: unit.isEmpty ? "lines" : unit), text: " "))
               } else {
                 currentKind = kind
                 currentRend = rend
@@ -907,6 +926,8 @@
               "docImprint", "byline", "docAuthor", "docDate", "docEdition", "epigraph", "argument", "imprimatur":
               flush()
               blockPending = true
+              let isParagraph = element.name == "p" || element.name == "lg"
+              if isParagraph { paragraphPending = true }
               // A block begins a line of its own; only furniture set beside
               // furniture (a page number, then a running head) shares one.
               if element.name != "fw" { lineBroken = true }
@@ -921,6 +942,7 @@
               walk(element, kind: blockKind, rend: blockRend, inlineRend: inlineRend, gloss: glossing(element))
               flush()
               blockPending = true
+              if isParagraph { paragraphPending = true }
               if element.name != "fw" { lineBroken = true }
             case "table":
               flush()

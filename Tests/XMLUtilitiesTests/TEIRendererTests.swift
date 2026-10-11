@@ -488,8 +488,14 @@ final class TEIRendererTests: XCTestCase {
     let preserved = TEIRenderer.lines(in: "<p>\n  <seg xml:space=\"preserve\">a  b</seg>\n  <w>c</w>   <w>d</w>\n</p>")
     XCTAssertEqual(preserved.map(\.text), ["a  b c d"])
 
+    // Vertical space is one line of its height, never blank text lines.
     let lines = TEIRenderer.lines(in: #"<p><w>above</w></p><space quantity="2" unit="lines"/><p><w>below</w></p>"#)
-    XCTAssertEqual(lines.map(\.text), ["above", " ", " ", "below"])
+    XCTAssertEqual(lines.map(\.text), ["above", " ", "below"])
+    guard case .space(let quantity, let unit) = lines[1].kind else { return XCTFail("not a space: \(lines[1].kind)") }
+    XCTAssertEqual(quantity, 2)
+    XCTAssertEqual(unit, "lines")
+    let vertical = TEIRenderer.lines(in: #"<p>a</p><space dim="vertical" quantity="5" unit="mm"/>"#)
+    guard case .space(5, "mm") = vertical.last?.kind else { return XCTFail("not 5mm: \(String(describing: vertical.last?.kind))") }
   }
 
   func testTheFormatterLeavesPreservedWhiteSpaceAlone() {
@@ -556,7 +562,7 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertTrue(TEIRenderer.lines(in: excessiveCharacters).isEmpty)
 
     let lines = "<space quantity='128' unit='lines'/>"
-    XCTAssertEqual(TEIRenderer.lines(in: String(repeating: lines, count: 8)).count, 1_024)
+    XCTAssertEqual(TEIRenderer.lines(in: String(repeating: lines, count: 8)).count, 8)
     let excessiveLines = "<figure><figDesc>" + String(repeating: lines, count: 8) + "</figDesc><head>" + lines + "</head></figure>"
     XCTAssertTrue(TEIRenderer.lines(in: excessiveLines).isEmpty)
   }
@@ -619,5 +625,15 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(lines.map(\.text), ["TITLE", "Yours", "truly"])
     XCTAssertEqual(lines.map(\.rend), ["align(center)", "align(right)", "align(right)"])
     XCTAssertEqual(TEIRenderer.blockSetting(of: "italic align(left) indent(2) hanging"), "align(left) indent(2) hanging")
+  }
+
+  /// A paragraph's space (user, 2026-10-11): before a paragraph's or a
+  /// stanza's first line and after its end, never between verse lines or
+  /// after an `<lb/>`.
+  func testParagraphsOpenTheirSpace() {
+    let lines = TEIRenderer.lines(
+      in: "<head>Title</head><p>one<lb/>two</p><p>three</p><lg><l>verse a</l><l>verse b</l></lg><l>after</l>")
+    XCTAssertEqual(lines.map(\.text), ["Title", "one", "two", "three", "verse a", "verse b", "after"])
+    XCTAssertEqual(lines.map(\.opensParagraph), [false, true, false, true, true, false, true])
   }
 }
