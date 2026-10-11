@@ -345,6 +345,62 @@
       // stay inside this function, so its own copy's indices are fine.
       var xml = xml
       xml.makeContiguousUTF8()
+      // A long document's pages, once read, are read again from memory:
+      // a page of a long book read its page list several times a request
+      // (user, 2026-10-11). Its lines are read once too (`TEIPage.lines`).
+      guard highlights.isEmpty, xml.utf8.count >= PageIndex.threshold else {
+        return readPages(in: xml, highlights: highlights, marksWords: marksWords)
+      }
+      if let pages = PageIndex.shared.pages(of: xml, marksWords: marksWords) { return pages }
+      let pages = readPages(in: xml, highlights: highlights, marksWords: marksWords)
+      PageIndex.shared.keep(pages, of: xml, marksWords: marksWords)
+      return pages
+    }
+
+    /// The pages of the last few long documents read, by their whole text:
+    /// a version's document is the same text however often it is read.
+    final class PageIndex: @unchecked Sendable {
+      static let shared = PageIndex()
+      /// Below this many bytes a document is read again: quicker than held.
+      static let threshold = 256 * 1024
+      /// How many documents are held.
+      static let capacity = 4
+
+      private let lock = NSLock()
+      private var entries: [(xml: String, marksWords: Bool, pages: [TEIPage])] = []
+
+      func pages(of xml: String, marksWords: Bool) -> [TEIPage]? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let index = entries.firstIndex(where: { $0.marksWords == marksWords && Self.same($0.xml, xml) })
+        else { return nil }
+        let entry = entries.remove(at: index)
+        entries.append(entry)
+        return entry.pages
+      }
+
+      func keep(_ pages: [TEIPage], of xml: String, marksWords: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        entries.append((xml, marksWords, pages))
+        if entries.count > Self.capacity { entries.removeFirst() }
+      }
+
+      /// The same bytes, compared as memory.
+      private static func same(_ a: String, _ b: String) -> Bool {
+        guard a.utf8.count == b.utf8.count else { return false }
+        let compared = a.utf8.withContiguousStorageIfAvailable { x in
+          b.utf8.withContiguousStorageIfAvailable { y in
+            memcmp(x.baseAddress!, y.baseAddress!, x.count) == 0
+          }
+        }
+        return (compared ?? nil) ?? a.utf8.elementsEqual(b.utf8)
+      }
+    }
+
+    private static func readPages(
+      in xml: String, highlights: [String: [TEIHighlight]], marksWords: Bool
+    ) -> [TEIPage] {
       let zones = TEIFacsimile.zones(in: TEIFacsimile.blocks(in: xml))
       return pageSpans(in: xml).map { open, range in
         let markup = String(xml[range])
