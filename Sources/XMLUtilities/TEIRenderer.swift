@@ -1104,17 +1104,24 @@
     /// explication writes it: `align(…)`, `indent(…)` and `hanging`, in
     /// the order written; nothing of an inline rendition (`italic`).
     /// How the type of what a rend sets is drawn, on its words: its ink
-    /// (`color(NAME)`, one of the eleven basic color terms) and its size
-    /// (`larger`, `smaller`).
+    /// (`color(NAME)`, `inks`), its size (`larger`, `smaller`) and its
+    /// typeface class (`typefaces`).
     public static func typeSetting(of rend: String) -> String {
       rend.split(whereSeparator: \.isWhitespace).filter {
-        $0.hasPrefix("color(") || $0 == "larger" || $0 == "smaller"
+        $0.hasPrefix("color(") || $0 == "larger" || $0 == "smaller" || typefaces.contains(String($0))
       }.joined(separator: " ")
     }
 
-    /// The eleven basic color terms a rend's `color(NAME)` may name (Berlin
-    /// and Kay): the inks the reader draws.
-    public static let inks = ["black", "white", "red", "green", "yellow", "blue", "brown", "purple", "pink", "orange", "gray"]
+    /// The inks a rend's `color(NAME)` may name (user, 2026-10-11): Apple's
+    /// HIG colors, and black and white.
+    public static let inks = [
+      "black", "white", "gray", "red", "orange", "yellow", "green", "mint", "teal", "cyan", "blue", "indigo",
+      "purple", "pink", "brown",
+    ]
+
+    /// The typeface classes a rend may name, never a font's name (user,
+    /// 2026-10-11).
+    public static let typefaces: Set<String> = ["roman", "italic", "blackletter", "script", "sans-serif", "typewriter"]
 
     public static func blockSetting(of rend: String) -> String {
       rend.split(whereSeparator: \.isWhitespace).filter {
