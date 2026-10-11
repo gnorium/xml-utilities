@@ -10,12 +10,15 @@
     /// XML as a person can read it, for display only: the stored text is
     /// never rewritten with it (a model's output stands as it was written).
     ///
-    /// An element holding text—alone, or mixed with elements (`<w>AN</w>`,
-    /// `<p>text <hi>x</hi> more</p>`)—stays on one line exactly as written,
-    /// its white space with it. An element holding only elements (and white
-    /// space) sets each child on a line of its own, two spaces deeper. The
-    /// white space between such children is replaced by the line break: a
-    /// reading collapses it, so the page reads the same. Where there was
+    /// As an XML editor's "format and indent" lays out mixed content
+    /// (user, 2026-10-11): an element whose TEI P5 content model holds no
+    /// text (`PrettyNode.elementOnly`: `body`, `div`, `lg`, `titlePage`…)
+    /// sets each child on a line of its own, two spaces deeper; every other
+    /// element—mixed content (`p`, `l`, `s`, `head`, `note`, `cell`…) or
+    /// one this list does not name—stays exactly as written, its white
+    /// space with it, whatever it holds. The white space between an
+    /// element-only container's children is replaced by the line break: it
+    /// is insignificant there, so the page reads the same. Where there was
     /// none, a break is put in only where it changes neither the reading nor
     /// any anchor's word (`PrettyItem.breakable`)—so `<w>word</w><pc>,</pc>`
     /// stays together: a break there would put a space before the comma.
@@ -261,6 +264,27 @@
     ]
     /// Elements the parser takes as empty even without `/>` (`TEIMarkup`).
     static let empty: Set<String> = ["pb", "cb", "lb", "gap", "milestone", "graphic"]
+    /// Elements whose content model in the TEI P5 Guidelines holds no text
+    /// (no `textNode` in it, directly or through `macro.paraContent`,
+    /// `macro.phraseSeq` or `macro.specialPara`): their white space is
+    /// insignificant, so each child may stand on a line of its own. The
+    /// structural ones; phrase-level element-only elements (`choice`,
+    /// `app`, `subst`) stand inside mixed content, which is kept as
+    /// written, so they are never laid out.
+    static let elementOnly: Set<String> = [
+      // The document and its divisions.
+      "TEI", "teiCorpus", "text", "front", "body", "back", "group", "floatingText",
+      "div", "div1", "div2", "div3", "div4", "div5", "div6", "div7",
+      // Verse, drama, title pages, quotations, lists, tables, figures.
+      "lg", "sp", "spGroup", "castList", "castGroup", "titlePage", "docTitle", "epigraph", "argument", "cit",
+      "list", "listBibl", "listPerson", "listPlace", "table", "row", "figure", "entry", "superEntry",
+      // The facsimile and stand-off markup.
+      "facsimile", "surface", "surfaceGrp", "zone", "standOff",
+      // The header.
+      "teiHeader", "fileDesc", "titleStmt", "editionStmt", "publicationStmt", "seriesStmt", "notesStmt",
+      "sourceDesc", "encodingDesc", "profileDesc", "revisionDesc", "respStmt", "langUsage", "textClass",
+      "biblStruct", "analytic", "monogr", "imprint", "listChange",
+    ]
     /// Elements kept whole whatever they hold: a formula reads as its
     /// MathML, white space and all, and a word's surface is everything in
     /// it, white space too, as an anchor names it. A choice stays whole so
@@ -323,10 +347,12 @@
       ["lb", "pb"].contains(localName) && XMLFormatter.attribute("break", in: raw) != "no"
     }
 
-    /// Kept exactly as written: it holds text, or nothing to lay out, or
-    /// says its white space is its own (`xml:space="preserve"`).
+    /// Kept exactly as written: its content model is not element-only (the
+    /// fragment's root aside), it holds text anyway, or nothing to lay out,
+    /// or says its white space is its own (`xml:space="preserve"`).
     var isWhole: Bool {
       selfClosing || holdsText || PrettyNode.whole.contains(localName)
+        || !(name.isEmpty || PrettyNode.elementOnly.contains(localName))
         || XMLFormatter.attribute("xml:space", in: raw) == "preserve"
         || !children.contains { $0.kind == .element || $0.kind == .other }
     }
@@ -357,16 +383,8 @@
         if isWhole {
           let prints = printsText
           let reading: PrettyItem.Reading = block ? .block : (prints ? .text : .silent)
-          let edge: PrettyItem.Projection =
-            unprojected || !prints ? .silent : (["w", "m"].contains(name) ? .word : .text)
-          let projection: (PrettyItem.Projection, PrettyItem.Projection)
-          if breaksLine || name == "gap" || figure {
-            projection = (.separator, .separator)
-          } else if PrettyNode.lineStarts.contains(name) || firstOfSpeech {
-            projection = (edge, .separator)
-          } else {
-            projection = (edge, edge)
-          }
+          var projection = edges
+          if firstOfSpeech { projection.1 = .separator }
           add(verbatim, depth, reading: (reading, reading), projection: projection)
           return
         }
@@ -387,6 +405,37 @@
             figure || firstOfSpeech || PrettyNode.lineStarts.contains(name) ? .separator : .silent
           add(close, depth, reading: (reading, reading), projection: (edge, edge))
         }
+      }
+    }
+
+    /// What stands at each edge of this node kept whole, for the
+    /// projection: found through its first and last children that say, so
+    /// a mixed element ending at a line break ends at no letter.
+    var edges: (PrettyItem.Projection, PrettyItem.Projection) {
+      switch kind {
+      case .other: return (.silent, .silent)
+      case .cdata: return (.text, .text)
+      case .text:
+        let space: (Character) -> Bool = { " \t\r\n".contains($0) }
+        guard let first = raw.first, let last = raw.last else { return (.silent, .silent) }
+        return (space(first) ? .separator : .text, space(last) ? .separator : .text)
+      case .element:
+        let name = localName
+        if breaksLine || name == "gap" || name == "figure" { return (.separator, .separator) }
+        if PrettyNode.unprojected.contains(name) || !printsText { return (.silent, .silent) }
+        if ["w", "m"].contains(name) { return (.word, .word) }
+        var left = PrettyItem.Projection.silent
+        for child in children {
+          let edge = child.edges.0
+          if edge != .silent { left = edge; break }
+        }
+        var right = PrettyItem.Projection.silent
+        for child in children.reversed() {
+          let edge = child.edges.1
+          if edge != .silent { right = edge; break }
+        }
+        if PrettyNode.lineStarts.contains(name) { right = .separator }
+        return (left, right)
       }
     }
 

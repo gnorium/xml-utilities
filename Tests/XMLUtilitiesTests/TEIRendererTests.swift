@@ -636,4 +636,23 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(lines.map(\.text), ["Title", "one", "two", "three", "verse a", "verse b", "after"])
     XCTAssertEqual(lines.map(\.opensParagraph), [false, true, false, true, true, false, true])
   }
+
+  /// An epigraph frames its lines, set as a whole by its rend; a note
+  /// stands a paragraph's space apart (user, 2026-10-11).
+  func testAnEpigraphFramesItsLines() {
+    let lines = TEIRenderer.lines(
+      in: #"<p>Before</p><epigraph rend="align(center) smaller"><cit><quote><lg><l rend="align(left)">A line<lb/></l></lg></quote><bibl rend="align(right)">Author<lb/></bibl></cit></epigraph><note type="provenance"><stamp>Stamp</stamp></note>"#)
+    XCTAssertEqual(lines.map(\.text), ["Before", "A line", "Author", "Stamp"])
+    XCTAssertEqual(lines.map(\.frame), ["", "align(center) smaller", "align(center) smaller", ""])
+    XCTAssertEqual(lines.map(\.rend), ["", "align(left)", "align(right)", ""])
+    XCTAssertEqual(lines.map(\.opensParagraph), [true, true, true, true])
+  }
+
+  /// A phrase element's ink and size are its words' own (user, 2026-10-11):
+  /// a stamp's blue reaches its runs.
+  func testAStampsInkReachesItsWords() {
+    let lines = TEIRenderer.lines(in: #"<note type="provenance"><stamp rend="color(blue) align(center)">LIBRARY</stamp></note>"#)
+    XCTAssertEqual(lines.first?.runs.first?.rend, "color(blue)")
+    XCTAssertEqual(TEIRenderer.typeSetting(of: "align(center) color(red) larger spaced"), "color(red) larger")
+  }
 }

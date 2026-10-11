@@ -66,31 +66,18 @@ final class XMLFormatterTests: XCTestCase {
     + ##"<docImprint><s><w lemma="Frowde">FROWDE</w><pc>,</pc> <persName><w>Henry</w></persName><pc>.</pc></s></docImprint>"##
     + ##"</titlePage>"##
 
-  /// A title page as recognition writes it, each title line ended by its
-  /// `<lb/>`. (Without one, the reading runs `docTitle` into `docImprint`—
-  /// neither is a block to `TEIRenderer`—so no break is put there either.)
+  /// A title page as recognition writes it: its element-only structure
+  /// (`titlePage`, `docTitle`) one child per line, its mixed content
+  /// (`titlePart`, `docImprint`) exactly as written (user, 2026-10-11).
   func testATitlePageOpensOneChildPerLine() {
     XCTAssertEqual(
       XMLFormatter.prettified(Self.titlePage),
       """
       <titlePage>
         <docTitle rend="align(center)">
-          <titlePart type="main">
-            <s ana="#autonomy-0">
-              <w lemma="an" type="article" msd="Definite=Ind|PronType=Art">AN</w>
-              <w lemma="etymological" type="adjective" msd="Degree=Pos">ETYMOLOGICAL</w>
-              <lb/>
-              <w lemma="dictionary" type="noun">DICTIONARY</w>
-              <lb/>
-            </s>
-          </titlePart>
+          <titlePart type="main"><s ana="#autonomy-0"><w lemma="an" type="article" msd="Definite=Ind|PronType=Art">AN</w> <w lemma="etymological" type="adjective" msd="Degree=Pos">ETYMOLOGICAL</w><lb/><w lemma="dictionary" type="noun">DICTIONARY</w><lb/></s></titlePart>
         </docTitle>
-        <docImprint>
-          <s>
-            <w lemma="Frowde">FROWDE</w><pc>,</pc>
-            <persName><w>Henry</w></persName><pc>.</pc>
-          </s>
-        </docImprint>
+        <docImprint><s><w lemma="Frowde">FROWDE</w><pc>,</pc> <persName><w>Henry</w></persName><pc>.</pc></s></docImprint>
       </titlePage>
       """)
     assertSameReading(Self.titlePage)
@@ -117,23 +104,14 @@ final class XMLFormatterTests: XCTestCase {
     assertSameReading(markup)
   }
 
-  func testNestedHiAroundWordsOpens() {
+  /// A paragraph is mixed content: kept as written, even holding only
+  /// elements.
+  func testMixedContentHoldingOnlyElementsIsKept() {
     let markup = ##"<p><s><lb/><hi rend="italic"><w>This</w> <w>book</w> <w>is</w></hi> <w>a</w> <w>gift</w><pc>.</pc></s></p>"##
+    XCTAssertEqual(XMLFormatter.prettified(markup), markup)
     XCTAssertEqual(
-      XMLFormatter.prettified(markup),
-      """
-      <p>
-        <s>
-          <lb/>
-          <hi rend="italic">
-            <w>This</w>
-            <w>book</w>
-            <w>is</w></hi>
-          <w>a</w>
-          <w>gift</w><pc>.</pc>
-        </s>
-      </p>
-      """)
+      XMLFormatter.prettified("<body><div><lg><l>one</l><l>two</l></lg>" + markup + "</div></body>"),
+      "<body>\n  <div>\n    <lg>\n      <l>one</l>\n      <l>two</l>\n    </lg>\n    " + markup + "\n  </div>\n</body>")
     assertSameReading(markup)
   }
 
@@ -151,18 +129,7 @@ final class XMLFormatterTests: XCTestCase {
   func testAFragmentKeepsItsStrayTags() {
     let markup = ##"<s part="F"><w>ended</w><pc>.</pc></s></p><p><s><w>Next</w> <w>one</w>"##
     let pretty = XMLFormatter.prettified(markup)
-    XCTAssertEqual(
-      pretty,
-      """
-      <s part="F">
-          <w>ended</w><pc>.</pc>
-        </s>
-      </p>
-      <p>
-        <s>
-          <w>Next</w>
-          <w>one</w>
-      """)
+    XCTAssertEqual(pretty, ##"<s part="F"><w>ended</w><pc>.</pc></s></p>"## + "\n" + ##"<p><s><w>Next</w> <w>one</w>"##)
     assertSameReading(markup)
   }
 

@@ -141,6 +141,11 @@
     /// first line after one. A verse line, or a line after an `<lb/>`, has
     /// none.
     public internal(set) var opensParagraph: Bool
+    /// The setting of the block that frames it, where one sets its lines
+    /// as a whole apart from their own (an `<epigraph rend="align(center)">`
+    /// centered on the page, its lines left-aligned within it); empty
+    /// elsewhere.
+    public internal(set) var frame = ""
     /// Whether it follows the line before with no line break between them:
     /// furniture set on one line (a page number, then a running head).
     public let sharesLine: Bool
@@ -743,6 +748,8 @@
       // Whether the next line opens a paragraph's space: at a paragraph's
       // or a stanza's start and after its end.
       var paragraphPending = false
+      // The frame the lines set now stand in (`TEILine.frame`).
+      var currentFrame = ""
       // Whether a line break (`<lb/>`, `<cb/>`, `<pb/>`) came since the last
       // line was set, and whether it fell inside a word.
       var lineBroken = true
@@ -752,10 +759,11 @@
         runs = TEIRenderer.spaced(runs)
         let text = runs.map(\.text).joined()
         if !text.isEmpty {
-          lines.append(
-            TEILine(
-              kind: currentKind, text: text, rend: currentRend, runs: runs, opensBlock: blockPending,
-              opensParagraph: paragraphPending, sharesLine: !lineBroken, joinsPrevious: breakInWord))
+          var line = TEILine(
+            kind: currentKind, text: text, rend: currentRend, runs: runs, opensBlock: blockPending,
+            opensParagraph: paragraphPending, sharesLine: !lineBroken, joinsPrevious: breakInWord)
+          line.frame = currentFrame
+          lines.append(line)
           blockPending = false
           paragraphPending = false
           lineBroken = false
@@ -767,6 +775,7 @@
       func append(_ line: TEILine) {
         var line = line
         line.opensParagraph = paragraphPending
+        line.frame = currentFrame
         paragraphPending = false
         lines.append(line)
         blockPending = true
@@ -874,11 +883,15 @@
             case "note":
               flush()
               blockPending = true
+              // A note is set apart from the text it annotates by a
+              // paragraph's space, before and after.
+              paragraphPending = true
               walk(
                 element, kind: .note(place: element.attribute("place")), rend: blockRend,
                 inlineRend: inlineRend, gloss: glossing(element))
               flush()
               blockPending = true
+              paragraphPending = true
             case "space":
               // Space the source leaves, as much as it says: so many
               // characters' width in the line, or so many blank lines.
@@ -928,6 +941,10 @@
               blockPending = true
               let isParagraph = element.name == "p" || element.name == "lg"
               if isParagraph { paragraphPending = true }
+              // An epigraph frames its lines: set as a whole by its rend.
+              let frames = element.name == "epigraph"
+              let outerFrame = currentFrame
+              if frames { currentFrame = ownRend }
               // A block begins a line of its own; only furniture set beside
               // furniture (a page number, then a running head) shares one.
               if element.name != "fw" { lineBroken = true }
@@ -943,6 +960,7 @@
               flush()
               blockPending = true
               if isParagraph { paragraphPending = true }
+              if frames { currentFrame = outerFrame }
               if element.name != "fw" { lineBroken = true }
             case "table":
               flush()
@@ -1002,8 +1020,12 @@
               // (a title page's, a closer's: align, indent, hanging) is
               // its lines' setting; its inline rendition is none of it.
               let setting = TEIRenderer.blockSetting(of: ownRend)
+              // Its ink and its type's size (a stamp's blue, a byline's
+              // smaller type) are its words' own, as a <hi>'s would be.
+              let type = TEIRenderer.typeSetting(of: ownRend)
               walk(
-                element, kind: kind, rend: setting.isEmpty ? rend : setting, inlineRend: inlineRend,
+                element, kind: kind, rend: setting.isEmpty ? rend : setting,
+                inlineRend: type.isEmpty ? inlineRend : joined(type),
                 alternative: alternative, zone: initialZone, gloss: glossing(element))
             }
           }
@@ -1081,6 +1103,19 @@
     /// The block setting in a `rend`, TEI's rendition style as the
     /// explication writes it: `align(…)`, `indent(…)` and `hanging`, in
     /// the order written; nothing of an inline rendition (`italic`).
+    /// How the type of what a rend sets is drawn, on its words: its ink
+    /// (`color(NAME)`, one of the eleven basic color terms) and its size
+    /// (`larger`, `smaller`).
+    public static func typeSetting(of rend: String) -> String {
+      rend.split(whereSeparator: \.isWhitespace).filter {
+        $0.hasPrefix("color(") || $0 == "larger" || $0 == "smaller"
+      }.joined(separator: " ")
+    }
+
+    /// The eleven basic color terms a rend's `color(NAME)` may name (Berlin
+    /// and Kay): the inks the reader draws.
+    public static let inks = ["black", "white", "red", "green", "yellow", "blue", "brown", "purple", "pink", "orange", "gray"]
+
     public static func blockSetting(of rend: String) -> String {
       rend.split(whereSeparator: \.isWhitespace).filter {
         $0.hasPrefix("align(") || $0.hasPrefix("indent(") || $0 == "hanging"
