@@ -15,8 +15,13 @@
     /// text (`PrettyNode.elementOnly`: `body`, `div`, `lg`, `titlePage`…)
     /// sets each child on a line of its own, two spaces deeper; every other
     /// element—mixed content (`p`, `l`, `s`, `head`, `note`, `cell`…) or
-    /// one this list does not name—stays exactly as written, its white
-    /// space with it, whatever it holds. The white space between an
+    /// one this list does not name—stands on one line (user, 2026-10-12):
+    /// a run of white space in it that breaks a line (a model's line end and
+    /// its indent) becomes one space, which reads the same, since white
+    /// space in mixed content collapses; any other white space is kept as
+    /// written, and so is everything under `xml:space="preserve"` and in a
+    /// word or a formula (`PrettyNode.whole`), whose surface is what an
+    /// anchor names. The white space between an
     /// element-only container's children is replaced by the line break: it
     /// is insignificant there, so the page reads the same. Where there was
     /// none, a break is put in only where it changes neither the reading nor
@@ -315,7 +320,7 @@
     /// Nonbreaking spaces remain text, just as the renderer reads them.
     var holdsText: Bool {
       children.contains {
-        ($0.kind == .text && $0.raw.contains { !" \t\r\n".contains($0) }) || $0.kind == .cdata
+        ($0.kind == .text && $0.raw.contains { !PrettyNode.isSpace($0) }) || $0.kind == .cdata
       }
     }
 
@@ -328,6 +333,50 @@
         case .element: return child.printsText
         }
       }
+    }
+
+    /// On one line: each run of white space that breaks a line one space,
+    /// except where it is kept as written (`preserved`, under
+    /// `xml:space="preserve"`, in a word or a formula).
+    func joined(preserved: Bool) -> String {
+      switch kind {
+      case .text: return preserved ? raw : PrettyNode.joiningLines(raw)
+      case .cdata, .other: return raw
+      case .element:
+        let keeps =
+          preserved || PrettyNode.whole.contains(localName)
+          || XMLFormatter.attribute("xml:space", in: raw) == "preserve"
+        return raw + children.map { $0.joined(preserved: keeps) }.joined() + (close ?? "")
+      }
+    }
+
+    /// XML white space. Each a Character of its own: `" \t\r\n"` holds
+    /// "\r\n" as one Character, and no "\n" alone.
+    static func isSpace(_ character: Character) -> Bool {
+      character == " " || character == "\t" || character == "\n" || character == "\r" || character == "\r\n"
+    }
+
+    /// `text` with each run of XML white space holding a line break made one
+    /// space; runs with none are kept.
+    static func joiningLines(_ text: String) -> String {
+      let breaks: (Character) -> Bool = { $0 == "\n" || $0 == "\r" || $0 == "\r\n" }
+      guard text.contains(where: breaks) else { return text }
+      var out = ""
+      var run = ""
+      func flush() {
+        out += run.contains(where: breaks) ? " " : run
+        run = ""
+      }
+      for character in text {
+        if isSpace(character) {
+          run.append(character)
+        } else {
+          flush()
+          out.append(character)
+        }
+      }
+      flush()
+      return out
     }
 
     /// Exactly as written.
@@ -385,7 +434,7 @@
           let reading: PrettyItem.Reading = block ? .block : (prints ? .text : .silent)
           var projection = edges
           if firstOfSpeech { projection.1 = .separator }
-          add(verbatim, depth, reading: (reading, reading), projection: projection)
+          add(joined(preserved: false), depth, reading: (reading, reading), projection: projection)
           return
         }
         let reading: PrettyItem.Reading = block ? .block : .silent
@@ -416,7 +465,7 @@
       case .other: return (.silent, .silent)
       case .cdata: return (.text, .text)
       case .text:
-        let space: (Character) -> Bool = { " \t\r\n".contains($0) }
+        let space: (Character) -> Bool = PrettyNode.isSpace
         guard let first = raw.first, let last = raw.last else { return (.silent, .silent) }
         return (space(first) ? .separator : .text, space(last) ? .separator : .text)
       case .element:

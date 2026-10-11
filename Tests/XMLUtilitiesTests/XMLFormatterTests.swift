@@ -99,9 +99,22 @@ final class XMLFormatterTests: XCTestCase {
     let markup = "<div><p>text <hi rend=\"italic\">x  y</hi> more</p><p>a\n  b</p></div>"
     XCTAssertEqual(
       XMLFormatter.prettified(markup),
-      "<div>\n  <p>text <hi rend=\"italic\">x  y</hi> more</p>\n  <p>a\n  b</p>\n</div>")
+      "<div>\n  <p>text <hi rend=\"italic\">x  y</hi> more</p>\n  <p>a b</p>\n</div>")
     XCTAssertEqual(XMLFormatter.prettified(##"<hi rend="italic">This book is a gift to</hi>"##), ##"<hi rend="italic">This book is a gift to</hi>"##)
     assertSameReading(markup)
+  }
+
+  /// A model's line breaks inside mixed content are joined: each run of
+  /// white space that breaks a line one space (user, 2026-10-12), the
+  /// element on one line; a word's, a formula's and preserved white space
+  /// are kept.
+  func testMixedContentIsJoinedOntoOneLine() {
+    let markup = "<div>\n<p>\n    <s><w>a</w>\n      <w>b</w>  <hi>c\n d</hi></s>\n</p><p xml:space=\"preserve\">x\n  y</p><p><w>e\n f</w></p></div>"
+    XCTAssertEqual(
+      XMLFormatter.prettified(markup),
+      "<div>\n  <p> <s><w>a</w> <w>b</w>  <hi>c d</hi></s> </p>\n  <p xml:space=\"preserve\">x\n  y</p>\n  <p><w>e\n f</w></p>\n</div>")
+    assertSameReading(markup)
+    XCTAssertEqual(XMLFormatter.prettified(XMLFormatter.prettified(markup)), XMLFormatter.prettified(markup))
   }
 
   /// A paragraph is mixed content: kept as written, even holding only
