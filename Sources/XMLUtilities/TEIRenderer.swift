@@ -6,7 +6,12 @@
   public struct TEIPage: Sendable {
     public let label: String
     public let facsimileURL: String
-    public let lines: [TEILine]
+    /// The lines a reader sees, read the first time they are asked for: a
+    /// document's pages are listed whole far more often than read whole—a
+    /// roster of a long book wants every page's label and markup, the
+    /// reader one page's lines (user, 2026-10-11).
+    public var lines: [TEILine] { reading.lines }
+    private let reading: Reading
     /// The page's own markup, for a reader who wants to see the tags.
     public let markup: String
     /// The document's zones (its `<facsimile>`'s, by `xml:id`): where the
@@ -15,11 +20,37 @@
     public let zones: [String: TEIZone]
 
     public init(label: String, facsimileURL: String, lines: [TEILine], markup: String, zones: [String: TEIZone] = [:]) {
+      self.init(label: label, facsimileURL: facsimileURL, markup: markup, zones: zones) { lines }
+    }
+
+    init(
+      label: String, facsimileURL: String, markup: String, zones: [String: TEIZone],
+      read: @escaping @Sendable () -> [TEILine]
+    ) {
       self.label = label
       self.facsimileURL = facsimileURL
-      self.lines = lines
+      self.reading = Reading(read)
       self.markup = markup
       self.zones = zones
+    }
+
+    /// A page's lines, read once, by whichever thread asks first.
+    private final class Reading: @unchecked Sendable {
+      private let lock = NSLock()
+      private var read: (@Sendable () -> [TEILine])?
+      private var cached: [TEILine] = []
+
+      init(_ read: @escaping @Sendable () -> [TEILine]) { self.read = read }
+
+      var lines: [TEILine] {
+        lock.lock()
+        defer { lock.unlock() }
+        if let read {
+          cached = read()
+          self.read = nil
+        }
+        return cached
+      }
     }
   }
 
@@ -308,18 +339,24 @@
     public static func pages(
       in xml: String, highlights: [String: [TEIHighlight]] = [:], marksWords: Bool = false
     ) -> [TEIPage] {
+      // Read as native UTF-8: a document decoded by Foundation may arrive
+      // bridged, where every index step is a call into it, and a long
+      // book's pages took minutes to find (dev, 2026-10-11). The ranges
+      // stay inside this function, so its own copy's indices are fine.
+      var xml = xml
+      xml.makeContiguousUTF8()
       let zones = TEIFacsimile.zones(in: TEIFacsimile.blocks(in: xml))
       return pageSpans(in: xml).map { open, range in
         let markup = String(xml[range])
+        let marked = highlights[serviceID(ofFacsimile: open.facsimileURL)] ?? []
         return TEIPage(
           label: open.label,
           facsimileURL: open.facsimileURL,
-          lines: lines(
-            in: markup, highlights: highlights[serviceID(ofFacsimile: open.facsimileURL)] ?? [],
-            marksWords: marksWords, zones: zones),
           markup: markup.trimmingCharacters(in: .whitespacesAndNewlines),
           zones: zones
-        )
+        ) {
+          lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones)
+        }
       }
     }
 
@@ -445,14 +482,28 @@
     /// The same, for a stretch of a larger string, its ranges in that string.
     static func pageBreaks(in body: Substring) -> [(tag: Range<String.Index>, label: String, facsimileURL: String)] {
       var breaks: [(tag: Range<String.Index>, label: String, facsimileURL: String)] = []
-      var cursor = body.startIndex
-      while let open = body.range(of: "<pb", range: cursor..<body.endIndex) {
-        guard let close = body.range(of: ">", range: open.upperBound..<body.endIndex) else { break }
-        let tag = String(body[open.lowerBound..<close.upperBound])
+      // Byte by byte, once through: a search per tag from the cursor read
+      // the rest of the document each time, minutes for a long book.
+      let bytes = body.utf8
+      var cursor = bytes.startIndex
+      while let open = bytes[cursor...].firstIndex(of: UInt8(ascii: "<")) {
+        let p = bytes.index(after: open)
+        guard p < bytes.endIndex, bytes[p] == UInt8(ascii: "p") else {
+          cursor = p
+          continue
+        }
+        let b = bytes.index(after: p)
+        guard b < bytes.endIndex, bytes[b] == UInt8(ascii: "b") else {
+          cursor = b
+          continue
+        }
+        guard let gt = bytes[b...].firstIndex(of: UInt8(ascii: ">")) else { break }
+        let close = bytes.index(after: gt)
+        let tag = String(body[open..<close])
         let facs = XMLFormatter.attribute("facs", in: tag)
-        cursor = close.upperBound
+        cursor = close
         guard !facs.isEmpty else { continue }
-        breaks.append((open.lowerBound..<close.upperBound, expandedLeafLabel(XMLFormatter.attribute("n", in: tag)), facs))
+        breaks.append((open..<close, expandedLeafLabel(XMLFormatter.attribute("n", in: tag)), facs))
       }
       return breaks
     }
