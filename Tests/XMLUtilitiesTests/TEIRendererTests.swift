@@ -17,6 +17,22 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertNil(TEIRenderer.language(in: "<TEI><text><body><p>שלום</p></body></text></TEI>"))
   }
 
+  /// A translation's runs carry the source block they translate, as its
+  /// segment names it: the block's `@corresp`, never a phrase's.
+  func testATranslationsRunsNameTheirSegment() throws {
+    let translation = #"""
+      <TEI><text><body><pb n="1" facs="https://example.org/1.jpg" corresp="#p1.e1"/>
+      <head corresp="#p1.e2">A <hi corresp="#p1.e3">title</hi></head>
+      <p corresp="#p1.e4"><s corresp="#p1.e5"><w corresp="#p1.e6">First</w> one.</s> <s corresp="#p1.e7">Second.</s></p>
+      </body></text></TEI>
+      """#
+    let page = try XCTUnwrap(TEIRenderer.pages(in: translation).first)
+    let runs = page.lines.flatMap(\.runs).filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+    XCTAssertEqual(runs.map(\.segment), ["#p1.e2", "#p1.e2", "#p1.e5", "#p1.e5", "#p1.e7"])
+    let segments = try XCTUnwrap(TEIParallel(source: translation).pages.first).segments
+    XCTAssertEqual(segments.map(\.corresp), ["#p1.e2", "#p1.e5", "#p1.e7"])
+  }
+
   func testPagesIncludeTitlePagesAndBackMatter() {
     let document = """
       <TEI><text xml:lang="eng"><front><pb n="title" facs="https://example.org/title.jpg"/>

@@ -38,6 +38,11 @@
       public let text: String
       /// How many placeholders it has.
       public let placeholders: Int
+      /// The block's own `@corresp`, as written ("" where it has none, or
+      /// for a page's text outside any block): in a translation, the
+      /// source block its clone points back at, which its rendered runs
+      /// carry (`TEILine.Run.segment`).
+      public var corresp: String = ""
     }
 
     /// What a kind of document carries into a translation.
@@ -246,8 +251,13 @@
     static func segments(of tokens: [Token], in range: Range<Int>, profile: Profile) -> ([Segment], [String: [Item]]) {
       final class Frame {
         let element: String
+        /// Its opening tag's token; nil for the page itself.
+        let opening: Int?
         var items: [Item] = []
-        init(element: String) { self.element = element }
+        init(element: String, opening: Int? = nil) {
+          self.element = element
+          self.opening = opening
+        }
       }
       var frames: [Frame] = []
       var stack: [(frame: Frame, name: String)] = []
@@ -295,7 +305,7 @@
             // A block: its opening tag stands in its parent's flow, and it
             // has a flow of its own.
             current.items.append(.placeholder(index..<(index + 1)))
-            let frame = Frame(element: name)
+            let frame = Frame(element: name, opening: index)
             frames.append(frame)
             stack.append((frame, name))
             index += 1
@@ -328,7 +338,8 @@
         segments.append(
           Segment(
             key: key, element: frame.element,
-            text: text.trimmingCharacters(in: .whitespacesAndNewlines), placeholders: placeholders))
+            text: text.trimmingCharacters(in: .whitespacesAndNewlines), placeholders: placeholders,
+            corresp: frame.opening.map { XMLFormatter.attribute("corresp", in: tokens[$0].raw) } ?? ""))
         flows[key] = frame.items
       }
       return (segments, flows)

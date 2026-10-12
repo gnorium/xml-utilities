@@ -196,6 +196,20 @@
       /// `xml:space="preserve"`, or a `<space/>`'s width. Drawn as written
       /// (`white-space: pre-wrap`), never collapsed.
       public let preserved: Bool
+      /// The `@corresp` of the block its text is set in (the nearest
+      /// element around it that is no phrase, `TEIParallel.inline`): in a
+      /// translation, the source block it translates, as its segment names
+      /// it (`TEIParallel.Segment.corresp`). "" where none says.
+      public internal(set) var segment = ""
+
+      /// The same run with other text: all else kept.
+      func with(text: String, preserved: Bool) -> Run {
+        var run = Run(
+          text: text, rend: rend, kind: kind, alternative: alternative, highlight: highlight, word: word, zone: zone,
+          element: element, preserved: preserved)
+        run.segment = segment
+        return run
+      }
 
       public init(
         text: String, rend: String = "", kind: Kind = .text, alternative: String = "",
@@ -738,6 +752,15 @@
         for child in element.elements { mark(child, preserve) }
       }
       mark(owner, inheritedPreservation)
+      // The block each element's text is set in, by its `@corresp`.
+      var segments: [ObjectIdentifier: String] = [:]
+      func frame(_ element: TEIMarkup.Element, _ inherited: String) {
+        let own = element.attribute("corresp")
+        let segment = !own.isEmpty && !TEIParallel.inline.contains(element.name) ? own : inherited
+        segments[ObjectIdentifier(element)] = segment
+        for child in element.elements { frame(child, segment) }
+      }
+      frame(owner, "")
       var lines: [TEILine] = []
       var runs: [TEILine.Run] = []
       var currentKind: TEILine.Kind = .text
@@ -807,19 +830,21 @@
             if !text.isEmpty {
               if alternative.isEmpty {
                 for piece in pieces(of: text, at: owner.projected[index], in: highlights, words: words) {
-                  runs.append(
-                    .init(
-                      text: piece.text, rend: inlineRend, highlight: piece.highlight, word: piece.word,
-                      zone: initialZone, element: runElement(of: piece.word), preserved: preserved))
+                  var run = TEILine.Run(
+                    text: piece.text, rend: inlineRend, highlight: piece.highlight, word: piece.word,
+                    zone: initialZone, element: runElement(of: piece.word), preserved: preserved)
+                  run.segment = segments[ObjectIdentifier(owner)] ?? ""
+                  runs.append(run)
                 }
               } else {
                 // A run with an alternative stays whole: it is read on hover
                 // as one.
                 let first = pieces(of: text, at: owner.projected[index], in: highlights, words: words).first
-                runs.append(
-                  .init(
-                    text: text, rend: inlineRend, alternative: alternative, highlight: first?.highlight,
-                    word: first?.word, zone: initialZone, element: runElement(of: first?.word), preserved: preserved))
+                var run = TEILine.Run(
+                  text: text, rend: inlineRend, alternative: alternative, highlight: first?.highlight,
+                  word: first?.word, zone: initialZone, element: runElement(of: first?.word), preserved: preserved)
+                run.segment = segments[ObjectIdentifier(owner)] ?? ""
+                runs.append(run)
               }
             }
           case .element(let element):
@@ -1075,10 +1100,7 @@
           }
         }
         guard !text.isEmpty else { continue }
-        out.append(
-          .init(
-            text: String(text), rend: run.rend, kind: run.kind, alternative: run.alternative,
-            highlight: run.highlight, word: run.word, zone: run.zone, element: run.element))
+        out.append(run.with(text: String(text), preserved: false))
       }
       // None at the end: the last text run's trailing space, unless it is
       // the source's own.
@@ -1090,11 +1112,7 @@
         text.removeLast()
         out.remove(at: index)
         if !text.isEmpty {
-          out.insert(
-            .init(
-              text: String(text), rend: run.rend, kind: run.kind, alternative: run.alternative,
-              highlight: run.highlight, word: run.word, zone: run.zone, element: run.element,
-              preserved: run.preserved), at: index)
+          out.insert(run.with(text: String(text), preserved: run.preserved), at: index)
         }
       }
       return out
