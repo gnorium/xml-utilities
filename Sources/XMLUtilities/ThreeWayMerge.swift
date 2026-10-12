@@ -59,8 +59,6 @@
           merged.append(contentsOf: ourRun)
         } else if ourRun == theirRun {
           merged.append(contentsOf: ourRun)
-        } else if let both = disjoint(base: baseRun, ours: ourRun, theirs: theirRun) {
-          merged.append(contentsOf: both)
         } else {
           conflicts.append(contentsOf: baseRun.isEmpty ? ourRun : baseRun)
           merged.append(contentsOf: ourRun)
@@ -76,77 +74,6 @@
 
       guard conflicts.isEmpty else { return .conflict(lines: conflicts) }
       return .merged(merged.joined(separator: "\n"))
-    }
-
-    /// A change to a stretch of the base: the lines `range` replaced by
-    /// `lines` (an insertion where the range is empty).
-    struct Hunk: Equatable {
-      let range: Range<Int>
-      let lines: [String]
-    }
-
-    /// Both sides' changes to one stretch between anchors, where they touch
-    /// different lines: two neighboring lines each changed by one side
-    /// (a page's two paragraphs, laid out a line each) are both kept. Nil
-    /// where they change a line in common, or insert at the same place, or
-    /// one inserts inside what the other replaces: which goes first, or
-    /// what stands, is a guess.
-    static func disjoint(base: [String], ours: [String], theirs: [String]) -> [String]? {
-      let ourHunks = hunks(from: base, to: ours)
-      let theirHunks = hunks(from: base, to: theirs).filter { !ourHunks.contains($0) }
-      for our in ourHunks {
-        for their in theirHunks {
-          let overlapping = our.range.lowerBound < their.range.upperBound && their.range.lowerBound < our.range.upperBound
-          if overlapping || our.range.lowerBound == their.range.lowerBound { return nil }
-        }
-      }
-      var out: [String] = []
-      var index = 0
-      for hunk in (ourHunks + theirHunks).sorted(by: { $0.range.lowerBound < $1.range.lowerBound }) {
-        out.append(contentsOf: base[index..<hunk.range.lowerBound])
-        out.append(contentsOf: hunk.lines)
-        index = hunk.range.upperBound
-      }
-      out.append(contentsOf: base[index...])
-      return out
-    }
-
-    /// What changed from `base` to `other`, by their longest common
-    /// subsequence: each stretch of the base not in it, and what replaced it.
-    static func hunks(from base: [String], to other: [String]) -> [Hunk] {
-      // lengths[i][j]: the longest common subsequence of base[i...] and other[j...].
-      var lengths = Array(repeating: Array(repeating: 0, count: other.count + 1), count: base.count + 1)
-      for i in stride(from: base.count - 1, through: 0, by: -1) {
-        for j in stride(from: other.count - 1, through: 0, by: -1) {
-          lengths[i][j] = base[i] == other[j] ? lengths[i + 1][j + 1] + 1 : max(lengths[i + 1][j], lengths[i][j + 1])
-        }
-      }
-      var out: [Hunk] = []
-      var i = 0
-      var j = 0
-      var start: (Int, Int)?
-      func close() {
-        if let (baseStart, otherStart) = start {
-          out.append(Hunk(range: baseStart..<i, lines: Array(other[otherStart..<j])))
-          start = nil
-        }
-      }
-      while i < base.count || j < other.count {
-        if i < base.count, j < other.count, base[i] == other[j] {
-          close()
-          i += 1
-          j += 1
-        } else {
-          if start == nil { start = (i, j) }
-          if j < other.count && (i == base.count || lengths[i][j + 1] >= lengths[i + 1][j]) {
-            j += 1
-          } else {
-            i += 1
-          }
-        }
-      }
-      close()
-      return out
     }
 
     static func lines(of text: String, exact: Bool = false) -> [String] {

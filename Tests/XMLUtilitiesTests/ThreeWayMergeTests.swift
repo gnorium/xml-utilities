@@ -2,9 +2,9 @@ import XCTest
 
 @testable import XMLUtilities
 
-/// `ThreeWayMerge`: two corrections from one text merge where they touch
-/// different lines, neighboring lines too; where they touch the same, a
-/// person decides.
+/// `ThreeWayMerge`: two corrections from one text merge, as diff3 merges
+/// them, where an unchanged line stands between them; where they touch the
+/// same or neighboring lines, a person decides.
 final class ThreeWayMergeTests: XCTestCase {
   static let base = "<div>\n  <p>One</p>\n  <p>Two</p>\n  <p>Three</p>\n</div>"
 
@@ -13,13 +13,14 @@ final class ThreeWayMergeTests: XCTestCase {
     return nil
   }
 
-  /// A page's paragraphs laid out a line each: one side changes the
-  /// first, the other the second; both stand.
-  func testNeighboringLinesMerge() {
-    let ours = Self.base.replacingOccurrences(of: "One", with: "Uno")
-    let theirs = Self.base.replacingOccurrences(of: "Two", with: "Dos")
-    XCTAssertEqual(merged(ours, theirs), "<div>\n<p>Uno</p>\n<p>Dos</p>\n<p>Three</p>\n</div>")
-    XCTAssertEqual(merged(theirs, ours), "<div>\n<p>Uno</p>\n<p>Dos</p>\n<p>Three</p>\n</div>")
+  /// Lines with an unchanged line between them merge; neighboring lines
+  /// conflict, as in diff3 and Git.
+  func testOnlyLinesApartMerge() {
+    let one = Self.base.replacingOccurrences(of: "One", with: "Uno")
+    XCTAssertEqual(
+      merged(one, Self.base.replacingOccurrences(of: "Three", with: "Tres")),
+      "<div>\n<p>Uno</p>\n<p>Two</p>\n<p>Tres</p>\n</div>")
+    XCTAssertNil(merged(one, Self.base.replacingOccurrences(of: "Two", with: "Dos")))
   }
 
   func testALineAddedBesideALineChangedMerges() {
