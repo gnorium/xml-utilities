@@ -29,8 +29,22 @@ final class TEIRendererTests: XCTestCase {
     let page = try XCTUnwrap(TEIRenderer.pages(in: translation).first)
     let runs = page.lines.flatMap(\.runs).filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
     XCTAssertEqual(runs.map(\.segment), ["#p1.e2", "#p1.e2", "#p1.e5", "#p1.e5", "#p1.e7"])
-    let segments = try XCTUnwrap(TEIParallel(source: translation).pages.first).segments
-    XCTAssertEqual(segments.map(\.corresp), ["#p1.e2", "#p1.e5", "#p1.e7"])
+  }
+
+  /// A segment's pointer is the one its block's clone carries in the
+  /// translation: what a translator's note is kept and found by.
+  func testASegmentsPointerIsItsClonesCorresp() throws {
+    let source = #"<TEI><text><body><pb n="1" facs="https://example.org/iiif/pg1/full/max/0/default.jpg"/><head>Libro</head><p><s>Regola</s> <s xml:id="due">Due</s></p></body></text></TEI>"#
+    let parallel = TEIParallel(source: source)
+    let segments = try XCTUnwrap(parallel.pages.first).segments
+    XCTAssertEqual(segments.map(\.pointer), ["#pg1.e2", "#pg1.e4", "#due"])
+    let translated = try parallel.translatedPage(0, texts: ["s1": "Book", "s2": "Rule", "s3": "Two"])
+    for segment in segments { XCTAssertTrue(translated.contains("corresp=\"\(segment.pointer)\""), segment.pointer) }
+    // Rendered, each run names its block by the same pointer.
+    let rendered = try XCTUnwrap(
+      TEIRenderer.pages(in: "<TEI><text><body>" + translated + "</body></text></TEI>").first)
+    let named = Set(rendered.lines.flatMap(\.runs).filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }.map(\.segment))
+    XCTAssertEqual(named, Set(segments.map(\.pointer)))
   }
 
   func testPagesIncludeTitlePagesAndBackMatter() {

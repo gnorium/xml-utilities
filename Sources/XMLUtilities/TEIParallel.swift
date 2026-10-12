@@ -38,11 +38,13 @@
       public let text: String
       /// How many placeholders it has.
       public let placeholders: Int
-      /// The block's own `@corresp`, as written ("" where it has none, or
-      /// for a page's text outside any block): in a translation, the
-      /// source block its clone points back at, which its rendered runs
-      /// carry (`TEILine.Run.segment`).
-      public var corresp: String = ""
+      /// The block's pointer, as its clone in a translation carries it in
+      /// `@corresp` and the clone's rendered runs name it
+      /// (`TEILine.Run.segment`): what a translator's note on it is kept
+      /// and found by. "" for a page's text outside any block.
+      public internal(set) var pointer = ""
+      /// Its block's opening tag's token; nil for the page itself.
+      var opening: Int?
     }
 
     /// What a kind of document carries into a translation.
@@ -174,7 +176,6 @@
         let (segments, flows) = Self.segments(of: tokens, in: tokens.indices, profile: profile)
         pages.append(Page(facsimileURL: "", segments: segments, pageBreak: nil, tokens: tokens.indices, flows: flows))
       }
-      self.pages = pages
       prelude = 0..<(breaks.first ?? 0)
 
       var pointers: [Int: String] = [:]
@@ -195,6 +196,16 @@
         }
       }
       self.pointers = pointers
+      // Each segment's pointer, its block's.
+      self.pages = pages.map { page in
+        Page(
+          facsimileURL: page.facsimileURL,
+          segments: page.segments.map { segment in
+            var pointed = segment
+            pointed.pointer = segment.opening.flatMap { pointers[$0] } ?? ""
+            return pointed
+          }, pageBreak: page.pageBreak, tokens: page.tokens, flows: page.flows)
+      }
     }
 
     /// An element's pointer: its `xml:id`, or the name given.
@@ -339,7 +350,7 @@
           Segment(
             key: key, element: frame.element,
             text: text.trimmingCharacters(in: .whitespacesAndNewlines), placeholders: placeholders,
-            corresp: frame.opening.map { XMLFormatter.attribute("corresp", in: tokens[$0].raw) } ?? ""))
+            opening: frame.opening))
         flows[key] = frame.items
       }
       return (segments, flows)
