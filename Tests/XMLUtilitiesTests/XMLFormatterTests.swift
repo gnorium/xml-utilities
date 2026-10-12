@@ -68,14 +68,15 @@ final class XMLFormatterTests: XCTestCase {
 
   /// A title page as recognition writes it: its element-only structure
   /// (`titlePage`, `docTitle`) one child per line, its mixed content
-  /// (`titlePart`, `docImprint`) exactly as written (user, 2026-10-11).
+  /// (`titlePart`, `docImprint`) one printed line a row (user, 2026-10-12).
   func testATitlePageOpensOneChildPerLine() {
     XCTAssertEqual(
       XMLFormatter.prettified(Self.titlePage),
       """
       <titlePage>
         <docTitle rend="align(center)">
-          <titlePart type="main"><s ana="#autonomy-0"><w lemma="an" type="article" msd="Definite=Ind|PronType=Art">AN</w> <w lemma="etymological" type="adjective" msd="Degree=Pos">ETYMOLOGICAL</w><lb/><w lemma="dictionary" type="noun">DICTIONARY</w><lb/></s></titlePart>
+          <titlePart type="main"><s ana="#autonomy-0"><w lemma="an" type="article" msd="Definite=Ind|PronType=Art">AN</w> <w lemma="etymological" type="adjective" msd="Degree=Pos">ETYMOLOGICAL</w><lb/>
+      <w lemma="dictionary" type="noun">DICTIONARY</w><lb/></s></titlePart>
         </docTitle>
         <docImprint><s><w lemma="Frowde">FROWDE</w><pc>,</pc> <persName><w>Henry</w></persName><pc>.</pc></s></docImprint>
       </titlePage>
@@ -104,28 +105,104 @@ final class XMLFormatterTests: XCTestCase {
     assertSameReading(markup)
   }
 
-  /// A model's line breaks inside mixed content are joined: each run of
-  /// white space that breaks a line one space (user, 2026-10-12), the
-  /// element on one line; a word's, a formula's and preserved white space
-  /// are kept.
+  /// A model's soft wraps inside mixed content are joined: each run of
+  /// white space that breaks a line within a printed line one space (user,
+  /// 2026-10-12); at a block's edges a row starts at the margin and the
+  /// closing tag stands at the block's depth; a word's, a formula's and
+  /// preserved white space are kept.
   func testMixedContentIsJoinedOntoOneLine() {
     let markup = "<div>\n<p>\n    <s><w>a</w>\n      <w>b</w>  <hi>c\n d</hi></s>\n</p><p xml:space=\"preserve\">x\n  y</p><p><w>e\n f</w></p></div>"
     XCTAssertEqual(
       XMLFormatter.prettified(markup),
-      "<div>\n  <p> <s><w>a</w> <w>b</w>  <hi>c d</hi></s> </p>\n  <p xml:space=\"preserve\">x\n  y</p>\n  <p><w>e\n f</w></p>\n</div>")
+      "<div>\n  <p>\n<s><w>a</w> <w>b</w>  <hi>c d</hi></s>\n  </p>\n  <p xml:space=\"preserve\">x\n  y</p>\n  <p><w>e\n f</w></p>\n</div>")
     assertSameReading(markup)
     XCTAssertEqual(XMLFormatter.prettified(XMLFormatter.prettified(markup)), XMLFormatter.prettified(markup))
   }
 
-  /// A paragraph is mixed content: kept as written, even holding only
-  /// elements.
+  /// A paragraph is mixed content, even holding only elements: a printed
+  /// line a row, never laid out as structure.
   func testMixedContentHoldingOnlyElementsIsKept() {
     let markup = ##"<p><s><lb/><hi rend="italic"><w>This</w> <w>book</w> <w>is</w></hi> <w>a</w> <w>gift</w><pc>.</pc></s></p>"##
-    XCTAssertEqual(XMLFormatter.prettified(markup), markup)
+    let laid = markup.replacingOccurrences(of: "<lb/>", with: "<lb/>\n")
+    XCTAssertEqual(XMLFormatter.prettified(markup), laid)
     XCTAssertEqual(
       XMLFormatter.prettified("<body><div><lg><l>one</l><l>two</l></lg>" + markup + "</div></body>"),
-      "<body>\n  <div>\n    <lg>\n      <l>one</l>\n      <l>two</l>\n    </lg>\n    " + markup + "\n  </div>\n</body>")
+      "<body>\n  <div>\n    <lg>\n      <l>one</l>\n      <l>two</l>\n    </lg>\n    " + laid + "\n  </div>\n</body>")
     assertSameReading(markup)
+  }
+
+  /// A paragraph of several printed lines stays a printed line a row, each
+  /// ending at its `<lb/>`; a soft wrap within a printed line is joined
+  /// (user, 2026-10-12).
+  func testEachPrintedLineIsARow() {
+    let markup =
+      "<div><p><s><w>One</w>\n    <w>line</w><lb/><w>two</w> <w>lines</w><lb/>\n   <w>three</w><pc>.</pc></s>"
+      + "<s>Plain text\n  wrapped<lb/>and more</s><pb n=\"2\"/><s>after\n<lb/>end</s></p></div>"
+    XCTAssertEqual(
+      XMLFormatter.prettified(markup),
+      """
+      <div>
+        <p><s><w>One</w> <w>line</w><lb/>
+      <w>two</w> <w>lines</w><lb/>
+      <w>three</w><pc>.</pc></s><s>Plain text wrapped<lb/>
+      and more</s><pb n="2"/>
+      <s>after <lb/>
+      end</s></p>
+      </div>
+      """)
+    assertSameReading(markup)
+  }
+
+  /// A line break after the break that closes a sentence stands after the
+  /// tags that close there, not inside them.
+  func testTheRowEndsAfterWhatClosesAtTheBreak() {
+    let markup = "<p><s><w>a</w><lb/></s><s><w>b</w></s><lb/></p>"
+    XCTAssertEqual(XMLFormatter.prettified(markup), "<p><s><w>a</w><lb/></s>\n<s><w>b</w></s><lb/></p>")
+    assertSameReading(markup)
+  }
+
+  /// A word broken over a line (`<lb break="no"/>`) stays one word: no
+  /// line break is put after its break, where the projection would read
+  /// one inside the word; a line break the model wrote there is kept,
+  /// which the reading, as TEI reads white space beside a break, ignores.
+  func testAWordBrokenOverALineStaysOneWord() {
+    let joined = ##"<p>A con<lb break="no"/>tinued word<lb/>next</p>"##
+    XCTAssertEqual(XMLFormatter.prettified(joined), ##"<p>A con<lb break="no"/>tinued word<lb/>"## + "\nnext</p>")
+    let wrapped = ##"<p>A con<lb break="no"/>"## + "\n     tinued word</p>"
+    XCTAssertEqual(XMLFormatter.prettified(wrapped), ##"<p>A con<lb break="no"/>"## + "\ntinued word</p>")
+    let word = ##"<p><w>con<lb break="no"/>tinued</w> <w>word</w></p>"##
+    XCTAssertEqual(XMLFormatter.prettified(word), word)
+    for markup in [joined, wrapped, word] {
+      XCTAssertTrue(reflowed(XMLFormatter.prettified(markup)).contains("continued word"), reflowed(markup))
+      assertSameReading(markup)
+    }
+    XCTAssertEqual(reflowed(joined), "A continued word next")
+  }
+
+  /// The page design-notes/canvas-5-markup.xml lays out (a title page):
+  /// formatted, it reads the same, each printed line on a row of its own.
+  func testCanvasFiveReadsTheSameAPrintedLineARow() throws {
+    let url = try XCTUnwrap(Bundle.module.url(forResource: "canvas-5-markup", withExtension: "xml", subdirectory: "Fixtures"))
+    let markup = try String(contentsOf: url, encoding: .utf8)
+    let pretty = XMLFormatter.prettified(markup)
+    for row in pretty.split(separator: "\n") {
+      XCTAssertLessThanOrEqual(row.components(separatedBy: "<lb/>").count, 2, String(row))
+      if let range = row.range(of: "<lb/>") {
+        // Only what closes at the break follows it on its row.
+        XCTAssertNotNil(
+          row[range.upperBound...].range(of: "^(</[^>]+>)*$", options: .regularExpression), String(row))
+      }
+    }
+    XCTAssertEqual(reflowed(pretty), reflowed(markup))
+    assertSameReading(markup)
+  }
+
+  /// The page read as running text, as TEIView's Reflow sets it: lines
+  /// joined by a space, or by nothing across a word's line break.
+  private func reflowed(_ markup: String) -> String {
+    TEIRenderer.lines(in: markup).enumerated().map { index, line in
+      (index > 0 && !line.joinsPrevious ? " " : "") + line.text
+    }.joined()
   }
 
   func testCommentsInstructionsCDATAAndEntitiesAreKept() {

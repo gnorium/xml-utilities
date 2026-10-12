@@ -1,0 +1,57 @@
+<pb n="5"/>
+<titlePage>
+  <docTitle rend="align(center)">
+    <titlePart type="main" rend="align(center)">
+<bibl xml:id="bibl-3" xml:lang="eng" type="dictionary"><title><s ana="#autonomy-0"><hi rend="spaced smaller"><w lemma="an" type="article" msd="Definite=Ind|PronType=Art">AN</w></hi><lb/>
+<hi rend="larger"><w lemma="etymological" type="adjective" msd="Degree=Pos">ETYMOLOGICAL</w> <w lemma="dictionary" type="noun" msd="Number=Sing">DICTIONARY</w></hi><lb/>
+<hi rend="spaced smaller"><w lemma="of" type="preposition">OF</w> <w lemma="the" type="article" msd="Definite=Def|PronType=Art">THE</w></hi><lb/>
+<hi rend="larger"><w lemma="English" type="proper_noun" msd="Number=Sing">ENGLISH</w> <w lemma="language" type="noun" msd="Number=Sing">LANGUAGE</w></hi></s><lb/></title></bibl>
+    </titlePart>
+  </docTitle>
+  <space dim="vertical" quantity="3" unit="lines"/>
+  <byline rend="align(center)">
+<s ana="#autonomy-0"><hi rend="spaced smaller"><w lemma="by" type="preposition">BY</w> <w lemma="the" type="article" msd="Definite=Def|PronType=Art">THE</w></hi></s><lb/>
+<s ana="#autonomy-0"><docAuthor><w lemma="reverend" type="adjective" msd="Degree=Pos"><choice><abbr>REV.</abbr><expan>Reverend</expan></choice></w> <persName><w lemma="Walter" type="proper_noun" msd="Number=Sing">WALTER</w> <w lemma="W" type="letter">W</w><pc>.</pc> <w lemma="Skeat" type="proper_noun" msd="Number=Sing">SKEAT</w></persName></docAuthor><pc>,</pc> <w lemma="Litt.D." type="noun" msd="Number=Sing"><choice><abbr>L<hi rend="smallcaps">ITT</hi>.D.</abbr><expan>Doctor of Letters</expan></choice></w><pc>,</pc> <w lemma="D.C.L." type="noun" msd="Number=Sing"><choice><abbr>D.C.L.</abbr><expan>Doctor of Civil Law</expan></choice></w><pc>,</pc> <w lemma="LL.D." type="noun" msd="Number=Sing"><choice><abbr>LL.D.</abbr><expan>Doctor of Laws</expan></choice></w><pc>,</pc> <w lemma="Ph.D." type="noun" msd="Number=Sing"><choice><abbr>P<hi rend="smallcaps">H</hi>.D.</abbr><expan>Doctor of Philosophy</expan></choice></w><pc>,</pc> <w lemma="F.B.A." type="noun" msd="Number=Sing"><choice><abbr>F.B.A.</abbr><expan>Fellow of the British Academy</expan></choice></w></s><lb/>
+<hi rend="smallcaps smaller"><s ana="#autonomy-0"><w lemma="Elrington" type="proper_noun" msd="Number=Sing">ELRINGTON</w> <w lemma="and" type="coordinating_conjunction">AND</w> <w lemma="Bosworth" type="proper_noun" msd="Number=Sing">BOSWORTH</w> <w lemma="professor" type="noun" msd="Number=Sing">PROFESSOR</w> <w lemma="of" type="preposition">OF</w> <w lemma="Anglo-Saxon" type="proper_noun" msd="Number=Sing">ANGLO-SAXON</w> <w lemma="in" type="preposition">IN</w> <w lemma="the" type="article" msd="Definite=Def|PronType=Art">THE</w> <orgName><w lemma="university" type="noun" msd="Number=Sing">UNIVERSITY</w> <w lemma="of" type="preposition">OF</w> <placeName><w lemma="Cambridge" type="proper_noun" msd="Number=Sing">CAMBRIDGE</w></placeName></orgName><lb/>
+<w lemma="and" type="coordinating_conjunction">AND</w> <w lemma="fellow" type="noun" msd="Number=Sing">FELLOW</w> <w lemma="of" type="preposition">OF</w> <orgName><w lemma="Christ's" type="proper_noun" msd="Case=Gen|Number=Sing">CHRIST’S</w> <w lemma="college" type="noun" msd="Number=Sing">COLLEGE</w></orgName></s></hi><lb/>
+  </byline>
+  <space dim="vertical" quantity="3" unit="lines"/>
+  <docEdition rend="align(center)">
+<s ana="#autonomy-0"><hi rend="spaced smaller"><w lemma="new" type="adjective" msd="Degree=Pos">NEW</w> <w lemma="edition" type="noun" msd="Number=Sing">EDITION</w> <w lemma="revise" type="verb" msd="Tense=Past|VerbForm=Part">REVISED</w> <w lemma="and" type="coordinating_conjunction">AND</w> <w lemma="enlarge" type="verb" msd="Tense=Past|VerbForm=Part">ENLARGED</w></hi></s><lb/>
+  </docEdition>
+  <space dim="vertical" quantity="3" unit="lines"/>
+  <epigraph rend="align(center) smaller">
+    <cit>
+      <quote>
+        <lg>
+          <l rend="align(left)"><s ana="#autonomy-0"><pc>‘</pc><w lemma="step" type="noun" msd="Number=Sing">Step</w> <w lemma="after" type="preposition">after</w> <w lemma="step" type="noun" msd="Number=Sing">step</w> <w lemma="the" type="article" msd="Definite=Def|PronType=Art">the</w> <w lemma="ladder" type="noun" msd="Number=Sing">ladder</w> <w lemma="be" type="auxiliary" msd="Mood=Ind|Number=Sing|Person=3|Tense=Pres|VerbForm=Fin">is</w> <w lemma="ascend" type="verb" msd="Tense=Past|VerbForm=Part|Voice=Pass">ascended</w><pc>.</pc><pc>’</pc></s><lb/></l>
+        </lg>
+      </quote>
+<bibl xml:id="bibl-1" xml:lang="eng" type="poem" rend="align(right)"><s type="citation" ana="#autonomy-0"><author><persName><hi rend="smallcaps"><w lemma="George" type="proper_noun" msd="Number=Sing">GEORGE</w> <w lemma="Herbert" type="proper_noun" msd="Number=Sing">HERBERT</w></hi></persName></author><pc>,</pc> <title xml:lang="lat"><hi rend="italic"><w lemma="jaculum" type="noun" xml:lang="lat" msd="Case=Nom|Number=Plur">Jacula</w> <w lemma="prudens" type="adjective" xml:lang="lat" msd="Case=Gen|Degree=Pos|Number=Plur">Prudentum</w></hi></title><pc>.</pc></s><lb/></bibl>
+    </cit>
+  </epigraph>
+  <epigraph rend="align(center) smaller">
+    <cit>
+      <quote>
+        <lg>
+          <l rend="align(left)"><s part="I" ana="#autonomy-0"><pc>‘</pc><w lemma="labour" type="verb" msd="Mood=Ind|Number=Plur|Person=1|Tense=Pres|VerbForm=Fin">Labour</w> <w lemma="with" type="preposition">with</w> <w lemma="what" type="determiner" msd="PronType=Int">what</w> <w lemma="zeal" type="noun" msd="Number=Sing">zeal</w> <w lemma="we" type="pronoun" msd="Case=Nom|Number=Plur|Person=1|PronType=Prs">we</w> <w lemma="will" type="auxiliary" msd="Mood=Ind|Number=Plur|Person=1|Tense=Pres|VerbForm=Fin">will</w><pc>,</pc></s><lb/></l>
+          <l rend="align(left) indent(1)"><s part="F"><w lemma="something" type="pronoun" msd="Number=Sing|PronType=Ind">Something</w> <w lemma="still" type="adverb" msd="Degree=Pos">still</w> <w lemma="remain" type="verb" msd="Mood=Ind|Number=Sing|Person=3|Tense=Pres|VerbForm=Fin">remains</w> <w lemma="undone" type="adjective" msd="Degree=Pos">undone</w><pc>.</pc><pc>’</pc></s><lb/></l>
+        </lg>
+      </quote>
+<bibl xml:id="bibl-2" xml:lang="eng" type="poem" rend="align(right)"><s type="citation" ana="#autonomy-0"><author><persName><hi rend="smallcaps"><w lemma="Longfellow" type="proper_noun" msd="Number=Sing">LONGFELLOW</w></hi></persName></author><pc>,</pc> <title><hi rend="italic"><w lemma="bird" type="noun" msd="Number=Plur">Birds</w> <w lemma="of" type="preposition">of</w> <w lemma="passage" type="noun" msd="Number=Sing">Passage</w></hi></title><pc>.</pc></s><lb/></bibl>
+    </cit>
+  </epigraph>
+  <space dim="vertical" quantity="6" unit="lines"/>
+  <docImprint rend="align(center)">
+<pubPlace><hi rend="spaced smaller"><w lemma="Oxford" type="proper_noun" msd="Number=Sing">OXFORD</w></hi></pubPlace><lb/>
+<publisher><hi rend="spaced"><w lemma="at" type="preposition">AT</w> <w lemma="the" type="article" msd="Definite=Def|PronType=Art">THE</w> <w lemma="Clarendon" type="proper_noun" msd="Number=Sing">CLARENDON</w> <w lemma="press" type="noun" msd="Number=Sing">PRESS</w></hi></publisher><lb/>
+<docDate when="1910"><hi rend="smaller"><w lemma="1910" type="numeral" msd="NumType=Card">1910</w></hi></docDate><lb/>
+  </docImprint>
+</titlePage>
+<note type="provenance" rend="align(center)">
+  <stamp rend="color(blue) script">
+<s ana="#autonomy-0"><w lemma="this" type="pronoun" msd="Number=Sing|PronType=Dem">This</w> <w lemma="be" type="copula" msd="Mood=Ind|Number=Sing|Person=3|Tense=Pres|VerbForm=Fin">is</w> <w lemma="the" type="article" msd="Definite=Def|PronType=Art">the</w> <w lemma="property" type="noun" msd="Number=Sing">property</w> <w lemma="of" type="preposition">of</w><lb/>
+<orgName><hi rend="larger"><w lemma="Southern" type="proper_noun" msd="Number=Sing">Southern</w> <w lemma="Evangelical" type="proper_noun" msd="Number=Sing">Evangelical</w> <w lemma="Seminary" type="proper_noun" msd="Number=Sing">Seminary</w></hi></orgName></s><lb/>
+<s ana="#autonomy-0"><hi rend="smaller"><w lemma="3000" type="numeral" msd="NumType=Card">3000</w> <w lemma="Tilley" type="proper_noun" msd="Number=Sing">Tilley</w> <w lemma="Morris" type="proper_noun" msd="Number=Sing">Morris</w> <w lemma="road" type="noun" msd="Number=Sing"><choice><abbr>Rd.</abbr><expan>Road</expan></choice></w><pc>,</pc> <placeName><w lemma="Matthews" type="proper_noun" msd="Number=Sing">Matthews</w><pc>,</pc> <w lemma="NC" type="proper_noun" msd="Number=Sing">NC</w></placeName> <w lemma="28105" type="numeral" msd="NumType=Card">28105</w></hi></s><lb/>
+  </stamp>
+</note>

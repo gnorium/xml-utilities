@@ -15,13 +15,15 @@
     /// text (`PrettyNode.elementOnly`: `body`, `div`, `lg`, `titlePage`…)
     /// sets each child on a line of its own, two spaces deeper; every other
     /// element—mixed content (`p`, `l`, `s`, `head`, `note`, `cell`…) or
-    /// one this list does not name—stands on one line (user, 2026-10-12):
-    /// a run of white space in it that breaks a line (a model's line end and
-    /// its indent) becomes one space, which reads the same, since white
-    /// space in mixed content collapses; any other white space is kept as
-    /// written, and so is everything under `xml:space="preserve"` and in a
-    /// word or a formula (`PrettyNode.whole`), whose surface is what an
-    /// anchor names. The white space between an
+    /// one this list does not name—stands one printed line a row (user,
+    /// 2026-10-12; `PrettyNode.printedLines`): a line break follows each
+    /// `<lb/>`, `<pb/>` and `<cb/>`, and any other run of white space in it
+    /// that breaks a line (a model's soft wrap and its indent) becomes one
+    /// space, which reads the same, since white space in mixed content
+    /// collapses; any other white space is kept as written, and so is
+    /// everything under `xml:space="preserve"` and in a word or a formula
+    /// (`PrettyNode.whole`), whose surface is what an anchor names. The
+    /// white space between an
     /// element-only container's children is replaced by the line break: it
     /// is insignificant there, so the page reads the same. Where there was
     /// none, a break is put in only where it changes neither the reading nor
@@ -335,19 +337,133 @@
       }
     }
 
-    /// On one line: each run of white space that breaks a line one space,
-    /// except where it is kept as written (`preserved`, under
-    /// `xml:space="preserve"`, in a word or a formula).
-    func joined(preserved: Bool) -> String {
-      switch kind {
-      case .text: return preserved ? raw : PrettyNode.joiningLines(raw)
-      case .cdata, .other: return raw
-      case .element:
-        let keeps =
-          preserved || PrettyNode.whole.contains(localName)
-          || XMLFormatter.attribute("xml:space", in: raw) == "preserve"
-        return raw + children.map { $0.joined(preserved: keeps) }.joined() + (close ?? "")
+    /// A stretch of mixed content as `printedLines` lays it out.
+    enum Piece {
+      /// Text: its white space is laid out.
+      case text(String)
+      /// What may print, kept as written: an opening tag (whether a reading
+      /// starts a line at it), CDATA, a comment, a word, a formula,
+      /// anything under `xml:space="preserve"`.
+      case content(String, block: Bool)
+      /// A closing tag, and whether a reading starts a line after it.
+      case close(String, block: Bool)
+      /// `<lb/>`, `<pb/>`, `<cb/>`; whether a line break may be put after it
+      /// where none stands (`PrettyNode.opensRow`).
+      case lineBreak(String, opensRow: Bool)
+
+      /// Whether a reading starts a line at it: a block's tag. A break
+      /// starts one only after it, which `printedLines` keeps as pending.
+      var startsLine: Bool {
+        switch self {
+        case .content(_, let block), .close(_, let block): return block
+        case .lineBreak, .text: return false
+        }
       }
+    }
+
+    /// Kept as written: a word or a formula (`whole`), or what says its
+    /// white space is its own.
+    var keepsItsSpace: Bool {
+      PrettyNode.whole.contains(localName) || XMLFormatter.attribute("xml:space", in: raw) == "preserve"
+    }
+
+    /// Whether a line break may be put after this break where none stands:
+    /// one that changes neither the reading nor any anchor's word. A reading
+    /// starts a line after every `<lb/>`, `<pb/>` and `<cb/>`, so white space
+    /// there is no space (`TEIRenderer.spaced`), as TEI reads white space
+    /// beside a break; the projection anchors count in (`TEIProjection`)
+    /// counts it as written, though, and ends a line only at an `<lb/>` or
+    /// a `<pb/>` without `break="no"`, so only there is a put line break
+    /// not inside a word.
+    var opensRow: Bool {
+      ["lb", "pb"].contains(localName) && XMLFormatter.attribute("break", in: raw) != "no"
+    }
+
+    /// Its content as pieces, in document order; `parent` the local name of
+    /// the element it stands in.
+    func flattened(in parent: String, into pieces: inout [Piece]) {
+      switch kind {
+      case .text: pieces.append(.text(raw))
+      case .cdata, .other: pieces.append(.content(raw, block: false))
+      case .element:
+        let block = isBlock(in: parent)
+        if ["lb", "pb", "cb"].contains(localName), selfClosing {
+          pieces.append(.lineBreak(verbatim, opensRow: opensRow))
+        } else if keepsItsSpace {
+          pieces.append(.content(verbatim, block: block))
+        } else {
+          if !raw.isEmpty { pieces.append(.content(raw, block: block)) }
+          for child in children { child.flattened(in: localName, into: &pieces) }
+          if let close { pieces.append(.close(close, block: block)) }
+        }
+      }
+    }
+
+    /// Mixed content laid out one printed line a row (user, 2026-10-12):
+    /// a line break follows each `<lb/>`, `<pb/>` and `<cb/>` (after the
+    /// tags that close there): the white space standing there becomes one,
+    /// and one is put where none stands if `opensRow`. A run of white space
+    /// that breaks a line where a reading starts one anyway (beside a
+    /// block's tag: a verse line's, a paragraph's) stays one line break;
+    /// every other—a model's soft wrap within a printed line—becomes one
+    /// space. Rows start at the margin; the element's closing tag, on a row
+    /// of its own, stands at `depth`, as design-notes/canvas-5-markup.xml
+    /// lays a title page out. Other white space is kept as written, and so
+    /// is everything under `xml:space="preserve"` and in a word or a
+    /// formula (`whole`). A reading reads the same: white space at a line's
+    /// edge is none, and a line break is white space as a space is.
+    func printedLines(at depth: Int, in parent: String) -> String {
+      guard kind == .element, !keepsItsSpace else { return verbatim }
+      var pieces: [Piece] = []
+      for child in children { child.flattened(in: localName, into: &pieces) }
+      let block = isBlock(in: parent)
+      let closing = "\n" + String(repeating: "  ", count: max(depth, 0))
+      let breaks: (Character) -> Bool = { $0 == "\n" || $0 == "\r" || $0 == "\r\n" }
+      var out = raw
+      // After a break: whether a line break may be put where none stands;
+      // nil where no break is pending.
+      var pending: Bool?
+      for (index, piece) in pieces.enumerated() {
+        switch piece {
+        case .close(let tag, _):
+          out += tag
+        case .content(let text, _):
+          if pending == true { out += "\n" }
+          pending = nil
+          out += text
+        case .lineBreak(let tag, let opensRow):
+          if pending == true { out += "\n" }
+          out += tag
+          pending = opensRow
+        case .text(let text):
+          // Whether a reading starts a line before it and after it: at a
+          // block's tag, or at this element's edge if it is one.
+          let before = index == 0 ? block : pieces[index - 1].startsLine
+          let last = index == pieces.count - 1
+          let after = last ? block : pieces[index + 1].startsLine
+          let lead = text.prefix(while: PrettyNode.isSpace)
+          let rest = text.dropFirst(lead.count)
+          let body = rest.reversed().drop(while: PrettyNode.isSpace).reversed()
+          let trail = rest.dropFirst(body.count)
+          // A run of white space alone ends where the text does.
+          let ends = body.isEmpty && last
+          let breaking = lead.contains(where: breaks)
+          if pending == true || (breaking && (pending == false || before || (body.isEmpty && after))) {
+            out += ends ? closing : "\n"
+          } else {
+            out += PrettyNode.joiningLines(String(lead))
+          }
+          pending = nil
+          guard !body.isEmpty else { continue }
+          out += PrettyNode.joiningLines(String(body))
+          if trail.contains(where: breaks) && after {
+            out += last ? closing : "\n"
+          } else {
+            out += PrettyNode.joiningLines(String(trail))
+          }
+        }
+      }
+      return out + (close ?? "")
     }
 
     /// XML white space. Each a Character of its own: `" \t\r\n"` holds
@@ -434,7 +550,7 @@
           let reading: PrettyItem.Reading = block ? .block : (prints ? .text : .silent)
           var projection = edges
           if firstOfSpeech { projection.1 = .separator }
-          add(joined(preserved: false), depth, reading: (reading, reading), projection: projection)
+          add(printedLines(at: depth, in: parent), depth, reading: (reading, reading), projection: projection)
           return
         }
         let reading: PrettyItem.Reading = block ? .block : .silent

@@ -21,6 +21,6 @@ let package = Package(
         .define("SERVER", .when(platforms: [.macOS, .linux, .windows])),
       ]
     ),
-    .testTarget(name: "XMLUtilitiesTests", dependencies: ["XMLUtilities"])
+    .testTarget(name: "XMLUtilitiesTests", dependencies: ["XMLUtilities"], resources: [.copy("Fixtures")])
   ]
 )
