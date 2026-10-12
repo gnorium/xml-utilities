@@ -1247,6 +1247,22 @@
       return "pct:\(pct(box.x)),\(pct(box.y)),\(pct(box.width)),\(pct(box.height))"
     }
 
+    /// The language a document says its text is in: its `<text>`'s
+    /// `xml:lang`, else the first `<language ident>` of its header's
+    /// `<langUsage>` (gnorium-python `tei_header`, the work's language). A
+    /// tag as TEI writes it ("heb", "san-Latn"); nil where it says none.
+    public static func language(in xml: String) -> String? {
+      if let text = XMLFormatter.opening("text", in: xml) {
+        let lang = XMLFormatter.attribute("xml:lang", in: text)
+        if !lang.isEmpty { return lang }
+      }
+      guard let usage = xml.range(of: #"<langUsage\b[\s\S]*?</langUsage>"#, options: .regularExpression),
+        let language = xml[usage].range(of: #"<language\b[^>]*>"#, options: .regularExpression)
+      else { return nil }
+      let ident = XMLFormatter.attribute("ident", in: String(xml[language]))
+      return ident.isEmpty ? nil : ident
+    }
+
     /// The image service a facsimile URL is a request against: everything
     /// before the IIIF Image API parameters. `…/iiif/2/<id>/full/1300,/0/default.jpg`
     /// and `…/iiif/2/<id>/full/max/0/default.jpg` are two requests for one

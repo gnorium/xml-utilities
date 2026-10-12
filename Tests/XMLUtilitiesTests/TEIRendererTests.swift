@@ -2,6 +2,21 @@ import XCTest
 import XMLUtilities
 
 final class TEIRendererTests: XCTestCase {
+  /// A document's language is what its own data says: its text's
+  /// xml:lang, else its header's langUsage; never its letters.
+  func testADocumentsLanguageIsWhatItsDataSays() {
+    XCTAssertEqual(TEIRenderer.language(in: #"<TEI><text xml:lang="heb"><body/></text></TEI>"#), "heb")
+    XCTAssertEqual(
+      TEIRenderer.language(
+        in: #"<TEI><teiHeader><profileDesc><textClass/><langUsage><language ident="ara"/></langUsage></profileDesc></teiHeader><text><body/></text></TEI>"#),
+      "ara")
+    XCTAssertEqual(
+      TEIRenderer.language(
+        in: #"<TEI><teiHeader><langUsage><language ident="ara"/></langUsage></teiHeader><text xml:lang="san-Latn"/></TEI>"#),
+      "san-Latn")
+    XCTAssertNil(TEIRenderer.language(in: "<TEI><text><body><p>שלום</p></body></text></TEI>"))
+  }
+
   func testPagesIncludeTitlePagesAndBackMatter() {
     let document = """
       <TEI><text xml:lang="eng"><front><pb n="title" facs="https://example.org/title.jpg"/>
