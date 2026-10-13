@@ -161,6 +161,11 @@
     /// they stand within are that element's (`TEIRendition.columnGap`).
     /// Empty outside columns.
     public internal(set) var columnRend = ""
+    /// Which part of a paragraph run on across a page break it stands in,
+    /// as TEI's `<p part="…">` has it: `I` initial, `M` medial, `F` final;
+    /// empty for a paragraph whole on its page. A paragraph that runs on
+    /// sets its page's last line full, justified as the lines before it.
+    public internal(set) var part = ""
     /// Whether it follows the line before with no line break between them:
     /// furniture set on one line (a page number, then a running head).
     public let sharesLine: Bool
@@ -1079,6 +1084,11 @@
                 inlineRend: inlineRend, gloss: glossing(element), opened: entry)
               flush()
               if !frames { close(from: entry, setting) }
+              if element.name == "p" {
+                for index in entry..<lines.count where lines[index].part.isEmpty {
+                  lines[index].part = element.attribute("part")
+                }
+              }
               blockPending = true
               if isParagraph { paragraphPending = true }
               if frames { currentFrame = outerFrame }

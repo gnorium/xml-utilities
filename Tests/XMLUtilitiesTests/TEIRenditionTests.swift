@@ -55,4 +55,11 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertEqual(leader[0].rend, "css:letter-spacing=0.05em")
     XCTAssertEqual(leader[0].runs.last?.rend, "css:word-spacing=2.5em")
   }
+
+  /// A paragraph run on across a page break (`<p part="I|M|F">`): every
+  /// line of it knows its part; a paragraph whole on its page has none.
+  func testParagraphPartAcrossAPageBreak() {
+    let lines = TEIRenderer.lines(in: #"<p>Whole<lb/>here.</p><p part="I">Runs<lb/>on</p>"#)
+    XCTAssertEqual(lines.map(\.part), ["", "", "I", "I"])
+  }
 }
