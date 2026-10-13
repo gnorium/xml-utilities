@@ -19,14 +19,23 @@
     /// `facs="#…"` but does not hold.
     public let zones: [String: TEIZone]
     public let renditions: [String: String]
+    /// Its text block as measured on its scan (its surface's `textblock`
+    /// zone), nil where it was not measured.
+    public let textBlock: TEITextBlock?
 
-    public init(label: String, facsimileURL: String, lines: [TEILine], markup: String, zones: [String: TEIZone] = [:], renditions: [String: String] = [:]) {
-      self.init(label: label, facsimileURL: facsimileURL, markup: markup, zones: zones, renditions: renditions) { lines }
+    public init(
+      label: String, facsimileURL: String, lines: [TEILine], markup: String, zones: [String: TEIZone] = [:],
+      renditions: [String: String] = [:], textBlock: TEITextBlock? = nil
+    ) {
+      self.init(
+        label: label, facsimileURL: facsimileURL, markup: markup, zones: zones, renditions: renditions,
+        textBlock: textBlock
+      ) { lines }
     }
 
     init(
       label: String, facsimileURL: String, markup: String, zones: [String: TEIZone], renditions: [String: String] = [:],
-      read: @escaping @Sendable () -> [TEILine]
+      textBlock: TEITextBlock? = nil, read: @escaping @Sendable () -> [TEILine]
     ) {
       self.label = label
       self.facsimileURL = facsimileURL
@@ -34,6 +43,15 @@
       self.markup = markup
       self.zones = zones
       self.renditions = renditions
+      self.textBlock = textBlock
+    }
+
+    /// The frame the page is set in, in page-em: the work's
+    /// (`TEIRendition.frame(in:)`, its header's), else the page's own
+    /// measured text block, else none (user, 2026-10-13). Its margins are
+    /// equal on all four sides of the page (`TEIRenderer.frameMargin`).
+    public var frame: (measure: Double, height: Double)? {
+      TEIRendition.frame(in: renditions) ?? textBlock?.size
     }
 
     /// A page's lines, read once, by whichever thread asks first.
@@ -380,6 +398,18 @@
   /// a facsimile edition is read one opening at a time and no HTML fragment
   /// can carry that structure.
   public enum TEIRenderer {
+    /// The page-em a rendered page is wide (gnorium-python
+    /// `layout_measure.PAGE_EMS`): 1em is the page's width over it, the
+    /// canonical render's 16px on its 640px page.
+    public static let pageEms = 40.0
+
+    /// The margin around a frame (`TEIPage.frame`) on every side of the
+    /// page, equal on all four: what its measure leaves of the page's width,
+    /// halved. In page-em.
+    public static func frameMargin(measure: Double) -> Double {
+      max(0, (pageEms - measure) / 2)
+    }
+
     /// Split the body at the page breaks that carry a facsimile.
     ///
     /// A document holds two kinds of `<pb>`: one per image, labeled for the
@@ -453,7 +483,9 @@
     private static func readPages(
       in xml: String, highlights: [String: [TEIHighlight]], marksWords: Bool
     ) -> [TEIPage] {
-      let zones = TEIFacsimile.zones(in: TEIFacsimile.blocks(in: xml))
+      let facsimile = TEIFacsimile.blocks(in: xml)
+      let zones = TEIFacsimile.zones(in: facsimile)
+      let textBlocks = TEIFacsimile.textBlocks(in: facsimile)
       let renditions = TEIRendition.declarations(in: TEIMarkup.document(xml))
       return pageSpans(in: xml).map { open, range in
         let markup = String(xml[range])
@@ -462,7 +494,8 @@
           label: open.label,
           facsimileURL: open.facsimileURL,
           markup: markup.trimmingCharacters(in: .whitespacesAndNewlines),
-          zones: zones, renditions: renditions
+          zones: zones, renditions: renditions,
+          textBlock: TEIFacsimile.textBlock(of: open.facsimileURL, label: open.label, in: textBlocks)
         ) {
           lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones, renditions: renditions)
         }

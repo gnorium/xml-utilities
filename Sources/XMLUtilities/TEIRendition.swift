@@ -8,7 +8,7 @@ public enum TEIRendition {
     "font-size", "line-height", "letter-spacing", "word-spacing", "text-indent", "margin-top", "margin-bottom",
     "margin-left", "margin-right", "margin-block-start", "margin-block-end", "margin-inline-start",
     "margin-inline-end", "text-align", "font-weight", "font-style", "font-variant-caps", "column-gap",
-    "inline-size", "border-style", "padding", "padding-block", "padding-inline", "padding-block-start",
+    "inline-size", "block-size", "border-style", "padding", "padding-block", "padding-inline", "padding-block-start",
     "padding-block-end", "padding-inline-start", "padding-inline-end",
   ]
 
@@ -30,7 +30,7 @@ public enum TEIRendition {
   /// own box's, which no child takes.
   public static let frameProperties: Set<String> = [
     "border-style", "padding", "padding-block", "padding-inline", "padding-block-start", "padding-block-end",
-    "padding-inline-start", "padding-inline-end", "inline-size",
+    "padding-inline-start", "padding-inline-end", "inline-size", "block-size",
   ]
 
   public static func valid(property: String, value: String) -> Bool {
@@ -52,8 +52,9 @@ public enum TEIRendition {
       if unit == "" || unit == "em" { return (0.75...3).contains(number) }
       if unit == "%" { return (75...300).contains(number) }
       return false
-    case "inline-size":
-      // A rule's or a frame's measure: up to the page's, never negative.
+    case "inline-size", "block-size":
+      // A rule's or a frame's measure (a page's text block's height): up
+      // to the page's, never negative.
       if unit == "" { return number == 0 }
       if unit == "%" { return (0...100).contains(number) }
       if unit == "em" || unit == "rem" { return (0...64).contains(number) }
@@ -90,10 +91,36 @@ public enum TEIRendition {
     }.joined()
   }
 
+  /// The work frame's rendition (gnorium-python `facsimile.frame_rendition`):
+  /// the text block every page of the text is set in, its measure
+  /// (`inline-size`) and its height (`block-size`) in page-em, the median of
+  /// its pages' measured text blocks (`TEIFacsimile.workFrame`). TEI's own
+  /// CSS rendition of `<text>` in the header's `<tagsDecl>`, so a document
+  /// carries it and a page drawn alone is handed it with the rest
+  /// (`header`); derived, written again whenever a page is laid in.
+  public static let frameID = "text-block"
+
+  public static func frameRendition(measure: Double, height: Double) -> String {
+    "<rendition xml:id=\"\(frameID)\" scheme=\"css\" selector=\"text\">inline-size:\(Length(value: measure, unit: "em").text);"
+      + "block-size:\(Length(value: height, unit: "em").text)</rendition>"
+  }
+
+  /// The work frame the renditions declare (`frameID`), in page-em; nil
+  /// where they declare none.
+  public static func frame(in definitions: [String: String]) -> (measure: Double, height: Double)? {
+    guard let rend = definitions[frameID] else { return nil }
+    let setting = Setting(rend)
+    guard let measure = setting.length("inline-size"), measure.unit == "em", measure.value > 0,
+      let height = setting.length("block-size"), height.unit == "em", height.value > 0
+    else { return nil }
+    return (measure.value, height.value)
+  }
+
   public static func header(_ definitions: [String: String]) -> String {
     guard !definitions.isEmpty else { return "" }
     let entries = definitions.keys.sorted().map { id in
-      "<rendition xml:id=\"\(XMLFormatter.escapingAttribute(id))\" scheme=\"css\">\(XMLFormatter.escapingAttribute(css(from: definitions[id] ?? "")))</rendition>"
+      let selector = id == frameID ? " selector=\"text\"" : ""
+      return "<rendition xml:id=\"\(XMLFormatter.escapingAttribute(id))\" scheme=\"css\"\(selector)>\(XMLFormatter.escapingAttribute(css(from: definitions[id] ?? "")))</rendition>"
     }.joined()
     return "<teiHeader><encodingDesc><tagsDecl>" + entries + "</tagsDecl></encodingDesc></teiHeader>"
   }
