@@ -541,6 +541,9 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(unit, "lines")
     let vertical = TEIRenderer.lines(in: #"<p>a</p><space dim="vertical" quantity="5" unit="mm"/>"#)
     guard case .space(5, "mm") = vertical.last?.kind else { return XCTFail("not 5mm: \(String(describing: vertical.last?.kind))") }
+    // A length may be a decimal; whole lines stay whole.
+    let decimal = TEIRenderer.lines(in: #"<p>a</p><space dim="vertical" quantity="1.5" unit="em"/><p>b</p>"#)
+    guard case .space(1.5, "em") = decimal[1].kind else { return XCTFail("not 1.5em: \(decimal[1].kind)") }
   }
 
   func testTheFormatterLeavesPreservedWhiteSpaceAlone() {

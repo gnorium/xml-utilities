@@ -98,7 +98,7 @@
           case .text, .heading, .speaker, .stage, .table, .note: return true
           // A figure's description is not reading that can be lost: it
           // describes the surface rather than transcribing it.
-          case .mark, .forme, .gap, .figure, .documentBoundary, .space: return false
+          case .mark, .forme, .gap, .figure, .documentBoundary, .space, .rule: return false
           }
         }
         .reduce(0) { $0 + $1.text.count }

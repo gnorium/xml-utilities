@@ -96,9 +96,15 @@
       case note(place: String)
       /// Vertical space the source leaves (`<space dim="vertical"/>`, or
       /// one whose unit is `lines`): so much of it, in its unit—`lines`
-      /// where it names none. Drawn as that much blank height, never as
-      /// text.
-      case space(quantity: Int, unit: String)
+      /// where it names none, whole; a length (`em`, `mm`, `pt`…) may be
+      /// a decimal (`quantity="1.5" unit="em"`). Drawn as that much blank
+      /// height, never as text.
+      case space(quantity: Double, unit: String)
+      /// A printed rule across the measure (`<milestone unit="section"
+      /// rend="rule"/>`): between two prefaces, above a footnote. Its
+      /// measure and place are its rend's (`inline-size`, margins, an
+      /// alignment); drawn as a line in the text's ink, never as text.
+      case rule
     }
 
     public enum FormeRole: String, Sendable {
@@ -124,7 +130,7 @@
     /// compositor set it is part of that—a centered block on a title page is
     /// how an imprint statement or an epigraph is marked, and a reading that
     /// ranges it left has quietly dropped evidence.
-    public let rend: String
+    public internal(set) var rend: String
     /// The line's runs, each with the setting the transcription gave it.
     ///
     /// `<hi rend="…">` is inline—small caps in an author statement, an
@@ -150,6 +156,11 @@
     public internal(set) var frame = ""
     /// Standard cb markers identify reading columns, without coordinates.
     public internal(set) var column = 0
+    /// The setting of the element its columns are set in (the `<note>` or
+    /// the division holding the `<cb/>`): the columns' gap and the margins
+    /// they stand within are that element's (`TEIRendition.columnGap`).
+    /// Empty outside columns.
+    public internal(set) var columnRend = ""
     /// Whether it follows the line before with no line break between them:
     /// furniture set on one line (a page number, then a running head).
     public let sharesLine: Bool
@@ -636,13 +647,19 @@
       func visit(_ element: TEIMarkup.Element) -> Bool {
         if element.name == "space" {
           let source = element.attribute("quantity")
-          guard let quantity = source.isEmpty ? 1 : Int(source), quantity > 0 else { return false }
           let unit = element.attribute("unit")
+          if !unit.isEmpty, unit != "lines", element.attribute("dim") == "vertical" {
+            // A length: a positive decimal, as long as a page holds.
+            guard let length = source.isEmpty ? 1 : Double(source), length > 0, length.isFinite,
+              length <= (unit == "px" || unit == "pt" ? 512 : 128), linesLeft >= 1
+            else { return false }
+            linesLeft -= 1
+            return element.elements.allSatisfy(visit)
+          }
+          guard let quantity = source.isEmpty ? 1 : Int(source), quantity > 0 else { return false }
           if unit == "lines" || element.attribute("dim") == "vertical" {
-            guard quantity <= 128 else { return false }
-            let count = unit == "lines" ? quantity : 1
-            guard count <= linesLeft else { return false }
-            linesLeft -= count
+            guard quantity <= 128, quantity <= linesLeft else { return false }
+            linesLeft -= quantity
           } else {
             guard quantity <= 4_096, quantity <= charactersLeft else { return false }
             charactersLeft -= quantity
@@ -781,6 +798,7 @@
       // The frame the lines set now stand in (`TEILine.frame`).
       var currentFrame = ""
       var currentColumn = 0
+      var currentColumnRend = ""
       // Whether a line break (`<lb/>`, `<cb/>`, `<pb/>`) came since the last
       // line was set, and whether it fell inside a word.
       var lineBroken = true
@@ -795,6 +813,7 @@
             opensParagraph: paragraphPending, sharesLine: !lineBroken, joinsPrevious: breakInWord)
           line.frame = currentFrame
           line.column = currentColumn
+          line.columnRend = currentColumn > 0 ? currentColumnRend : ""
           lines.append(line)
           blockPending = false
           paragraphPending = false
@@ -809,6 +828,7 @@
         line.opensParagraph = paragraphPending
         line.frame = currentFrame
         line.column = currentColumn
+        line.columnRend = currentColumn > 0 ? currentColumnRend : ""
         paragraphPending = false
         lines.append(line)
         blockPending = true
@@ -816,10 +836,26 @@
         breakInWord = false
       }
 
+      /// A bordered block's frame (`TEILine.frame`): its box
+      /// (`TEIRendition.frame(of:)`) and its ink, which its rule is drawn in.
+      func framing(_ setting: String) -> String {
+        let ink = setting.split(whereSeparator: \.isWhitespace).filter { $0.hasPrefix("color(") }
+        return ([TEIRendition.frame(of: setting)] + ink.map(String.init)).filter { !$0.isEmpty }.joined(separator: " ")
+      }
+
+      /// A block's margin after it, at the last block of those it holds
+      /// (set from line `entry` on): its children's lines took none of it.
+      func close(from entry: Int, _ setting: String) {
+        guard let last = lines.indices.last(where: { $0 >= entry && lines[$0].opensBlock }),
+          lines[last].rend != setting
+        else { return }
+        lines[last].rend = TEIRendition.closing(lines[last].rend, within: setting)
+      }
+
       func walk(
         _ owner: TEIMarkup.Element, kind: TEILine.Kind = .text,
         rend: String = "", inlineRend: String = "", alternative: String = "", zone initialZone: TEIZone? = nil,
-        gloss: Int? = nil, including: (TEIMarkup.Node) -> Bool = { _ in true }
+        gloss: Int? = nil, opened: Int = 0, including: (TEIMarkup.Node) -> Bool = { _ in true }
       ) {
         /// What a run of no word inside `element` is opened by: the element,
         /// unless it is a block, whose runs keep the one around it.
@@ -860,7 +896,12 @@
           case .element(let element):
             let referenced = element.attribute("rendition").split(whereSeparator: \.isWhitespace).compactMap { renditions[String($0.dropFirst())] }.joined(separator: " ")
             let ownRend = [element.attribute("rend"), referenced, TEIRendition.tokens(element.attribute("style"))].filter { !$0.isEmpty }.joined(separator: " ")
-            let blockRend = ownRend.isEmpty ? rend : ownRend
+            // Its setting as a block in the one around it (CSS's cascade,
+            // `TEIRendition.cascade`), read once the text before it is set:
+            // whether it is the first thing its parent opens.
+            func blockRend() -> String {
+              TEIRendition.cascade(rend, ownRend, .block(first: lines.count == opened && runs.isEmpty))
+            }
             switch element.name {
             case "formula" where element.elements.contains(where: { $0.name == "math" }):
               currentKind = kind
@@ -875,7 +916,15 @@
               let initial = ownRend.split(whereSeparator: \.isWhitespace).contains("initial")
               walk(
                 element, kind: kind, rend: rend, inlineRend: joined(ownRend),
-                alternative: alternative, zone: initial ? zone(of: element) : initialZone, gloss: glossing(element))
+                alternative: alternative, zone: initial ? zone(of: element) : initialZone, gloss: glossing(element),
+                opened: opened)
+            case "pc" where !ownRend.isEmpty, "seg" where !ownRend.isEmpty:
+              // A phrase's own setting is its words', as a <hi>'s is: a
+              // contents leader's dots set at their printed pitch
+              // (`<pc style="word-spacing:…">`), never the whole line's.
+              walk(
+                element, kind: kind, rend: rend, inlineRend: joined(ownRend), alternative: alternative,
+                zone: initialZone, gloss: glossing(element), opened: opened)
             case "facsimile", "teiHeader", "tagsDecl", "rendition":
               // Where the page's figures sit, not what it reads.
               continue
@@ -918,14 +967,22 @@
                 alternative: alternative, gloss: glossing(element))
             case "note":
               flush()
+              let setting = blockRend()
               blockPending = true
               // A note is set apart from the text it annotates by a
               // paragraph's space, before and after.
               paragraphPending = true
+              let entry = lines.count
+              let outerFrame = currentFrame
+              let framed = TEIRendition.frames(setting)
+              if framed { currentFrame = framing(setting) }
               walk(
-                element, kind: .note(place: element.attribute("place")), rend: blockRend,
-                inlineRend: inlineRend, gloss: glossing(element))
+                element, kind: .note(place: element.attribute("place")),
+                rend: framed ? TEIRendition.inside(frame: setting) : setting,
+                inlineRend: inlineRend, gloss: glossing(element), opened: entry)
               flush()
+              if !framed { close(from: entry, setting) }
+              currentFrame = outerFrame
               blockPending = true
               paragraphPending = true
             case "space":
@@ -936,9 +993,11 @@
               let unit = element.attribute("unit")
               if unit == "lines" || element.attribute("dim") == "vertical" {
                 flush()
+                // Whole lines; a length as written, a decimal too.
+                let length = unit.isEmpty || unit == "lines" ? Double(quantity) : Double(element.attribute("quantity")) ?? 1
                 append(
                   .init(
-                    kind: .space(quantity: quantity, unit: unit.isEmpty ? "lines" : unit), text: " "))
+                    kind: .space(quantity: length, unit: unit.isEmpty ? "lines" : unit), text: " "))
               } else {
                 currentKind = kind
                 currentRend = rend
@@ -950,6 +1009,7 @@
             case "cb":
               flush()
               currentColumn += 1
+              currentColumnRend = rend
               blockPending = true
               lineBroken = true
               breakInWord = false
@@ -960,6 +1020,7 @@
             case "pb":
               flush()
               currentColumn = 0
+              currentColumnRend = ""
               lineBroken = true
               let label = expandedLeafLabel(element.attribute("n"))
               if !label.isEmpty { append(.init(kind: .mark, text: label, element: words?.index(of: element))) }
@@ -972,6 +1033,11 @@
             case "milestone" where element.attribute("unit") == "document":
               flush()
               append(.init(kind: .documentBoundary, text: ""))
+            case "milestone" where ownRend.split(whereSeparator: \.isWhitespace).contains("rule"):
+              // A printed rule (`<milestone unit="section" rend="rule"/>`),
+              // set as a block of its own.
+              flush()
+              append(.init(kind: .rule, text: "", rend: blockRend()))
             case let name where ["docAuthor", "docDate", "docEdition"].contains(name)
               && !TEIRenderer.titlePageStructure.contains(owner.name):
               // Within a byline, an imprint or a title, a phrase of it.
@@ -981,13 +1047,21 @@
             case "p", "lg", "l", "head", "div", "speaker", "stage", "fw", "item", "docTitle", "titlePart",
               "docImprint", "byline", "docAuthor", "docDate", "docEdition", "epigraph", "argument", "imprimatur":
               flush()
+              let setting = blockRend()
+              let entry = lines.count
               blockPending = true
               let isParagraph = element.name == "p" || element.name == "lg"
               if isParagraph { paragraphPending = true }
-              // An epigraph frames its lines: set as a whole by its rend.
-              let frames = element.name == "epigraph"
+              // An epigraph frames its lines: set as a whole by its rend,
+              // its lines by their own. A block with a printed frame
+              // (`border-style`) frames its lines in it: the frame's box
+              // is the frame's, the rest of its setting its lines'.
+              let epigraph = element.name == "epigraph"
+              let bordered = !epigraph && TEIRendition.frames(setting)
+              let frames = epigraph || bordered
               let outerFrame = currentFrame
-              if frames { currentFrame = ownRend }
+              if epigraph { currentFrame = ownRend }
+              if bordered { currentFrame = framing(setting) }
               // A block begins a line of its own; only furniture set beside
               // furniture (a page number, then a running head) shares one.
               if element.name != "fw" { lineBroken = true }
@@ -999,8 +1073,12 @@
               case "fw": blockKind = .forme(.from(element.attribute("type")))
               default: blockKind = kind
               }
-              walk(element, kind: blockKind, rend: blockRend, inlineRend: inlineRend, gloss: glossing(element))
+              walk(
+                element, kind: blockKind,
+                rend: epigraph ? rend : bordered ? TEIRendition.inside(frame: setting) : setting,
+                inlineRend: inlineRend, gloss: glossing(element), opened: entry)
               flush()
+              if !frames { close(from: entry, setting) }
               blockPending = true
               if isParagraph { paragraphPending = true }
               if frames { currentFrame = outerFrame }
@@ -1030,7 +1108,7 @@
               let table = TEITable(caption: caption, rows: rows, type: element.attribute("type"))
               let text = (caption + rows.flatMap { $0.cells.flatMap(\.lines) }).map(\.text).joined(
                 separator: " ")
-              append(.init(kind: .table(table), text: text, rend: blockRend))
+              append(.init(kind: .table(table), text: text, rend: blockRend()))
             case "figure":
               flush()
               let descriptions = element.elements.filter {
@@ -1067,9 +1145,9 @@
               // smaller type) are its words' own, as a <hi>'s would be.
               let type = TEIRenderer.typeSetting(of: ownRend)
               walk(
-                element, kind: kind, rend: setting.isEmpty ? rend : setting,
+                element, kind: kind, rend: setting.isEmpty ? rend : TEIRendition.cascade(rend, setting, .inline),
                 inlineRend: type.isEmpty ? inlineRend : joined(type),
-                alternative: alternative, zone: initialZone, gloss: glossing(element))
+                alternative: alternative, zone: initialZone, gloss: glossing(element), opened: opened)
             }
           }
         }
