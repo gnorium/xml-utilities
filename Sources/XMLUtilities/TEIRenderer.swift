@@ -18,13 +18,14 @@
     /// page's figures and decorated initials sit, which its markup names by
     /// `facs="#…"` but does not hold.
     public let zones: [String: TEIZone]
+    public let renditions: [String: String]
 
-    public init(label: String, facsimileURL: String, lines: [TEILine], markup: String, zones: [String: TEIZone] = [:]) {
-      self.init(label: label, facsimileURL: facsimileURL, markup: markup, zones: zones) { lines }
+    public init(label: String, facsimileURL: String, lines: [TEILine], markup: String, zones: [String: TEIZone] = [:], renditions: [String: String] = [:]) {
+      self.init(label: label, facsimileURL: facsimileURL, markup: markup, zones: zones, renditions: renditions) { lines }
     }
 
     init(
-      label: String, facsimileURL: String, markup: String, zones: [String: TEIZone],
+      label: String, facsimileURL: String, markup: String, zones: [String: TEIZone], renditions: [String: String] = [:],
       read: @escaping @Sendable () -> [TEILine]
     ) {
       self.label = label
@@ -32,6 +33,7 @@
       self.reading = Reading(read)
       self.markup = markup
       self.zones = zones
+      self.renditions = renditions
     }
 
     /// A page's lines, read once, by whichever thread asks first.
@@ -436,6 +438,7 @@
       in xml: String, highlights: [String: [TEIHighlight]], marksWords: Bool
     ) -> [TEIPage] {
       let zones = TEIFacsimile.zones(in: TEIFacsimile.blocks(in: xml))
+      let renditions = TEIRendition.declarations(in: TEIMarkup.document(xml))
       return pageSpans(in: xml).map { open, range in
         let markup = String(xml[range])
         let marked = highlights[serviceID(ofFacsimile: open.facsimileURL)] ?? []
@@ -443,9 +446,9 @@
           label: open.label,
           facsimileURL: open.facsimileURL,
           markup: markup.trimmingCharacters(in: .whitespacesAndNewlines),
-          zones: zones
+          zones: zones, renditions: renditions
         ) {
-          lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones)
+          lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones, renditions: renditions)
         }
       }
     }
@@ -607,20 +610,21 @@
     /// at most 4,096 characters or 128 lines per element, and 65,536
     /// characters or 1,024 lines over the reading. Source markup is unchanged.
     public static func lines(
-      in markup: String, highlights: [TEIHighlight] = [], marksWords: Bool = false, zones: [String: TEIZone]? = nil
+      in markup: String, highlights: [TEIHighlight] = [], marksWords: Bool = false, zones: [String: TEIZone]? = nil, renditions: [String: String] = [:]
     ) -> [TEILine] {
       let zones = zones ?? TEIFacsimile.zones(in: TEIFacsimile.blocks(in: markup))
       let root = TEIMarkup.document(!highlights.isEmpty || marksWords ? TEIProjection.normalized(markup) : markup)
       // Check all expansions together before constructing any rendered
       // spaces or lines, including expansions in nested tables and figures.
       guard spacesAreBounded(in: root) else { return [] }
+      let settings = renditions.merging(TEIRendition.declarations(in: root)) { _, local in local }
       guard !highlights.isEmpty || marksWords else {
-        return rendering(from: root, zones: zones)
+        return rendering(from: root, zones: zones, renditions: settings)
       }
       let projection = TEIProjection(root)
       return rendering(
         from: root, highlights: highlights, words: marksWords ? Words(projection.units, root: root) : nil,
-        zones: zones)
+        zones: zones, renditions: settings)
     }
 
     /// Expansion limits apply to the complete reading, not separately to
@@ -737,7 +741,7 @@
 
     private static func rendering(
       from owner: TEIMarkup.Element, highlights: [TEIHighlight] = [], words: Words? = nil,
-      zones: [String: TEIZone] = [:], inheritedPreservation: Bool = false
+      zones: [String: TEIZone] = [:], inheritedPreservation: Bool = false, renditions: [String: String] = [:]
     ) -> [TEILine] {
       /// The zone an element names by `facs="#…"`.
       func zone(of element: TEIMarkup.Element) -> TEIZone? {
@@ -854,7 +858,8 @@
               }
             }
           case .element(let element):
-            let ownRend = element.attribute("rend")
+            let referenced = element.attribute("rendition").split(whereSeparator: \.isWhitespace).compactMap { renditions[String($0.dropFirst())] }.joined(separator: " ")
+            let ownRend = [element.attribute("rend"), referenced, TEIRendition.tokens(element.attribute("style"))].filter { !$0.isEmpty }.joined(separator: " ")
             let blockRend = ownRend.isEmpty ? rend : ownRend
             switch element.name {
             case "formula" where element.elements.contains(where: { $0.name == "math" }):
@@ -871,7 +876,7 @@
               walk(
                 element, kind: kind, rend: rend, inlineRend: joined(ownRend),
                 alternative: alternative, zone: initial ? zone(of: element) : initialZone, gloss: glossing(element))
-            case "facsimile":
+            case "facsimile", "teiHeader", "tagsDecl", "rendition":
               // Where the page's figures sit, not what it reads.
               continue
             case "choice":
@@ -1006,7 +1011,7 @@
               let caption = children.filter { $0.name == "head" }.flatMap {
                 rendering(
                   from: $0, highlights: highlights, words: words, zones: zones,
-                  inheritedPreservation: preserving.contains(ObjectIdentifier($0)))
+                  inheritedPreservation: preserving.contains(ObjectIdentifier($0)), renditions: renditions)
               }
               let rows = children.filter { $0.name == "row" }.map { row in
                 TEITable.Row(
@@ -1014,7 +1019,7 @@
                     TEITable.Cell(
                       lines: rendering(
                         from: cell, highlights: highlights, words: words, zones: zones,
-                        inheritedPreservation: preserving.contains(ObjectIdentifier(cell))),
+                        inheritedPreservation: preserving.contains(ObjectIdentifier(cell)), renditions: renditions),
                       isLabel: row.attribute("role") == "label"
                         || cell.attribute("role") == "label",
                       rows: max(1, Int(cell.attribute("rows")) ?? 1),
@@ -1032,7 +1037,7 @@
                 $0.name == "figDesc" || $0.name == "desc"
               }
               let description = descriptions.flatMap {
-                rendering(from: $0, inheritedPreservation: preserving.contains(ObjectIdentifier($0)))
+                rendering(from: $0, inheritedPreservation: preserving.contains(ObjectIdentifier($0)), renditions: renditions)
               }.map(\.text)
                 .joined(separator: " ")
               append(
@@ -1159,7 +1164,7 @@
 
     public static func blockSetting(of rend: String) -> String {
       rend.split(whereSeparator: \.isWhitespace).filter {
-        $0.hasPrefix("align(") || $0.hasPrefix("indent(") || $0 == "hanging"
+        $0.hasPrefix("align(") || $0.hasPrefix("indent(") || $0.hasPrefix("css:") || $0 == "hanging"
       }.joined(separator: " ")
     }
 
