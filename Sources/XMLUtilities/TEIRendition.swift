@@ -43,11 +43,7 @@ public enum TEIRendition {
     let (number, unit) = (length.value, length.unit)
     switch property {
     case "font-size":
-      if unit == "%" { return (50...400).contains(number) }
-      if unit == "em" || unit == "rem" { return (0.5...4).contains(number) }
-      if unit == "px" { return (8...64).contains(number) }
-      if unit == "pt" { return (6...48).contains(number) }
-      return false
+      return pageEm(of: length).map(fontSizes.contains) ?? false
     case "line-height":
       if unit == "" || unit == "em" { return (0.75...3).contains(number) }
       if unit == "%" { return (75...300).contains(number) }
@@ -65,6 +61,33 @@ public enum TEIRendition {
       let bound = unit == "px" || unit == "pt" ? 512.0 : 32.0
       return abs(number) <= bound && (number >= 0 || ["text-indent", "letter-spacing", "word-spacing"].contains(property))
     }
+  }
+
+  /// The type sizes a page may set, in page-em (the page's own 1em, the
+  /// renderer's 16 px): each written value, and each element's size as the
+  /// cascade computes it (`cascade`), so a size written inside a smaller
+  /// one is held to the same bounds (user, 2026-10-14). gnorium-python's
+  /// `tei_encoding.FONT_SIZES`.
+  public static let fontSizes: ClosedRange<Double> = 0.5...4
+
+  /// A font-size in page-em: em and rem as written (the page's font is
+  /// the root's), % of it, px of its 16, pt as CSS's 4/3 px; nil for a
+  /// unit a font-size does not take.
+  static func pageEm(of size: Length) -> Double? {
+    switch size.unit {
+    case "em", "rem": return size.value
+    case "%": return size.value / 100
+    case "px": return size.value / 16
+    case "pt": return size.value / 12
+    default: return nil
+    }
+  }
+
+  /// The font-size a cascaded rend (`cascade`) computes, in page-em: 1
+  /// where it sets none.
+  public static func fontSize(of rend: String) -> Double? {
+    guard let size = Setting(rend).length("font-size") else { return 1 }
+    return pageEm(of: size)
   }
 
   public static func tokens(_ css: String) -> String {
@@ -265,8 +288,17 @@ public enum TEIRendition {
   /// an ink, a typeface, a step of size); any other is kept beside it.
   public static func cascade(_ parent: String, _ child: String, _ placement: Placement = .block(first: false)) -> String {
     guard !parent.isEmpty else { return child }
-    let own = Setting(child)
+    var own = Setting(child)
     var result = Setting(parent)
+    // A size the cascade computes outside the page's bounds (`fontSizes`)
+    // is no size, as a written one outside them is not (`valid`): the
+    // child keeps its parent's.
+    if let size = own.length("font-size") {
+      let computed = result.length("font-size").flatMap { around in
+        own.relativeFont.map { Length(value: around.value * $0, unit: around.unit) }
+      } ?? size
+      if !(pageEm(of: computed).map(fontSizes.contains) ?? false) { own.remove(["font-size"]) }
+    }
     let factor = own.relativeFont
     if case .block(let first) = placement {
       // The parent's own box: its frame, its margin after it, and its

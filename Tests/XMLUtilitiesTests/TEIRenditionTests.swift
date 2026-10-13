@@ -27,6 +27,23 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertEqual(lines[2].rend, "css:font-size=0.6em css:line-height=1.35 css:margin-inline-start=3.5em css:text-indent=2.5em")
   }
 
+  /// The type size's bounds hold of the size the cascade computes, not
+  /// only of each written value: 0.5em inside 0.7em is 0.35em of the page,
+  /// below its 0.5em, and is no size (the paragraph keeps the division's).
+  func testComputedFontSizeIsBounded() {
+    XCTAssertEqual(TEIRendition.fontSizes, 0.5...4)
+    XCTAssertEqual(TEIRendition.cascade("css:font-size=0.7em", "css:font-size=0.5em"), "css:font-size=0.7em")
+    XCTAssertEqual(TEIRendition.cascade("css:font-size=0.7em", "css:font-size=0.8em"), "css:font-size=0.56em")
+    XCTAssertEqual(TEIRendition.cascade("css:font-size=3em", "css:font-size=150%"), "css:font-size=3em")
+    XCTAssertEqual(TEIRendition.cascade("css:font-size=10px", "css:font-size=0.8em"), "css:font-size=8px")
+    XCTAssertEqual(TEIRendition.cascade("css:font-size=10px", "css:font-size=0.7em"), "css:font-size=10px")
+    XCTAssertEqual(TEIRendition.fontSize(of: "css:font-size=12px"), 0.75)
+    XCTAssertEqual(TEIRendition.fontSize(of: "css:font-size=9pt"), 0.75)
+    XCTAssertEqual(TEIRendition.fontSize(of: "align(center)"), 1)
+    let lines = TEIRenderer.lines(in: #"<div style="font-size:0.7em"><p style="font-size:0.5em">Small</p></div>"#)
+    XCTAssertEqual(lines.first?.rend, "css:font-size=0.7em")
+  }
+
   /// A division's margin before it is its first block's, its margin after
   /// it its last block's; a block between them takes neither.
   func testDivisionBlockMarginsAtItsEdges() {
