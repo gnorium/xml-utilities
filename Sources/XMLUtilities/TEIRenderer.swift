@@ -204,6 +204,13 @@
         /// A formula, as the page keeps it: Presentation MathML. The run's
         /// text is the symbols it prints, run together.
         case math(TEIMath)
+        /// Space the source leaves in the line (`<space/>`, horizontal by
+        /// default): so much of it, in its unit—`chars` where it names
+        /// none, a character's width; a length (`em`, `mm`, `pt`…) as
+        /// written. A decimal too (`quantity="0.68" unit="em"`). Drawn as
+        /// a gap that wide, inline; its text is the one space a reader
+        /// copies.
+        case space(quantity: Double, unit: String)
       }
 
       public let text: String
@@ -680,32 +687,52 @@
     /// table cells. Oversized or invalid quantities reject the reading;
     /// the source markup remains available unchanged on its page.
     private static func spacesAreBounded(in root: TEIMarkup.Element) -> Bool {
-      var charactersLeft = 65_536
-      var linesLeft = 1_024
+      var charactersLeft = 65_536.0
+      var linesLeft = 1_024.0
       func visit(_ element: TEIMarkup.Element) -> Bool {
         if element.name == "space" {
           let source = element.attribute("quantity")
-          let unit = element.attribute("unit")
-          if !unit.isEmpty, unit != "lines", element.attribute("dim") == "vertical" {
-            // A length: a positive decimal, as long as a page holds.
-            guard let length = source.isEmpty ? 1 : Double(source), length > 0, length.isFinite,
-              length <= (unit == "px" || unit == "pt" ? 512 : 128), linesLeft >= 1
-            else { return false }
-            linesLeft -= 1
-            return element.elements.allSatisfy(visit)
+          // A positive decimal, whichever way it runs.
+          guard let quantity = source.isEmpty ? 1 : Double(source), quantity > 0, quantity.isFinite else {
+            return false
           }
-          guard let quantity = source.isEmpty ? 1 : Int(source), quantity > 0 else { return false }
-          if unit == "lines" || element.attribute("dim") == "vertical" {
+          switch spaceMeasure(of: element) {
+          case .lines:
             guard quantity <= 128, quantity <= linesLeft else { return false }
-            linesLeft -= quantity
-          } else {
+            linesLeft -= quantity.rounded(.up)
+          case .characters:
             guard quantity <= 4_096, quantity <= charactersLeft else { return false }
-            charactersLeft -= quantity
+            charactersLeft -= quantity.rounded(.up)
+          case .length(let unit, let vertical):
+            // As long as a page holds; a vertical one is a line of the page.
+            guard quantity <= (unit == "px" || unit == "pt" ? 512 : 128), !vertical || linesLeft >= 1 else {
+              return false
+            }
+            if vertical { linesLeft -= 1 }
           }
         }
         return element.elements.allSatisfy(visit)
       }
       return visit(root)
+    }
+
+    /// What a `<space/>` measures: whole lines (`unit="lines"`, or a
+    /// vertical one that names no unit), characters' widths
+    /// (`unit="chars"`, or a horizontal one that names none), or a length
+    /// in its own unit, either way.
+    enum SpaceMeasure: Equatable {
+      case lines, characters
+      case length(unit: String, vertical: Bool)
+    }
+
+    static func spaceMeasure(of element: TEIMarkup.Element) -> SpaceMeasure {
+      let unit = element.attribute("unit")
+      let vertical = unit == "lines" || element.attribute("dim") == "vertical"
+      switch unit {
+      case "", "lines": return vertical ? .lines : .characters
+      case "chars", "char": return vertical ? .length(unit: unit, vertical: true) : .characters
+      default: return .length(unit: unit, vertical: vertical)
+      }
     }
 
     /// A page's words by where they are in its projection: which word a
@@ -841,6 +868,11 @@
       // line was set, and whether it fell inside a word.
       var lineBroken = true
       var breakInWord = false
+      // The part the next block's lines stand in when a `<cb/>` broke the
+      // block before it: `F`, the block run on from the column before.
+      var columnPart = ""
+      // The part the lines of the block set now stand in, so far.
+      var blockPart = ""
 
       func flush() {
         runs = TEIRenderer.spaced(runs)
@@ -852,6 +884,11 @@
           line.frame = currentFrame
           line.column = currentColumn
           line.columnRend = currentColumn > 0 ? currentColumnRend : ""
+          if blockPending {
+            blockPart = columnPart
+            columnPart = ""
+          }
+          line.part = blockPart
           lines.append(line)
           blockPending = false
           paragraphPending = false
@@ -1024,28 +1061,42 @@
               blockPending = true
               paragraphPending = true
             case "space":
-              // Space the source leaves, as much as it says: so many
-              // characters' width in the line, or so many blank lines.
+              // Space the source leaves, as much as it says, a decimal too
+              // (bounded above, `spacesAreBounded`): so many blank lines, or
+              // a gap in the line so many characters wide or that long.
               // Never collapsed.
-              let quantity = max(1, Int(element.attribute("quantity")) ?? 1)
-              let unit = element.attribute("unit")
-              if unit == "lines" || element.attribute("dim") == "vertical" {
+              let quantity = Double(element.attribute("quantity")) ?? 1
+              switch spaceMeasure(of: element) {
+              case .lines:
                 flush()
-                // Whole lines; a length as written, a decimal too.
-                let length = unit.isEmpty || unit == "lines" ? Double(quantity) : Double(element.attribute("quantity")) ?? 1
-                append(
-                  .init(
-                    kind: .space(quantity: length, unit: unit.isEmpty ? "lines" : unit), text: " "))
-              } else {
+                append(.init(kind: .space(quantity: quantity, unit: "lines"), text: " "))
+              case .length(let unit, vertical: true):
+                flush()
+                append(.init(kind: .space(quantity: quantity, unit: unit), text: " "))
+              case .characters, .length(_, vertical: false):
+                let unit = element.attribute("unit")
                 currentKind = kind
                 currentRend = rend
                 runs.append(
                   .init(
-                    text: String(repeating: " ", count: quantity), rend: joined("space"),
+                    text: " ", rend: joined("space"), kind: .space(quantity: quantity, unit: unit.isEmpty ? "chars" : unit),
                     element: words?.index(of: element) ?? gloss, preserved: true))
               }
             case "cb":
               flush()
+              // A block the column break falls inside runs on into the
+              // next column, as a paragraph runs on across a page break:
+              // its lines before the break its initial part, after it its
+              // final one (`TEILine.part`), so its last line in the column
+              // is set full and its first in the next takes no indent.
+              if !blockPending, let start = lines.lastIndex(where: \.opensBlock) {
+                for index in start..<lines.count {
+                  lines[index].part = lines[index].part == "F" ? "M" : lines[index].part.isEmpty ? "I" : lines[index].part
+                }
+                columnPart = "F"
+              } else {
+                columnPart = ""
+              }
               currentColumn += 1
               currentColumnRend = rend
               blockPending = true
@@ -1118,8 +1169,21 @@
               flush()
               if !frames { close(from: entry, setting) }
               if element.name == "p" {
-                for index in entry..<lines.count where lines[index].part.isEmpty {
-                  lines[index].part = element.attribute("part")
+                // Its own part, with the parts a column break gave its
+                // lines: a paragraph run on from the page before is final
+                // in its last column only, one run on to the next initial
+                // in its first only.
+                let own = element.attribute("part")
+                for index in entry..<lines.count {
+                  let column = lines[index].part
+                  if column.isEmpty || own.isEmpty || own == column {
+                    lines[index].part = column.isEmpty ? own : column
+                  } else {
+                    // Whether its lines run on from before them, and on after.
+                    let runsOnFrom = [own, column].contains { $0 == "F" || $0 == "M" }
+                    let runsOnTo = [own, column].contains { $0 == "I" || $0 == "M" }
+                    lines[index].part = runsOnFrom && runsOnTo ? "M" : runsOnFrom ? "F" : "I"
+                  }
                 }
               }
               blockPending = true
@@ -1217,7 +1281,14 @@
       // Whether what was last kept ends in white space, or nothing was kept.
       var afterSpace = true
       for run in runs {
-        guard case .text = run.kind else {
+        switch run.kind {
+        case .text: break
+        case .space:
+          // A gap is white space: a space after it is none.
+          out.append(run)
+          afterSpace = true
+          continue
+        case .math:
           out.append(run)
           afterSpace = false
           continue

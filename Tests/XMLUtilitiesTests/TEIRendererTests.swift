@@ -588,8 +588,8 @@ final class TEIRendererTests: XCTestCase {
   /// elsewhere still collapses.
   func testEncodedSpaceAndPreservedWhiteSpaceAreKept() {
     let spaced = TEIRenderer.lines(in: "<p>\n  <w>one</w><space quantity=\"3\" unit=\"chars\"/><w>two</w>\n</p>")
-    XCTAssertEqual(spaced.map(\.text), ["one   two"])
-    XCTAssertTrue(spaced[0].runs.contains { $0.preserved && $0.text == "   " })
+    XCTAssertEqual(spaced.map(\.text), ["one two"])
+    XCTAssertTrue(spaced[0].runs.contains { if case .space(3, "chars") = $0.kind { $0.preserved } else { false } })
 
     let preserved = TEIRenderer.lines(in: "<p>\n  <seg xml:space=\"preserve\">a  b</seg>\n  <w>c</w>   <w>d</w>\n</p>")
     XCTAssertEqual(preserved.map(\.text), ["a  b c d"])
@@ -605,6 +605,48 @@ final class TEIRendererTests: XCTestCase {
     // A length may be a decimal; whole lines stay whole.
     let decimal = TEIRenderer.lines(in: #"<p>a</p><space dim="vertical" quantity="1.5" unit="em"/><p>b</p>"#)
     guard case .space(1.5, "em") = decimal[1].kind else { return XCTFail("not 1.5em: \(decimal[1].kind)") }
+  }
+
+  /// A horizontal space is a gap in its line as wide as it says: so many
+  /// characters where it names no unit, a length in its own, a decimal
+  /// too. It never empties the page (a decimal did, 2026-10-13).
+  func testHorizontalSpaceIsAGapInTheLine() {
+    func gaps(_ markup: String) -> [(Double, String)] {
+      TEIRenderer.lines(in: markup).flatMap(\.runs).compactMap {
+        if case .space(let quantity, let unit) = $0.kind { (quantity, unit) } else { nil }
+      }
+    }
+    for (space, quantity, unit) in [
+      (#"<space quantity="3"/>"#, 3.0, "chars"), (#"<space quantity="1.5" unit="chars"/>"#, 1.5, "chars"),
+      (#"<space dim="horizontal" quantity="2"/>"#, 2, "chars"), (#"<space dim="horizontal" quantity="0.68" unit="em"/>"#, 0.68, "em"),
+      (#"<space quantity="4" unit="mm"/>"#, 4, "mm"), ("<space/>", 1, "chars"),
+    ] {
+      let markup = "<p><w>one</w>" + space + "<w>two</w></p>"
+      XCTAssertEqual(TEIRenderer.lines(in: markup).map(\.text), ["one two"], space)
+      XCTAssertEqual(TEIRenderer.lines(in: markup, marksWords: true).map(\.text), ["one two"], space)
+      let found = gaps(markup)
+      XCTAssertEqual(found.count, 1, space)
+      XCTAssertEqual(found.first?.0, quantity, space)
+      XCTAssertEqual(found.first?.1, unit, space)
+    }
+    // At a line's start it stays: an indent the print shows.
+    let indented = TEIRenderer.lines(in: #"<p><space quantity="2"/><w>one</w></p>"#)
+    XCTAssertEqual(indented.first?.runs.count, 2)
+    // A page with one renders, its lines all there.
+    let document = #"<TEI><text><body><pb n="1" facs="https://example.org/p1"/><p>a<space dim="horizontal" quantity="1.5"/>b</p></body></text></TEI>"#
+    XCTAssertEqual(TEIRenderer.pages(in: document).first?.lines.map(\.text), ["a b"])
+  }
+
+  /// A block a column break falls inside runs on into the next column as
+  /// a paragraph runs on across a page: initial before the break, final
+  /// after it; a break between blocks parts nothing (user, 2026-10-13).
+  func testABlockBrokenByAColumnRunsOnIntoTheNext() {
+    let note = TEIRenderer.lines(in: #"<note place="foot"><cb/>One<lb/>two<lb/><cb/>three<lb/>four<lb/></note>"#)
+    XCTAssertEqual(note.map(\.part), ["I", "I", "F", "F"])
+    let blocks = TEIRenderer.lines(in: #"<div><cb/><p>One<lb/></p><cb/><p>two<lb/></p></div>"#)
+    XCTAssertEqual(blocks.map(\.part), ["", ""])
+    let onward = TEIRenderer.lines(in: #"<p part="I"><cb/>One<lb/><cb/>two<lb/></p>"#)
+    XCTAssertEqual(onward.map(\.part), ["I", "M"])
   }
 
   func testTheFormatterLeavesPreservedWhiteSpaceAlone() {
@@ -665,7 +707,7 @@ final class TEIRendererTests: XCTestCase {
 
   func testSpaceExpansionBudgetIsSharedAcrossNestedTablesAndFigures() {
     let characters = "<space quantity='4096' unit='chars'/>"
-    XCTAssertEqual(TEIRenderer.lines(in: "<p>" + String(repeating: characters, count: 16) + "</p>").first?.text.count, 65_536)
+    XCTAssertEqual(TEIRenderer.lines(in: "<p>" + String(repeating: characters, count: 16) + "</p>").first?.runs.count, 16)
     let excessiveCharacters = "<table><row><cell>" + String(repeating: characters, count: 16)
       + "</cell><cell><table><row><cell>" + characters + "</cell></row></table></cell></row></table>"
     XCTAssertTrue(TEIRenderer.lines(in: excessiveCharacters).isEmpty)
