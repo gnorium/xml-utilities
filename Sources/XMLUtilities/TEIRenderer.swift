@@ -146,6 +146,8 @@
     /// centered on the page, its lines left-aligned within it); empty
     /// elsewhere.
     public internal(set) var frame = ""
+    /// Standard cb markers identify reading columns, without coordinates.
+    public internal(set) var column = 0
     /// Whether it follows the line before with no line break between them:
     /// furniture set on one line (a page number, then a running head).
     public let sharesLine: Bool
@@ -349,6 +351,7 @@
 
     public let caption: [TEILine]
     public let rows: [Row]
+    public let type: String
   }
 
   /// Reads a TEI document as a document—pages, and the lines on them—rather
@@ -773,6 +776,7 @@
       var paragraphPending = false
       // The frame the lines set now stand in (`TEILine.frame`).
       var currentFrame = ""
+      var currentColumn = 0
       // Whether a line break (`<lb/>`, `<cb/>`, `<pb/>`) came since the last
       // line was set, and whether it fell inside a word.
       var lineBroken = true
@@ -786,6 +790,7 @@
             kind: currentKind, text: text, rend: currentRend, runs: runs, opensBlock: blockPending,
             opensParagraph: paragraphPending, sharesLine: !lineBroken, joinsPrevious: breakInWord)
           line.frame = currentFrame
+          line.column = currentColumn
           lines.append(line)
           blockPending = false
           paragraphPending = false
@@ -799,6 +804,7 @@
         var line = line
         line.opensParagraph = paragraphPending
         line.frame = currentFrame
+        line.column = currentColumn
         paragraphPending = false
         lines.append(line)
         blockPending = true
@@ -936,12 +942,19 @@
                     text: String(repeating: " ", count: quantity), rend: joined("space"),
                     element: words?.index(of: element) ?? gloss, preserved: true))
               }
-            case "lb", "cb":
+            case "cb":
+              flush()
+              currentColumn += 1
+              blockPending = true
+              lineBroken = true
+              breakInWord = false
+            case "lb":
               flush()
               lineBroken = true
               breakInWord = element.name == "lb" && element.attribute("break") == "no"
             case "pb":
               flush()
+              currentColumn = 0
               lineBroken = true
               let label = expandedLeafLabel(element.attribute("n"))
               if !label.isEmpty { append(.init(kind: .mark, text: label, element: words?.index(of: element))) }
@@ -1009,7 +1022,7 @@
                     )
                   })
               }
-              let table = TEITable(caption: caption, rows: rows)
+              let table = TEITable(caption: caption, rows: rows, type: element.attribute("type"))
               let text = (caption + rows.flatMap { $0.cells.flatMap(\.lines) }).map(\.text).joined(
                 separator: " ")
               append(.init(kind: .table(table), text: text, rend: blockRend))
