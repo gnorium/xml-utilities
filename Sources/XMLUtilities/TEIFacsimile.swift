@@ -89,11 +89,20 @@
     /// (`layout_measure.derived_corners`). The overlay lays it on the
     /// rendered frame itself, whole.
     public let derived: Bool
+    /// The scan's measured layout on the same surface, as the tools wrote
+    /// it (gnorium-python `facsimile.layout_zones`, user, 2026-10-14): its
+    /// blocks, their lines and the lines' words, flat zones in reading
+    /// order after the text block's (`type="block"` with its subtype `main`
+    /// or `marginalia`, `type="line"`, `type="word"`; a line is the block's
+    /// before it, a word the line's), each its four corners. Kept with the
+    /// text block wherever its surface is written; "" where none was
+    /// measured. Never written by the model.
+    public let layout: String
 
     public init(
       id: String, points: [Double], surfaceULX: Double = 0, surfaceULY: Double = 0, surfaceLRX: Double = 1000,
       surfaceLRY: Double = 1000, imageWidth: Double = 0, imageHeight: Double = 0, imageURL: String = "",
-      label: String = "", body: Double = 0, derived: Bool = false
+      label: String = "", body: Double = 0, derived: Bool = false, layout: String = ""
     ) {
       self.id = id
       self.points = points
@@ -107,6 +116,7 @@
       self.label = label
       self.body = body
       self.derived = derived
+      self.layout = layout
     }
 
     /// The corners as fractions of the page, x and y in turn: where they
@@ -160,7 +170,7 @@
       TEITextBlock(
         id: id, points: points, surfaceULX: surfaceULX, surfaceULY: surfaceULY, surfaceLRX: surfaceLRX,
         surfaceLRY: surfaceLRY, imageWidth: imageWidth, imageHeight: imageHeight, imageURL: imageURL ?? self.imageURL,
-        label: label ?? self.label, body: body, derived: derived)
+        label: label ?? self.label, body: body, derived: derived, layout: layout)
     }
   }
 
@@ -208,6 +218,68 @@
     public static let textBlockType = "textblock"
     /// The subtype of a derived text block (`TEITextBlock.derived`).
     public static let derivedSubtype = "derived"
+    /// The zone types of the scan's measured layout (`TEITextBlock.layout`).
+    public static let layoutTypes: Set<String> = ["block", "line", "word"]
+    private static let layoutZonePattern = try! NSRegularExpression(
+      pattern: #"<zone\b[^>]*\btype="(?:block|line|word)"[^>]*/>"#)
+
+    /// The layout zones a surface holds (`TEITextBlock.layout`), as
+    /// written, in order; "" for none.
+    public static func layoutZones(in surface: String) -> String {
+      matches(of: layoutZonePattern, in: surface).map { String(surface[$0]) }.joined()
+    }
+
+    /// One zone of a scan's measured layout (`TEITextBlock.layout`): its
+    /// type ("block", "line" or "word"), a block's subtype ("main" or
+    /// "marginalia"), and its four corners, x and y in turn, as fractions
+    /// of its surface.
+    public struct LayoutZone: Sendable, Equatable {
+      public let type: String
+      public let subtype: String
+      public let fractions: [Double]
+    }
+
+    /// A text block's layout zones (`TEITextBlock.layout`) read, in order;
+    /// a zone whose points are not four corners is left out.
+    public static func layout(of block: TEITextBlock) -> [LayoutZone] {
+      guard !block.layout.isEmpty else { return [] }
+      let root = TEIMarkup.document("<surface>" + block.layout + "</surface>")
+      guard let surface = root.elements.first(where: { $0.name == "surface" }) else { return [] }
+      let width = block.surfaceLRX - block.surfaceULX
+      let height = block.surfaceLRY - block.surfaceULY
+      guard width > 0, height > 0 else { return [] }
+      return surface.elements.compactMap { zone -> LayoutZone? in
+        guard zone.name == "zone", layoutTypes.contains(zone.attribute("type")) else { return nil }
+        let points = zone.attribute("points").split(whereSeparator: \.isWhitespace).flatMap {
+          $0.split(separator: ",").map { Double($0) }
+        }
+        guard points.count == 8, points.allSatisfy({ $0 != nil }) else { return nil }
+        let values = points.compactMap { $0 }
+        return LayoutZone(
+          type: zone.attribute("type"), subtype: zone.attribute("subtype"),
+          fractions: values.enumerated().map { index, value in
+            index % 2 == 0 ? (value - block.surfaceULX) / width : (value - block.surfaceULY) / height
+          })
+      }
+    }
+
+    /// A page's surface with the scan's measured layout (`layout`, as
+    /// gnorium-python `/text-block-zones` gives it) after its text block's
+    /// zone, where its text block keeps none (measure-pages, for pages
+    /// measured before the layout was kept). Nil where the page has no
+    /// text block, already keeps a layout, or `layout` holds none.
+    public static func placingLayout(_ layout: String, on page: TEIPage, in document: String) -> String? {
+      let zones = layoutZones(in: layout)
+      guard !zones.isEmpty, let block = page.textBlock, block.layout.isEmpty else { return nil }
+      let standing = surface(of: page, in: document)
+      guard !standing.isEmpty,
+        let zone = standing.range(
+          of: #"<zone\b[^>]*\btype="textblock"[^>]*/>"#, options: .regularExpression)
+      else { return nil }
+      var written = standing
+      written.insert(contentsOf: zones, at: zone.upperBound)
+      return written
+    }
 
     /// Every surface's measured text block (`TEITextBlock`), in document
     /// order. A zone whose points are not four corners, or whose surface
@@ -237,7 +309,7 @@
               id: zone.attribute("xml:id"), points: points.compactMap { $0 }, surfaceULX: left, surfaceULY: top,
               surfaceLRX: right, surfaceLRY: bottom, imageWidth: pixels("width"), imageHeight: pixels("height"),
               imageURL: graphic?.attribute("url") ?? "", label: surface.attribute("n"), body: body?.value ?? 0,
-              derived: zone.attribute("subtype") == derivedSubtype))
+              derived: zone.attribute("subtype") == derivedSubtype, layout: layoutZones(in: String(markup[range]))))
         }
       }
       return found
@@ -489,7 +561,8 @@
       }
       let block = TEITextBlock(
         id: prefix + measured.id, points: measured.points, imageWidth: width, imageHeight: height,
-        imageURL: page.facsimileURL, label: page.label, body: measured.body, derived: measured.derived)
+        imageURL: page.facsimileURL, label: page.label, body: measured.body, derived: measured.derived,
+        layout: measured.layout)
       let standing = surface(of: page, in: document)
       guard !standing.isEmpty else { return surface([], textBlock: block, label: page.label, imageURL: page.facsimileURL) }
       let placed = surface([], textBlock: block, label: "", imageURL: XMLFormatter.attribute("url", in: standing).isEmpty
@@ -505,7 +578,7 @@
         written.insert(contentsOf: placed[graphic], at: opening.upperBound)
       }
       guard let close = written.range(of: "</surface>", options: .backwards) else { return nil }
-      written.insert(contentsOf: placed[zoneRange], at: close.lowerBound)
+      written.insert(contentsOf: placed[zoneRange] + measured.layout, at: close.lowerBound)
       return written
     }
 
@@ -574,7 +647,7 @@
           "<zone xml:id=\"\(XMLFormatter.escapingAttribute(textBlock.id))\" type=\"\(textBlockType)\""
           + (textBlock.derived ? " subtype=\"\(derivedSubtype)\"" : "")
           + " points=\"\(textBlock.pointsText)\""
-          + (textBlock.style.isEmpty ? "" : " style=\"\(textBlock.style)\"") + "/>"
+          + (textBlock.style.isEmpty ? "" : " style=\"\(textBlock.style)\"") + "/>" + textBlock.layout
       }
       return out + "</surface>"
     }

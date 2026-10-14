@@ -400,6 +400,24 @@ public enum TEIRendition {
     return open + "<teiHeader><encodingDesc><tagsDecl>\n" + lines + "\n</tagsDecl></encodingDesc></teiHeader>\n" + body
   }
 
+  /// The body's leading, in rem (gnorium-python `type_scale`: the leading
+  /// of the size step that holds the body type, 1rem): the `leading-N` of
+  /// the `size-N` nearest 1rem in proportion (type is cut in proportional
+  /// steps), from a document's declarations (`declarations(in:)`); nil
+  /// where its scale declares no such pair.
+  public static func bodyLeading(in declarations: [String: String]) -> Double? {
+    var nearest: (number: Substring, distance: Double)?
+    for (id, tokens) in declarations where id.hasPrefix("size-") {
+      guard let size = Setting(tokens).length("font-size"), size.unit == "rem", size.value > 0 else { continue }
+      let distance = abs(log(size.value))
+      if nearest.map({ distance < $0.distance }) ?? true { nearest = (id.dropFirst("size-".count), distance) }
+    }
+    guard let number = nearest?.number, let tokens = declarations["leading-" + number],
+      let leading = Setting(tokens).length("line-height"), leading.unit == "rem"
+    else { return nil }
+    return leading.value
+  }
+
   static func declarations(in root: TEIMarkup.Element) -> [String: String] {
     var result: [String: String] = [:]
     func visit(_ node: TEIMarkup.Element) {
