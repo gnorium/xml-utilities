@@ -88,6 +88,10 @@ public enum TEIRendition {
     case "line-height":
       if unit == "" || unit == "em" { return (0.75...3).contains(number) }
       if unit == "%" { return (75...300).contains(number) }
+      // A step of the witness's type scale, in rem (gnorium-python
+      // `type_scale`): a relative line-height's bounds at the font-size
+      // bounds.
+      if unit == "rem" { return (0.75 * fontSizes.lowerBound...3 * fontSizes.upperBound).contains(number) }
       return false
     case "inline-size", "block-size":
       // A rule's or a frame's measure (a page's text block's height): up
@@ -219,6 +223,12 @@ public enum TEIRendition {
     let rendition = frameRendition(frame)
     guard let open = rendition.firstIndex(of: ">"), let close = rendition.range(of: "</rendition>") else { return "" }
     return String(rendition[rendition.index(after: open)..<close.lowerBound])
+  }
+
+  /// The renditions a TEI document, page or header declares (its work
+  /// frame and type scale among them), as `TEIPage.renditions` keeps them.
+  public static func declarations(of xml: String) -> [String: String] {
+    declarations(in: TEIMarkup.document(xml))
   }
 
   static func declarations(in root: TEIMarkup.Element) -> [String: String] {
@@ -356,11 +366,13 @@ public enum TEIRendition {
   /// margins as the box it stands in (added to its own), the parent's
   /// margin before it at its first block (collapsed with its own)—and
   /// what it sets overrides the same property only. Its font-size in em
-  /// or % counts its parent's. The parent's frame and its margin after
+  /// or % counts its parent's; a length in rem is the body type's
+  /// (`inEm`). The parent's frame and its margin after
   /// it are its own box's, never passed on (`closing(_:within:)`). A
   /// keyword overrides the parent's of its kind (an alignment, an indent,
   /// an ink, a typeface, a step of size); any other is kept beside it.
   public static func cascade(_ parent: String, _ child: String, _ placement: Placement = .block(first: false)) -> String {
+    let child = inEm(child, within: parent)
     guard !parent.isEmpty else { return child }
     var own = Setting(child)
     var result = Setting(parent)
@@ -416,6 +428,32 @@ public enum TEIRendition {
       }
     }
     return result.rend
+  }
+
+  /// A child's rend with its lengths in rem—the steps of its witness's
+  /// type scale (gnorium-python `type_scale`), in the body type, CSS's root
+  /// em: the `<text>` the work frame sets at the body type—as em of its
+  /// own font, as the cascade counts them: its font-size over its parent's
+  /// computed font (`fontSize(of:)`), every other length over its own. A
+  /// step means one size wherever it is referenced.
+  static func inEm(_ rend: String, within parent: String) -> String {
+    var own = Setting(rend)
+    let rem = own.entries.compactMap { entry -> String? in
+      guard entry.key.hasPrefix("css:") else { return nil }
+      let property = String(entry.key.dropFirst(4))
+      return own.length(property)?.unit == "rem" ? property : nil
+    }
+    guard !rem.isEmpty else { return rend }
+    let around = fontSize(of: parent) ?? 1
+    if let size = own.length("font-size"), size.unit == "rem" {
+      own.set("font-size", Length(value: size.value / around, unit: "em"))
+    }
+    let font = own.relativeFont.map { around * $0 } ?? own.length("font-size").flatMap(bodyEm) ?? around
+    for property in rem where property != "font-size" {
+      guard let length = own.length(property), font != 0 else { continue }
+      own.set(property, Length(value: length.value / font, unit: "em"))
+    }
+    return own.rend
   }
 
   /// A block's rend at the end of `parent`, the last of its blocks: the

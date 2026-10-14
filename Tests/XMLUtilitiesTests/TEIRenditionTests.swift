@@ -54,6 +54,23 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertEqual(lines[2].rend, "css:font-size=0.6em css:line-height=1.35 css:margin-inline-start=3.5em css:text-indent=2.5em")
   }
 
+  /// A witness's type scale (gnorium-python `type_scale`): steps in rem,
+  /// the body type, declared in the header and referenced by `@rendition`.
+  /// A step is one size wherever it stands: inside a block set at 0.8em, a
+  /// 1.2rem paragraph is 1.5 of its em and computes to 1.2em of the page,
+  /// its 1.8rem leading and 0.6rem indent counted in its own font.
+  func testScaleStepsInRemAreTheBodyTypeWhereverTheyStand() throws {
+    XCTAssertTrue(TEIRendition.valid(property: "line-height", value: "1.8rem"))
+    XCTAssertFalse(TEIRendition.valid(property: "line-height", value: "13rem"))
+    let header = ##"<teiHeader><encodingDesc><tagsDecl><rendition xml:id="size-1" scheme="css">font-size:1.2rem</rendition><rendition xml:id="leading-1" scheme="css">line-height:1.8rem</rendition><rendition xml:id="indent-1" scheme="css">text-indent:0.6rem</rendition></tagsDecl></encodingDesc></teiHeader>"##
+    let xml = ##"<TEI>"## + header + ##"<text><body><pb n="1" facs="https://example.org/page/full/max/0/default.jpg"/><div style="font-size:0.8em"><p rendition="#size-1 #leading-1 #indent-1">Step<lb/></p></div><p rendition="#size-1">Top<lb/></p></body></text></TEI>"##
+    let page = try XCTUnwrap(TEIRenderer.pages(in: xml).first)
+    XCTAssertEqual(page.lines.map(\.rend), [
+      "css:font-size=1.2em css:line-height=1.5em css:text-indent=0.5em", "css:font-size=1.2em",
+    ])
+    XCTAssertTrue(TEIRendition.header(page.renditions).contains(##"<rendition xml:id="leading-1" scheme="css">line-height:1.8rem;</rendition>"##))
+  }
+
   /// The type size's bounds hold of the size the cascade computes, not
   /// only of each written value: 0.5em inside 0.7em is 0.35em of the page,
   /// below its 0.5em, and is no size (the paragraph keeps the division's).
