@@ -71,6 +71,13 @@ public enum TEIRendition {
     "padding-inline-start", "padding-inline-end", "inline-size", "block-size",
   ]
 
+  /// The largest length a CSS length (and a `<space>`'s) may measure in
+  /// `unit`: in the body type's em, twice the page-em bounds they replace.
+  /// gnorium-python's `tei_encoding._length_bound`.
+  public static func lengthBound(unit: String) -> Double {
+    unit == "px" || unit == "pt" ? 1024 : 64
+  }
+
   public static func valid(property: String, value: String) -> Bool {
     if property == "text-align" { return ["left", "right", "center", "justify", "start", "end"].contains(value) }
     if property == "font-weight" { return ["normal", "bold", "400", "600", "700"].contains(value) }
@@ -105,7 +112,7 @@ public enum TEIRendition {
       return (0...64).contains(number)
     default:
       if unit == "" { return number == 0 }
-      let bound = unit == "px" || unit == "pt" ? 1024.0 : 64.0
+      let bound = lengthBound(unit: unit)
       // A margin may be negative: a note in a margin placed over the
       // frame's empty part, by its measured white (user, 2026-10-14).
       return abs(number) <= bound

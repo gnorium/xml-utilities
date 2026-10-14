@@ -740,6 +740,15 @@ final class TEIRendererTests: XCTestCase {
     }
     XCTAssertTrue(TEIRenderer.lines(in: "<space quantity='4097' unit='chars'/>").isEmpty)
     XCTAssertTrue(TEIRenderer.lines(in: "<space quantity='129' unit='lines'/>").isEmpty)
+    // A length is held to a CSS length's bound, as gnorium-python's validator holds it.
+    for (unit, vertical) in [("em", false), ("mm", true), ("px", false), ("pt", true)] {
+      let bound = TEIRendition.lengthBound(unit: unit)
+      let dimension = vertical ? " dim='vertical'" : ""
+      XCTAssertFalse(TEIRenderer.lines(in: "<p>a<space quantity='\(bound)' unit='\(unit)'\(dimension)/>b</p>").isEmpty)
+      XCTAssertTrue(TEIRenderer.lines(in: "<p>a<space quantity='\(bound + 1)' unit='\(unit)'\(dimension)/>b</p>").isEmpty)
+    }
+    XCTAssertEqual(TEIRendition.lengthBound(unit: "em"), 64)
+    XCTAssertEqual(TEIRendition.lengthBound(unit: "px"), 1024)
   }
 
   func testSpaceExpansionBudgetIsSharedAcrossNestedTablesAndFigures() {
