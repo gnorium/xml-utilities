@@ -82,11 +82,18 @@
     public let label: String
     /// The type it is set in: the scan's pixels per em (0: not measured).
     public let body: Double
+    /// Whether it is derived, not measured (`subtype="derived"`,
+    /// gnorium-python `facsimile.DERIVED`): a page that sets no main text
+    /// (an owner's label alone) has the work frame placed on its scan as
+    /// the edition sets it, centered at its pixels per em
+    /// (`layout_measure.derived_corners`). The overlay lays it on the
+    /// rendered frame itself, whole.
+    public let derived: Bool
 
     public init(
       id: String, points: [Double], surfaceULX: Double = 0, surfaceULY: Double = 0, surfaceLRX: Double = 1000,
       surfaceLRY: Double = 1000, imageWidth: Double = 0, imageHeight: Double = 0, imageURL: String = "",
-      label: String = "", body: Double = 0
+      label: String = "", body: Double = 0, derived: Bool = false
     ) {
       self.id = id
       self.points = points
@@ -99,6 +106,7 @@
       self.imageURL = imageURL
       self.label = label
       self.body = body
+      self.derived = derived
     }
 
     /// The corners as fractions of the page, x and y in turn: where they
@@ -152,7 +160,7 @@
       TEITextBlock(
         id: id, points: points, surfaceULX: surfaceULX, surfaceULY: surfaceULY, surfaceLRX: surfaceLRX,
         surfaceLRY: surfaceLRY, imageWidth: imageWidth, imageHeight: imageHeight, imageURL: imageURL ?? self.imageURL,
-        label: label ?? self.label, body: body)
+        label: label ?? self.label, body: body, derived: derived)
     }
   }
 
@@ -198,6 +206,8 @@
 
     /// The zone type of a page's measured text block.
     public static let textBlockType = "textblock"
+    /// The subtype of a derived text block (`TEITextBlock.derived`).
+    public static let derivedSubtype = "derived"
 
     /// Every surface's measured text block (`TEITextBlock`), in document
     /// order. A zone whose points are not four corners, or whose surface
@@ -226,7 +236,8 @@
             TEITextBlock(
               id: zone.attribute("xml:id"), points: points.compactMap { $0 }, surfaceULX: left, surfaceULY: top,
               surfaceLRX: right, surfaceLRY: bottom, imageWidth: pixels("width"), imageHeight: pixels("height"),
-              imageURL: graphic?.attribute("url") ?? "", label: surface.attribute("n"), body: body?.value ?? 0))
+              imageURL: graphic?.attribute("url") ?? "", label: surface.attribute("n"), body: body?.value ?? 0,
+              derived: zone.attribute("subtype") == derivedSubtype))
         }
       }
       return found
@@ -250,7 +261,8 @@
     public static func workFrame(in document: String) -> TEIWorkFrame? {
       typealias Page = (block: TEITextBlock, measure: Double, height: Double)
       let pages = textBlocks(in: blocks(in: document)).compactMap { block -> Page? in
-        guard block.body > 0, let size = block.size else { return nil }
+        // A derived block is the frame placed, never a measure of it.
+        guard block.body > 0, !block.derived, let size = block.size else { return nil }
         return (block, size.measure, size.height)
       }
       guard !pages.isEmpty else { return nil }
@@ -269,7 +281,7 @@
     /// is the size. Nil where none is measured.
     public static func workPage(of blocks: [TEITextBlock]) -> (width: Double, height: Double)? {
       let pages = blocks.compactMap { block -> (TEITextBlock, Double)? in
-        guard block.imageWidth > 0, block.imageHeight > 0, let size = block.size else { return nil }
+        guard block.imageWidth > 0, block.imageHeight > 0, !block.derived, let size = block.size else { return nil }
         return (block, size.measure * size.height)
       }
       guard !pages.isEmpty else { return nil }
@@ -428,6 +440,107 @@
       return framing(TEIRendition.joining(TEIRendition.renditions(of: page), into: laid))
     }
 
+    /// The range of the surface a document's facsimile holds for a page:
+    /// the one whose image reads `facsimileURL`, or, with no image, the one
+    /// labeled `label` (as `laying` finds a page's surface); nil for none.
+    static func surfaceRange(of facsimileURL: String, label: String, in document: String) -> Range<String.Index>? {
+      let service = TEIRenderer.serviceID(ofFacsimile: facsimileURL)
+      for range in matches(of: surfacePattern, in: document) {
+        let written = String(document[range])
+        let graphic = XMLFormatter.attribute("url", in: written)
+        if graphic.isEmpty ? (!label.isEmpty && XMLFormatter.attribute("n", in: String(written.prefix { $0 != ">" })) == label)
+          : TEIRenderer.serviceID(ofFacsimile: graphic) == service
+        {
+          return range
+        }
+      }
+      return nil
+    }
+
+    /// The surface a document holds for a page (`surfaceRange`), as
+    /// written; "" where it holds none.
+    public static func surface(of page: TEIPage, in document: String) -> String {
+      surfaceRange(of: page.facsimileURL, label: page.label, in: document).map { String(document[$0]) } ?? ""
+    }
+
+    /// A page's surface with its text block placed, where the document
+    /// keeps none for it (gnorium-python `/text-block-zones`, the zone
+    /// exactly as `save_page` writes it, and its scan's size in pixels): the
+    /// surface it has with its graphic sized and the zone at its end, or a
+    /// new one (its label, image and extent); the zone's id prefixed with
+    /// the page's place (`p3-textblock`, as the assembly writes it,
+    /// gnorium-python `document_surface`), another prefix where that one is
+    /// taken. Nil where the zone is no text block or the page already keeps
+    /// one.
+    public static func placingTextBlock(
+      _ zone: String, width: Double, height: Double, on page: TEIPage, position: Int, in document: String
+    ) -> String? {
+      guard
+        let measured = textBlocks(in: "<surface ulx=\"0\" uly=\"0\" lrx=\"1000\" lry=\"1000\">" + zone + "</surface>")
+          .first,
+        textBlock(of: page.facsimileURL, label: page.label, in: textBlocks(in: blocks(in: document))) == nil
+      else { return nil }
+      let taken = Set(zones(in: blocks(in: document)).keys).union(textBlocks(in: blocks(in: document)).map(\.id))
+      var prefix = "p\(position)-"
+      var attempt = 1
+      while taken.contains(prefix + measured.id) {
+        attempt += 1
+        prefix = "p\(position)-\(attempt)-"
+      }
+      let block = TEITextBlock(
+        id: prefix + measured.id, points: measured.points, imageWidth: width, imageHeight: height,
+        imageURL: page.facsimileURL, label: page.label, body: measured.body, derived: measured.derived)
+      let standing = surface(of: page, in: document)
+      guard !standing.isEmpty else { return surface([], textBlock: block, label: page.label, imageURL: page.facsimileURL) }
+      let placed = surface([], textBlock: block, label: "", imageURL: XMLFormatter.attribute("url", in: standing).isEmpty
+        ? page.facsimileURL : XMLFormatter.attribute("url", in: standing))
+      // The new surface's sized graphic and its zone, in the standing one.
+      guard let graphic = placed.range(of: #"<graphic\b[^>]*/>"#, options: .regularExpression),
+        let zoneRange = placed.range(of: #"<zone\b[^>]*/>"#, options: .regularExpression)
+      else { return nil }
+      var written = standing
+      if let old = written.range(of: #"<graphic\b[^>]*/>"#, options: .regularExpression) {
+        written.replaceSubrange(old, with: placed[graphic])
+      } else if let opening = written.range(of: ">") {
+        written.insert(contentsOf: placed[graphic], at: opening.upperBound)
+      }
+      guard let close = written.range(of: "</surface>", options: .backwards) else { return nil }
+      written.insert(contentsOf: placed[zoneRange], at: close.lowerBound)
+      return written
+    }
+
+    /// `document` with a page's surface `from` (as `surface(of:in:)` gives
+    /// it; "" for none) made `to` ("" removes it): a surface added joins
+    /// the document's facsimile, or starts one after its header; a
+    /// facsimile left empty goes. Nil where the page's surface is not
+    /// `from`: something else changed it.
+    public static func replacingSurface(_ from: String, with to: String, of page: TEIPage, in document: String)
+      -> String?
+    {
+      var written = document
+      let range = surfaceRange(of: page.facsimileURL, label: page.label, in: written)
+      if from.isEmpty {
+        guard range == nil else { return nil }
+        guard !to.isEmpty else { return written }
+        if let open = written.range(of: "<facsimile"),
+          let close = written.range(of: "</facsimile>", range: open.upperBound..<written.endIndex)
+        {
+          written.insert(contentsOf: to, at: close.lowerBound)
+        } else if let at = written.range(of: "</teiHeader>")?.upperBound ?? written.range(of: "<text")?.lowerBound {
+          written.insert(contentsOf: "\n  <facsimile>" + to + "</facsimile>", at: at)
+        } else {
+          return nil
+        }
+        return written
+      }
+      guard let range, written[range] == from else { return nil }
+      written.replaceSubrange(range, with: to)
+      if let emptied = written.range(of: #"\s*<facsimile\b[^>]*>\s*</facsimile>"#, options: .regularExpression) {
+        written.removeSubrange(emptied)
+      }
+      return written
+    }
+
     /// One page's surface: its label, its extent, its image (sized where it
     /// has a text block), its zones and its text block; "" with neither.
     static func surface(_ zones: [TEIZone], textBlock: TEITextBlock? = nil, label: String, imageURL: String) -> String {
@@ -459,6 +572,7 @@
       if let textBlock {
         out +=
           "<zone xml:id=\"\(XMLFormatter.escapingAttribute(textBlock.id))\" type=\"\(textBlockType)\""
+          + (textBlock.derived ? " subtype=\"\(derivedSubtype)\"" : "")
           + " points=\"\(textBlock.pointsText)\""
           + (textBlock.style.isEmpty ? "" : " style=\"\(textBlock.style)\"") + "/>"
       }
