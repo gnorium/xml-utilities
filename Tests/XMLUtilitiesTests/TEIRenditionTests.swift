@@ -22,6 +22,9 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertTrue(TEIRendition.valid(property: "font-variant-numeric", value: "oldstyle-nums"))
     XCTAssertTrue(TEIRendition.valid(property: "font-variant-numeric", value: "lining-nums"))
     XCTAssertFalse(TEIRendition.valid(property: "font-variant-numeric", value: "tabular-nums"))
+    // A note over the frame's empty part keeps its measured, negative white.
+    XCTAssertTrue(TEIRendition.valid(property: "margin-block-end", value: "-14.5em"))
+    XCTAssertFalse(TEIRendition.valid(property: "padding", value: "-1em"))
     XCTAssertEqual(
       TEIRendition.css(from: TEIRendition.tokens("font-variant-numeric:oldstyle-nums")),
       "font-variant-numeric:oldstyle-nums;")

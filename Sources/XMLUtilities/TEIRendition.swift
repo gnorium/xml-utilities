@@ -106,7 +106,10 @@ public enum TEIRendition {
     default:
       if unit == "" { return number == 0 }
       let bound = unit == "px" || unit == "pt" ? 1024.0 : 64.0
-      return abs(number) <= bound && (number >= 0 || ["text-indent", "letter-spacing", "word-spacing"].contains(property))
+      // A margin may be negative: a note in a margin placed over the
+      // frame's empty part, by its measured white (user, 2026-10-14).
+      return abs(number) <= bound
+        && (number >= 0 || ["text-indent", "letter-spacing", "word-spacing"].contains(property) || property.hasPrefix("margin"))
     }
   }
 
