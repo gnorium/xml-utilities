@@ -743,7 +743,7 @@
             charactersLeft -= quantity.rounded(.up)
           case .length(let unit, let vertical):
             // As long as a page holds; a vertical one is a line of the page.
-            guard quantity <= (unit == "px" || unit == "pt" ? 512 : 128), !vertical || linesLeft >= 1 else {
+            guard quantity <= (unit == "px" || unit == "pt" ? 1024 : 128), !vertical || linesLeft >= 1 else {
               return false
             }
             if vertical { linesLeft -= 1 }

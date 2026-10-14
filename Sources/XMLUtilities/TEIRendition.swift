@@ -91,15 +91,17 @@ public enum TEIRendition {
       return false
     case "inline-size", "block-size":
       // A rule's or a frame's measure (a page's text block's height): up
-      // to the page's, never negative.
+      // to a page's, never negative. Lengths are in the body type's em
+      // (user, 2026-10-14), a page some sixty of them wide and eighty
+      // tall: twice the page-em bounds they replace.
       if unit == "" { return number == 0 }
       if unit == "%" { return (0...100).contains(number) }
-      if unit == "em" || unit == "rem" { return (0...64).contains(number) }
-      if unit == "px" || unit == "pt" { return (0...1024).contains(number) }
-      return (0...32).contains(number)
+      if unit == "em" || unit == "rem" { return (0...128).contains(number) }
+      if unit == "px" || unit == "pt" { return (0...2048).contains(number) }
+      return (0...64).contains(number)
     default:
       if unit == "" { return number == 0 }
-      let bound = unit == "px" || unit == "pt" ? 512.0 : 32.0
+      let bound = unit == "px" || unit == "pt" ? 1024.0 : 64.0
       return abs(number) <= bound && (number >= 0 || ["text-indent", "letter-spacing", "word-spacing"].contains(property))
     }
   }
