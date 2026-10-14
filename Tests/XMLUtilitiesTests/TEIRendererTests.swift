@@ -324,8 +324,8 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(drawn.textBlock?.points, [300, 400, 700, 400, 700, 500, 300, 500])
     XCTAssertEqual(drawn.textBlock?.body, 40)
     XCTAssertEqual(try XCTUnwrap(drawn.frame).measure, 44, accuracy: 0.001)
-    // Read again with a text block of its own: laid in with it, renamed,
-    // and the frame measured again (two body pages now).
+    // Read again with a text block of its own: laid in with it, renamed;
+    // the frame the header declares stands (the first declared wins).
     let page = """
       <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader/><facsimile><surface n="2" ulx="0" uly="0" lrx="1000" lry="1000">\
       <graphic url="\(b)" width="1000px" height="1300px"/><zone xml:id="textblock" type="textblock" points="50,50 950,50 950,950 50,950" style="font-size:20px"/>\
@@ -336,11 +336,18 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertTrue(laid.contains(
       #"<surface n="2" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\#(b)" width="1000px" height="1300px"/><zone xml:id="p2-textblock" type="textblock" points="50,50 950,50 950,950 50,950" style="font-size:20px"/></surface>"#))
     XCTAssertEqual(TEIFacsimile.textBlocks(in: laid).map(\.id), ["p1-textblock", "p2-textblock"])
-    let reframed = try XCTUnwrap(TEIRenderer.pages(in: laid).first?.frame)
+    XCTAssertEqual(TEIRenderer.pages(in: laid).first?.frame, TEIPageFrame(measure: 44, height: 55.9, margin: 3))
+    XCTAssertEqual(laid.components(separatedBy: #"xml:id="text-block""#).count, 2)
+    // Only a document declaring none is framed by its text blocks: two body
+    // pages now.
+    let undeclared = laid.replacingOccurrences(
+      of: #"<tagsDecl><rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em</rendition></tagsDecl>"#,
+      with: "")
+    XCTAssertNotEqual(undeclared, laid)
+    let reframed = try XCTUnwrap(TEIRenderer.pages(in: TEIFacsimile.framing(undeclared)).first?.frame)
     XCTAssertEqual(reframed.measure, 45, accuracy: 0.001)
     XCTAssertEqual(reframed.height, 58.5, accuracy: 0.001)
     XCTAssertEqual(reframed.margin, 2.5, accuracy: 0.001)
-    XCTAssertEqual(laid.components(separatedBy: #"xml:id="text-block""#).count, 2)
   }
 
   /// A note's place in a margin is an area around the frame: a side, or a

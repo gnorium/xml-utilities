@@ -292,11 +292,16 @@
       return ordered.last?.value ?? 0
     }
 
-    /// `document` with its header's work frame (`TEIRendition.frameID`)
-    /// as its pages' text blocks now give it (`workFrame`): written again
-    /// whenever a page is laid in, and gone where no page is measured. A
-    /// document with no header is as it was.
+    /// `document` with its header's work frame (`TEIRendition.frameID`):
+    /// a frame it declares stands—the first frame declared wins, as
+    /// everywhere the witness's renditions are joined (`TEIRendition.joined`,
+    /// gnorium-python `type_scale.joined`); where it declares none, its
+    /// pages' text blocks give it (`workFrame`), and none where no page is
+    /// measured. A document with no header is as it was.
     public static func framing(_ document: String) -> String {
+      if TEIRendition.frame(in: TEIRendition.declarations(of: TEIRendition.renditions(of: document))) != nil {
+        return document
+      }
       var framed = document
       if let old = framed.range(of: #"\s*<rendition\b[^>]*xml:id="text-block"[^>]*>[^<]*</rendition>"#, options: .regularExpression) {
         framed.removeSubrange(old)
