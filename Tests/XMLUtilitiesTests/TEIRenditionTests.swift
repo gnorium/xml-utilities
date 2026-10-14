@@ -126,4 +126,52 @@ final class TEIRenditionTests: XCTestCase {
     let lines = TEIRenderer.lines(in: #"<p>Whole<lb/>here.</p><p part="I">Runs<lb/>on</p>"#)
     XCTAssertEqual(lines.map(\.part), ["", "", "I", "I"])
   }
+
+  /// The witness's renditions joined over a header's and its pages'
+  /// (gnorium-python `type_scale.joined`, the reference): its
+  /// `test_joined_is_the_header_xml_utilities_pins_for_the_skeat_pages`
+  /// reads the same expected headers, written by Python from these pages.
+  func testJoinedRenditionsMatchPythonForTheSkeatPages() throws {
+    func fixture(_ name: String) throws -> String {
+      let url = try XCTUnwrap(Bundle.module.url(forResource: name, withExtension: "xml", subdirectory: "Fixtures/skeat"))
+      return try String(contentsOf: url, encoding: .utf8)
+    }
+    let pages = try (1...10).map { try TEIRendition.renditions(of: fixture("canvas-\($0)")) }
+    XCTAssertTrue(pages.allSatisfy { $0.contains(#"xml:id="gap-16""#) })
+    XCTAssertEqual(TEIRendition.joined([""] + pages), try fixture("joined-blank"))
+    let standing = try fixture("standing").trimmingCharacters(in: .whitespacesAndNewlines)
+    let joined = TEIRendition.joined([standing] + pages)
+    XCTAssertEqual(joined, try fixture("joined-standing"))
+    // The standing frame and size-1 are kept; its size-7 and gap-5 stay
+    // beside the pages' steps; what is no step goes.
+    XCTAssertTrue(joined.hasPrefix(#"<rendition xml:id="text-block" scheme="css" selector="text">font-size:46.10px;"#))
+    XCTAssertTrue(joined.contains("font-size:0.83rem") && joined.contains(#"xml:id="size-7""#) && joined.contains(#"xml:id="gap-5""#))
+    XCTAssertFalse(joined.contains(#"xml:id="title""#) || joined.contains("gap-0"))
+    // A page's header written again as Python heads it (`with_renditions`).
+    let page = try fixture("canvas-5")
+    XCTAssertEqual(TEIRendition.declaring(TEIRendition.renditions(of: page), in: page), page)
+    XCTAssertEqual(TEIRendition.declaring(pages[4], in: TEIRendition.declaring("", in: page)), page)
+  }
+
+  /// A page's renditions joined into a document's header: added where it
+  /// declares none, the document's kept where it does, and the document
+  /// as it was when the page adds nothing.
+  func testAPageRenditionsJoinTheDocumentHeader() {
+    let frame = #"<rendition xml:id="text-block" scheme="css" selector="text">font-size:45.89px;inline-size:54.54em;block-size:75.62em;margin:3.99em</rendition>"#
+    let size = #"<rendition xml:id="size-1" scheme="css">font-size:0.8251rem</rendition>"#
+    let document = #"<TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><fileDesc><titleStmt><title>T</title></titleStmt></fileDesc><encodingDesc><p>Joined.</p></encodingDesc></teiHeader><text><body><p>A</p></body></text></TEI>"#
+    let joined = TEIRendition.joining(frame + size, into: document)
+    XCTAssertEqual(TEIRendition.renditions(of: joined), frame + size)
+    XCTAssertTrue(joined.contains("<encodingDesc><tagsDecl>" + frame + size + "</tagsDecl><p>Joined.</p>"))
+    XCTAssertEqual(TEIRendition.joining(size, into: joined), joined)
+    XCTAssertEqual(TEIRendition.joining("", into: document), document)
+    let other = #"<rendition xml:id="size-1" scheme="css">font-size:0.9rem</rendition><rendition xml:id="gap-1" scheme="css">margin-block-start:0.7845rem</rendition>"#
+    XCTAssertEqual(
+      TEIRendition.renditions(of: TEIRendition.joining(other, into: joined)),
+      frame + size + #"<rendition xml:id="gap-1" scheme="css">margin-block-start:0.7845rem</rendition>"#)
+    // A document with no header is given one.
+    XCTAssertEqual(
+      TEIRendition.joining(size, into: "<TEI><text/></TEI>"),
+      "<TEI><teiHeader><encodingDesc><tagsDecl>" + size + "</tagsDecl></encodingDesc></teiHeader><text/></TEI>")
+  }
 }

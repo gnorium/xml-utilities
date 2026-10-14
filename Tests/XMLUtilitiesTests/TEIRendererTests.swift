@@ -461,6 +461,20 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertNil(TEIFacsimile.laying(page: "<TEI/>", fragment: "<p>X</p>", over: other, position: 3, in: document))
   }
 
+  /// A page laid in declares its steps in the document's header, beside
+  /// those the document declares (`TEIRendition.joining`).
+  func testALaidPageJoinsItsRenditionsIntoTheHeader() throws {
+    let document = Self.laidDocument(["<p>One.</p>", "<p>Two.</p>"])
+    let size = #"<rendition xml:id="size-1" scheme="css">font-size:0.8251rem</rendition>"#
+    let page = #"<TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><encodingDesc><tagsDecl>"#
+      + size + ##"</tagsDecl></encodingDesc></teiHeader><text><body><p rendition="#size-1">Two.</p></body></text></TEI>"##
+    let old = TEIRenderer.pages(in: document)[1]
+    let laid = try XCTUnwrap(
+      TEIFacsimile.laying(page: page, fragment: ##"<p rendition="#size-1">Two.</p>"##, over: old, position: 2, in: document))
+    XCTAssertTrue(laid.contains("<teiHeader><encodingDesc><tagsDecl>" + size + "</tagsDecl></encodingDesc></teiHeader>"))
+    XCTAssertEqual(TEIRenderer.pages(in: laid)[1].renditions["size-1"], "css:font-size=0.8251rem")
+  }
+
   /// Identical markup on two pages is two pages: only the named one changes.
   func testLayingChangesOnlyTheNamedPageWhenTwoReadTheSame() throws {
     let document = Self.laidDocument(["<p>Same.</p>", "<p>Same.</p>", "<p>Same.</p>"])

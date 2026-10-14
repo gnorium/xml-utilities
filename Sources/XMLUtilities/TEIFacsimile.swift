@@ -355,7 +355,8 @@
     /// zones (its whole TEI, `page`, holds them as `z1`, `z2`…) in the
     /// document's facsimile in place of the old page's surface, each id
     /// prefixed with the page's place (`p3-z1`, gnorium-python
-    /// `document_surface`) and the fragment's references renamed to match.
+    /// `document_surface`) and the fragment's references renamed to match,
+    /// and its renditions joined into the document's header.
     /// The page is found by its place (`position`, counted from 1, in
     /// `TEIRenderer.pageRanges`), never by searching for its text: a blank
     /// page's empty markup is in no document, and identical markup on an
@@ -414,8 +415,10 @@
         let at = laid.range(of: "</teiHeader>")?.upperBound ?? laid.range(of: "<text")?.lowerBound
         if let at { laid.insert(contentsOf: "\n  <facsimile>" + surfaces + "</facsimile>", at: at) }
       }
+      // The page's renditions joined into the header's (`TEIRendition.joining`):
+      // a step the page references declared in the document it is laid in.
       // The work frame as the pages laid in now give it.
-      return framing(laid)
+      return framing(TEIRendition.joining(TEIRendition.renditions(of: page), into: laid))
     }
 
     /// One page's surface: its label, its extent, its image (sized where it

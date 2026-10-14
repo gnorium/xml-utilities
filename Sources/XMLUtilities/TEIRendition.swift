@@ -241,6 +241,137 @@ public enum TEIRendition {
     declarations(in: TEIMarkup.document(xml))
   }
 
+  // MARK: - The witness's renditions in a header
+
+  /// The kinds of a type scale's step, in the order a header declares them,
+  /// and the CSS property each sets (gnorium-python `type_scale.KINDS`,
+  /// `PROPERTY`).
+  static let stepKinds = ["size", "leading", "indent", "gap"]
+  static let stepProperty = [
+    "size": "font-size", "leading": "line-height", "indent": "text-indent", "gap": "margin-block-start",
+  ]
+
+  /// The renditions a page's or a document's header declares, as its
+  /// `<tagsDecl>` holds them; "" where it declares none (gnorium-python
+  /// `type_scale.renditions_of`).
+  public static func renditions(of tei: String) -> String {
+    guard let declared = tei.range(of: #"<tagsDecl\b[^>]*?(?:/>|>[\s\S]*?</tagsDecl>)"#, options: .regularExpression)
+    else { return "" }
+    return renditionElements(in: String(tei[declared])).joined()
+  }
+
+  /// Each `<rendition>` element in `markup`, as written.
+  static func renditionElements(in markup: String) -> [String] {
+    let pattern = try! NSRegularExpression(pattern: #"<rendition\b[^>]*>[\s\S]*?</rendition>|<rendition\b[^>]*/>"#)
+    return pattern.matches(in: markup, range: NSRange(markup.startIndex..., in: markup)).compactMap {
+      Range($0.range, in: markup).map { String(markup[$0]) }
+    }
+  }
+
+  /// The witness's renditions over several declarations (each
+  /// `renditions(of:)` a header): the first frame declared, and every step,
+  /// the first declaration of an id kept—a later measurement only adds
+  /// steps. As a header declares them: the frame first, then each kind's
+  /// steps in id order; any other rendition is no part of them.
+  /// gnorium-python `type_scale.joined(declared).xml`, the reference.
+  public static func joined(_ declared: [String]) -> String {
+    var frame: TEIWorkFrame?
+    var steps: [(id: String, kind: String, value: Double)] = []
+    for renditions in declared {
+      let scale = scale(of: renditions)
+      frame = frame ?? scale.frame
+      for step in scale.steps where !steps.contains(where: { $0.id == step.id }) { steps.append(step) }
+    }
+    func order(_ step: (id: String, kind: String, value: Double)) -> (Int, Int) {
+      (stepKinds.firstIndex(of: step.kind) ?? 0, Int(step.id.split(separator: "-").last ?? "") ?? 0)
+    }
+    let header = frame.map { frame in
+      "<rendition xml:id=\"\(frameID)\" scheme=\"css\" selector=\"text\">"
+        + "font-size:\(String(format: "%.2f", frame.body))px;inline-size:\(String(format: "%.2f", frame.measure))em;"
+        + "block-size:\(String(format: "%.2f", frame.height))em;margin:\(String(format: "%.2f", frame.margin))em</rendition>"
+    } ?? ""
+    return header
+      + steps.sorted { order($0) < order($1) }.map { step in
+        "<rendition xml:id=\"\(step.id)\" scheme=\"css\">\(stepProperty[step.kind] ?? ""):\(Length(value: step.value, unit: "rem").text)</rendition>"
+      }.joined()
+  }
+
+  /// The frame and steps `renditions` declare (gnorium-python
+  /// `type_scale.parse`): the work frame (`frameID`), its body type in px
+  /// and its lengths in em, and each step (`size-1`…), its value in rem;
+  /// a rendition that is neither is no part of them.
+  static func scale(of renditions: String) -> (frame: TEIWorkFrame?, steps: [(id: String, kind: String, value: Double)]) {
+    var frame: TEIWorkFrame?
+    var steps: [(id: String, kind: String, value: Double)] = []
+    func length(_ value: String?, _ unit: String) -> Double? {
+      guard let value, let length = Length(value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()),
+        length.unit == unit
+      else { return nil }
+      return length.value
+    }
+    for written in renditionElements(in: renditions) {
+      guard let element = TEIMarkup.document(written).elements.first(where: { $0.name == "rendition" }) else { continue }
+      let id = element.attribute("xml:id")
+      var css: [String: String] = [:]
+      for declaration in element.textContent.split(separator: ";") {
+        let pair = declaration.split(separator: ":", maxSplits: 1)
+        guard pair.count == 2 else { continue }
+        css[pair[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] =
+          pair[1].trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+      if id == frameID {
+        if let body = length(css["font-size"], "px"), body > 0, let measure = length(css["inline-size"], "em"),
+          let height = length(css["block-size"], "em"), let margin = length(css["margin"], "em")
+        {
+          frame = TEIWorkFrame(body: body, measure: measure, height: height, margin: margin)
+        }
+        continue
+      }
+      guard id.range(of: #"^(size|leading|indent|gap)-[1-9][0-9]*$"#, options: .regularExpression) != nil else { continue }
+      let kind = String(id.prefix { $0 != "-" })
+      if let value = length(css[stepProperty[kind] ?? ""], "rem") { steps.append((id, kind, value)) }
+    }
+    return (frame, steps)
+  }
+
+  /// `document` with `renditions` as its header's `<tagsDecl>`, in place of
+  /// any it had: in its `<encodingDesc>`, one made after its `<fileDesc>`
+  /// (or a header made) where it has none (gnorium-python
+  /// `type_scale.with_renditions`, for a document). No renditions, none.
+  public static func declaring(_ renditions: String, in document: String) -> String {
+    var text = document.replacingOccurrences(
+      of: #"\s*<tagsDecl\b[^>]*?(?:/>|>[\s\S]*?</tagsDecl>)"#, with: "", options: .regularExpression)
+    if let empty = text.range(of: #"\s*<encodingDesc\b[^>]*?(?:/>|>\s*</encodingDesc>)"#, options: .regularExpression) {
+      text.removeSubrange(empty)
+    }
+    guard !renditions.isEmpty else { return text }
+    let tags = "<tagsDecl>" + renditions + "</tagsDecl>"
+    if let empty = text.range(of: #"<teiHeader\b[^>]*/>"#, options: .regularExpression) {
+      // An empty header (which gnorium-python never writes) holds them.
+      text.replaceSubrange(empty, with: "<teiHeader><encodingDesc>" + tags + "</encodingDesc></teiHeader>")
+    } else if let encoding = text.range(of: #"<encodingDesc\b[^>]*>"#, options: .regularExpression) {
+      text.insert(contentsOf: tags, at: encoding.upperBound)
+    } else if let anchor = text.range(of: "</fileDesc>") ?? text.range(of: #"<teiHeader\b[^>]*>"#, options: .regularExpression) {
+      text.insert(contentsOf: "<encodingDesc>" + tags + "</encodingDesc>", at: anchor.upperBound)
+    } else if let opening = text.range(of: #"<TEI\b[^>]*>"#, options: .regularExpression) {
+      text.insert(contentsOf: "<teiHeader><encodingDesc>" + tags + "</encodingDesc></teiHeader>", at: opening.upperBound)
+    }
+    return text
+  }
+
+  /// `document` with a page's renditions (`renditions`, as a page's header
+  /// declares them) joined into its header's (`joined`): its frame where it
+  /// declares none, its steps beside the document's, a step the document
+  /// declares keeping its id and value—as the assembly joins its pages'
+  /// (gnorium-python `concatenate_tei`). The document as it was where the
+  /// page declares none, or nothing the document does not.
+  public static func joining(_ renditions: String, into document: String) -> String {
+    guard !renditions.isEmpty else { return document }
+    let standing = self.renditions(of: document)
+    let merged = joined([standing, renditions])
+    return merged == standing ? document : declaring(merged, in: document)
+  }
+
   static func declarations(in root: TEIMarkup.Element) -> [String: String] {
     var result: [String: String] = [:]
     func visit(_ node: TEIMarkup.Element) {
