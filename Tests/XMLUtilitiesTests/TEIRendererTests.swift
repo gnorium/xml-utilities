@@ -461,7 +461,8 @@ final class TEIRendererTests: XCTestCase {
     }
     let pages = TEIRenderer.pages(in: laid)
     XCTAssertEqual(
-      pages.map(\.markup), ["<p>One.</p>", "<pb n=\"2\"/>\n<p>Two.</p>", "<p>Three.</p>", "<pb n=\"4\"/>\n<p>Four.</p>"])
+      pages.map(\.markup), ["<p>One.</p>", "<p>Two.</p>", "<p>Three.</p>", "<p>Four.</p>"])
+    XCTAssertEqual(laid.components(separatedBy: "<pb").count, 5, "the side's own break folded into the image's")
     XCTAssertTrue(laid.contains("<p>Four.</p>\n\n    </front>"))
     // A place that reads another image is no place to lay it.
     let other = TEIRenderer.pages(in: document)[1]
@@ -489,6 +490,28 @@ final class TEIRendererTests: XCTestCase {
     let laid = try XCTUnwrap(
       TEIFacsimile.laying(page: "<TEI/>", fragment: "<p>Changed.</p>", over: old, position: 2, in: document))
     XCTAssertEqual(TEIRenderer.pages(in: laid).map(\.markup), ["<p>Same.</p>", "<p>Changed.</p>", "<p>Same.</p>"])
+  }
+
+  /// One `<pb>` per page: a page laid in opening with its side's own
+  /// break has it folded into the image's, named as the side and carrying
+  /// the image; an opening's later side keeps its own, a mark within the
+  /// image's page (gnorium-python `own_page_break`).
+  func testLayingFoldsTheSidesOwnBreakIntoTheImages() throws {
+    let document = Self.laidDocument(["<p>One.</p>", "<p>Two.</p>"])
+    let one = try XCTUnwrap(TEIRenderer.layingPage(1, with: "<pb n=\"2\"/>\n<p>New.</p>", in: document))
+    XCTAssertTrue(one.contains("<pb n=\"2\" facs=\"https://example.org/iiif/p2/full/1300,/0/default.jpg\"/>\n<p>New.</p>"))
+    XCTAssertEqual(one.components(separatedBy: "<pb").count, 3)
+    let opening = try XCTUnwrap(
+      TEIRenderer.layingPage(1, with: "<pb n=\"2a\"/><p>Left.</p><pb n=\"2b\"/><p>Right.</p>", in: document))
+    let pages = TEIRenderer.pages(in: opening)
+    XCTAssertEqual(pages.map(\.label), ["1", "2a"])
+    XCTAssertEqual(pages[1].markup, "<p>Left.</p><pb n=\"2b\"/><p>Right.</p>")
+    XCTAssertEqual(pages[1].lines.filter { if case .mark = $0.kind { true } else { false } }.map(\.text), ["2b"])
+    // A page with no break of its own is laid as it is.
+    XCTAssertEqual(
+      TEIRenderer.layingPage(1, with: "<p>New.</p>", in: document),
+      TEIRenderer.replacingPage(1, with: "<p>New.</p>", in: document))
+    XCTAssertNil(TEIRenderer.layingPage(2, with: "<p>New.</p>", in: document))
   }
 
   /// A formula's MathML as a diff compares and draws it: its drawn content,

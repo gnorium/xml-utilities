@@ -594,6 +594,45 @@
       return out
     }
 
+    /// The side's own page break opening a page's markup—a `<pb>` with no
+    /// `facs`, which the explication prompt has every side open with—and
+    /// the markup after it; no tag where it opens with none.
+    public static func openingSideBreak(of markup: String) -> (tag: String?, rest: String) {
+      let trimmed = markup.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard let open = trimmed.range(of: #"^<pb\b[^>]*>"#, options: .regularExpression),
+        XMLFormatter.attribute("facs", in: String(trimmed[open])).isEmpty
+      else { return (nil, trimmed) }
+      return (String(trimmed[open]), String(trimmed[open.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// `xml` with page `index` holding `markup`, as `replacingPage` lays it,
+    /// one `<pb>` per page: the side's own page break opening `markup`
+    /// (`openingSideBreak`) is the page's image break, carrying the image's
+    /// `facs`, as the overture's assembly folds it (gnorium-python
+    /// `own_page_break`). An opening's later sides keep their own breaks,
+    /// without `facs`; `pages` reads them as marks within the image. Laying
+    /// the side's break after the image's gave a single page two page
+    /// beginnings at one point, and its label twice. Nil when there is no
+    /// such page.
+    public static func layingPage(_ index: Int, with markup: String, in xml: String) -> String? {
+      let (side, rest) = openingSideBreak(of: markup)
+      let spans = pageSpans(in: xml)
+      guard spans.indices.contains(index) else { return nil }
+      guard let side else { return replacingPage(index, with: markup, in: xml) }
+      let tag = spans[index].open.tag
+      let image = String(xml[tag])
+      let (start, end) = (xml.utf8.distance(from: xml.startIndex, to: tag.lowerBound), xml.utf8.distance(from: xml.startIndex, to: tag.upperBound))
+      guard var laid = replacingPage(index, with: rest, in: xml) else { return nil }
+      var folded = side
+      if let facs = image.range(of: #"\sfacs\s*=\s*("[^"]*"|'[^']*')"#, options: .regularExpression),
+        let close = folded.range(of: #"\s*/?>$"#, options: .regularExpression)
+      {
+        folded.insert(contentsOf: image[facs], at: close.lowerBound)
+      }
+      laid.replaceSubrange(laid.utf8.index(laid.startIndex, offsetBy: start)..<laid.utf8.index(laid.startIndex, offsetBy: end), with: folded)
+      return laid
+    }
+
     /// Each resemblance as a complete XML document, preserving front/body/back
     /// matter and containers crossing the page boundary. The leading page
     /// break is omitted, as the quotations service's page anchors require.

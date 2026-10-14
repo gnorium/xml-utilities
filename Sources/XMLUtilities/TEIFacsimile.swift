@@ -356,7 +356,9 @@
     }
 
     /// A page laid into a document in place of a page it holds: `fragment`
-    /// (the new page's body) in place of the old page's content, and the new page's
+    /// (the new page's body) in place of the old page's content, its side's
+    /// own page break folded into the page's image break
+    /// (`TEIRenderer.layingPage`), and the new page's
     /// zones (its whole TEI, `page`, holds them as `z1`, `z2`…) in the
     /// document's facsimile in place of the old page's surface, each id
     /// prefixed with the page's place (`p3-z1`, gnorium-python
@@ -399,7 +401,7 @@
       let pages = TEIRenderer.pages(in: laid)
       guard pages.indices.contains(index),
         TEIRenderer.serviceID(ofFacsimile: pages[index].facsimileURL) == service,
-        let replaced = TEIRenderer.replacingPage(index, with: renamed, in: laid)
+        let replaced = TEIRenderer.layingPage(index, with: renamed, in: laid)
       else { return nil }
       laid = replaced
       let surfaces = surface(
