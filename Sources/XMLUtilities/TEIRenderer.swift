@@ -19,23 +19,29 @@
     /// `facs="#…"` but does not hold.
     public let zones: [String: TEIZone]
     public let renditions: [String: String]
-    /// Its text block as measured on its scan (its surface's `textblock`
-    /// zone), nil where it was not measured.
+    /// Its main text block as measured on its scan (its surface's
+    /// `textblock` zone), nil where it was not measured.
     public let textBlock: TEITextBlock?
+    /// The size of its work's pages' scans in pixels, its body pages'
+    /// (`TEIFacsimile.workPage`): what tells a page genuinely larger (a
+    /// plate, a foldout). Nil where it is not known.
+    public let workPage: (width: Double, height: Double)?
 
     public init(
       label: String, facsimileURL: String, lines: [TEILine], markup: String, zones: [String: TEIZone] = [:],
-      renditions: [String: String] = [:], textBlock: TEITextBlock? = nil
+      renditions: [String: String] = [:], textBlock: TEITextBlock? = nil,
+      workPage: (width: Double, height: Double)? = nil
     ) {
       self.init(
         label: label, facsimileURL: facsimileURL, markup: markup, zones: zones, renditions: renditions,
-        textBlock: textBlock
+        textBlock: textBlock, workPage: workPage
       ) { lines }
     }
 
     init(
       label: String, facsimileURL: String, markup: String, zones: [String: TEIZone], renditions: [String: String] = [:],
-      textBlock: TEITextBlock? = nil, read: @escaping @Sendable () -> [TEILine]
+      textBlock: TEITextBlock? = nil, workPage: (width: Double, height: Double)? = nil,
+      read: @escaping @Sendable () -> [TEILine]
     ) {
       self.label = label
       self.facsimileURL = facsimileURL
@@ -44,14 +50,29 @@
       self.zones = zones
       self.renditions = renditions
       self.textBlock = textBlock
+      self.workPage = workPage
     }
 
-    /// The frame the page is set in, in page-em: the work's
+    /// The frame the page is set in (user, 2026-10-14): the work's
     /// (`TEIRendition.frame(in:)`, its header's), else the page's own
-    /// measured text block, else none (user, 2026-10-13). Its margins are
-    /// equal on all four sides of the page (`TEIRenderer.frameMargin`).
-    public var frame: (measure: Double, height: Double)? {
-      TEIRendition.frame(in: renditions) ?? textBlock?.size
+    /// measured main text block (`TEITextBlock.frame`), else none. The
+    /// page is its frame and its marginalia with the frame's margin, equal,
+    /// around them (`TEIView`), unless it is genuinely larger than its
+    /// work's pages (a plate, a foldout, a manuscript leaf): its scan
+    /// larger than theirs by more than a margin either way. Then it is its
+    /// scan's own size, at the same scale (`TEIPageFrame.page`).
+    public var frame: TEIPageFrame? {
+      guard let work = TEIRendition.frame(in: renditions) ?? textBlock?.frame else { return nil }
+      var page: (width: Double, height: Double)?
+      if let workPage, let textBlock, textBlock.imageWidth > 0, textBlock.imageHeight > 0,
+        textBlock.imageWidth - workPage.width > work.margin * work.body
+          || textBlock.imageHeight - workPage.height > work.margin * work.body
+      {
+        page = (textBlock.imageWidth / work.body, textBlock.imageHeight / work.body)
+      }
+      return TEIPageFrame(
+        measure: work.measure, height: work.height, margin: work.margin, pageWidth: page?.width ?? 0,
+        pageHeight: page?.height ?? 0)
     }
 
     /// A page's lines, read once, by whichever thread asks first.
@@ -405,16 +426,31 @@
   /// a facsimile edition is read one opening at a time and no HTML fragment
   /// can carry that structure.
   public enum TEIRenderer {
-    /// The page-em a rendered page is wide (gnorium-python
-    /// `layout_measure.PAGE_EMS`): 1em is the page's width over it, the
-    /// canonical render's 16px on its 640px page.
-    public static let pageEms = 40.0
+    /// The areas around the frame a note in a margin is set in, outside
+    /// the frame where the scan has it (user, 2026-10-14), in reading order:
+    /// above, beside, below, a corner where it stands beyond two sides.
+    public static let marginalAreas = [
+      "top-left", "top", "top-right", "margin-left", "margin-right", "bottom-left", "bottom", "bottom-right",
+    ]
 
-    /// The margin around a frame (`TEIPage.frame`) on every side of the
-    /// page, equal on all four: what its measure leaves of the page's width,
-    /// halved. In page-em.
-    public static func frameMargin(measure: Double) -> Double {
-      max(0, (pageEms - measure) / 2)
+    /// The area around the frame (`marginalAreas`) a note's place (TEI's
+    /// `place`, one or two of "top", "bottom", "margin-left",
+    /// "margin-right": "top margin-left" a corner; gnorium-python
+    /// `tei_encoding.MARGINAL_PLACES`) sets it in; nil for any other place.
+    /// A note in the "margin", its side unknown, stays in the text.
+    public static func marginalArea(of place: String) -> String? {
+      let tokens = Set(place.split(whereSeparator: \.isWhitespace).map(String.init))
+      let rows = tokens.intersection(["top", "bottom"])
+      let columns = tokens.intersection(["margin-left", "margin-right"])
+      guard !tokens.isEmpty, rows.count + columns.count == tokens.count, rows.count <= 1, columns.count <= 1 else {
+        return nil
+      }
+      switch (rows.first, columns.first) {
+      case (let row?, let column?): return row + "-" + (column == "margin-left" ? "left" : "right")
+      case (let row?, nil): return row
+      case (nil, let column?): return column
+      default: return nil
+      }
     }
 
     /// Split the body at the page breaks that carry a facsimile.
@@ -493,6 +529,7 @@
       let facsimile = TEIFacsimile.blocks(in: xml)
       let zones = TEIFacsimile.zones(in: facsimile)
       let textBlocks = TEIFacsimile.textBlocks(in: facsimile)
+      let workPage = TEIFacsimile.workPage(of: textBlocks)
       let renditions = TEIRendition.declarations(in: TEIMarkup.document(xml))
       return pageSpans(in: xml).map { open, range in
         let markup = String(xml[range])
@@ -502,7 +539,8 @@
           facsimileURL: open.facsimileURL,
           markup: markup.trimmingCharacters(in: .whitespacesAndNewlines),
           zones: zones, renditions: renditions,
-          textBlock: TEIFacsimile.textBlock(of: open.facsimileURL, label: open.label, in: textBlocks)
+          textBlock: TEIFacsimile.textBlock(of: open.facsimileURL, label: open.label, in: textBlocks),
+          workPage: workPage
         ) {
           lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones, renditions: renditions)
         }

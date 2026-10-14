@@ -280,40 +280,40 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(TEIRenderer.faults(in: boxed).filter { $0.kind == .zone }.map(\.detail), ["bbox"])
   }
 
-  /// Every page is set in the work's frame, its body pages' text block:
-  /// the header's rendition where the document has one, else the page's own
-  /// measured text block (its surface's `textblock` zone, sized by its
-  /// graphic), else none; laid in again, a page's text block goes with it
-  /// and the frame is measured again (user, 2026-10-13).
+  /// Every page is set in the work's frame, its body pages' main text
+  /// block in their body type's em: the header's rendition where the
+  /// document has one, else the page's own measured text block (its
+  /// surface's `textblock` zone, sized by its graphic, its type its style),
+  /// else none; laid in again, a page's text block goes with it and the
+  /// frame is measured again (user, 2026-10-13, 2026-10-14).
   func testPagesAreSetInTheWorksFrameMeasuredFromTheirTextBlocks() throws {
     let a = "https://example.org/iiif/a/full/1300,/0/default.jpg"
     let b = "https://example.org/iiif/b/full/1300,/0/default.jpg"
     let document = """
       <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><fileDesc/><encodingDesc><p>Joined.</p></encodingDesc></teiHeader>
       <facsimile><surface n="1" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\(a)" width="1000px" height="1300px"/>\
-      <zone xml:id="p1-textblock" type="textblock" points="60,60 940,60 940,920 60,920"/></surface>\
+      <zone xml:id="p1-textblock" type="textblock" points="60,60 940,60 940,920 60,920" style="font-size:20px"/></surface>\
       <surface n="2" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\(b)" width="1000px" height="1300px"/>\
-      <zone xml:id="p2-textblock" type="textblock" points="300,400 700,400 700,500 300,500"/></surface></facsimile>
+      <zone xml:id="p2-textblock" type="textblock" points="300,400 700,400 700,500 300,500" style="font-size:40px"/></surface></facsimile>
       <text><body><pb n="1" facs="\(a)"/><p>Body.</p>
       <pb n="2" facs="\(b)"/><p>Title.</p></body></text></TEI>
       """
     let pages = TEIRenderer.pages(in: document)
-    // No header frame yet: each page its own text block, in page-em.
+    // No header frame yet: each page its own text block, in its own type.
     let body = try XCTUnwrap(pages[0].frame)
-    XCTAssertEqual(body.measure, 35.2, accuracy: 0.001)
-    XCTAssertEqual(body.height, 44.72, accuracy: 0.001)
-    XCTAssertEqual(try XCTUnwrap(pages[1].frame).measure, 16, accuracy: 0.001)
+    XCTAssertEqual(body.measure, 44, accuracy: 0.001)
+    XCTAssertEqual(body.height, 55.9, accuracy: 0.001)
+    XCTAssertEqual(body.margin, 3, accuracy: 0.001)
+    XCTAssertEqual(try XCTUnwrap(pages[1].frame).measure, 10, accuracy: 0.001)
     XCTAssertEqual(pages[0].textBlock?.fractions, [0.06, 0.06, 0.94, 0.06, 0.94, 0.92, 0.06, 0.92])
-    XCTAssertEqual(TEIRenderer.frameMargin(measure: body.measure), 2.4, accuracy: 0.001)
+    XCTAssertEqual(pages[0].textBlock?.body, 20)
     // The work frame: the body page's, the title page counting for its
     // little text; the header declares it and every page is set in it.
     let framed = TEIFacsimile.framing(document)
     XCTAssertTrue(framed.contains(
-      #"<encodingDesc><p>Joined.</p><tagsDecl><rendition xml:id="text-block" scheme="css" selector="text">inline-size:35.2em;block-size:44.72em</rendition></tagsDecl></encodingDesc>"#))
+      #"<encodingDesc><p>Joined.</p><tagsDecl><rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em</rendition></tagsDecl></encodingDesc>"#))
     for page in TEIRenderer.pages(in: framed) {
-      let frame = try XCTUnwrap(page.frame)
-      XCTAssertEqual(frame.measure, 35.2, accuracy: 0.001)
-      XCTAssertEqual(frame.height, 44.72, accuracy: 0.001)
+      XCTAssertEqual(page.frame, TEIPageFrame(measure: 44, height: 55.9, margin: 3))
     }
     XCTAssertEqual(TEIFacsimile.framing(framed), framed)
     // A page drawn alone is handed the frame and its own text block.
@@ -322,23 +322,60 @@ final class TEIRendererTests: XCTestCase {
       + "<text><body><pb n=\"2\" facs=\"\(b)\"/>" + title.markup + "</body></text></TEI>"
     let drawn = try XCTUnwrap(TEIRenderer.pages(in: alone).first)
     XCTAssertEqual(drawn.textBlock?.points, [300, 400, 700, 400, 700, 500, 300, 500])
-    XCTAssertEqual(try XCTUnwrap(drawn.frame).measure, 35.2, accuracy: 0.001)
+    XCTAssertEqual(drawn.textBlock?.body, 40)
+    XCTAssertEqual(try XCTUnwrap(drawn.frame).measure, 44, accuracy: 0.001)
     // Read again with a text block of its own: laid in with it, renamed,
     // and the frame measured again (two body pages now).
     let page = """
       <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader/><facsimile><surface n="2" ulx="0" uly="0" lrx="1000" lry="1000">\
-      <graphic url="\(b)" width="1000px" height="1300px"/><zone xml:id="textblock" type="textblock" points="50,50 950,50 950,950 50,950"/>\
+      <graphic url="\(b)" width="1000px" height="1300px"/><zone xml:id="textblock" type="textblock" points="50,50 950,50 950,950 50,950" style="font-size:20px"/>\
       </surface></facsimile><text><body><p>Body again.</p></body></text></TEI>
       """
     let laid = try XCTUnwrap(TEIFacsimile.laying(
       page: page, fragment: "<p>Body again.</p>", over: TEIRenderer.pages(in: framed)[1], position: 2, in: framed))
     XCTAssertTrue(laid.contains(
-      #"<surface n="2" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\#(b)" width="1000px" height="1300px"/><zone xml:id="p2-textblock" type="textblock" points="50,50 950,50 950,950 50,950"/></surface>"#))
+      #"<surface n="2" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\#(b)" width="1000px" height="1300px"/><zone xml:id="p2-textblock" type="textblock" points="50,50 950,50 950,950 50,950" style="font-size:20px"/></surface>"#))
     XCTAssertEqual(TEIFacsimile.textBlocks(in: laid).map(\.id), ["p1-textblock", "p2-textblock"])
     let reframed = try XCTUnwrap(TEIRenderer.pages(in: laid).first?.frame)
-    XCTAssertEqual(reframed.measure, 36, accuracy: 0.001)
-    XCTAssertEqual(reframed.height, 46.8, accuracy: 0.001)
+    XCTAssertEqual(reframed.measure, 45, accuracy: 0.001)
+    XCTAssertEqual(reframed.height, 58.5, accuracy: 0.001)
+    XCTAssertEqual(reframed.margin, 2.5, accuracy: 0.001)
     XCTAssertEqual(laid.components(separatedBy: #"xml:id="text-block""#).count, 2)
+  }
+
+  /// A note's place in a margin is an area around the frame: a side, or a
+  /// corner as two; "margin", its side unknown, and any other place none.
+  func testANotesMarginalPlaceIsAnAreaAroundTheFrame() {
+    XCTAssertEqual(TEIRenderer.marginalArea(of: "margin-left"), "margin-left")
+    XCTAssertEqual(TEIRenderer.marginalArea(of: "bottom"), "bottom")
+    XCTAssertEqual(TEIRenderer.marginalArea(of: "top margin-left"), "top-left")
+    XCTAssertEqual(TEIRenderer.marginalArea(of: "margin-right bottom"), "bottom-right")
+    XCTAssertNil(TEIRenderer.marginalArea(of: "margin"))
+    XCTAssertNil(TEIRenderer.marginalArea(of: "foot"))
+    XCTAssertNil(TEIRenderer.marginalArea(of: "top bottom"))
+    XCTAssertNil(TEIRenderer.marginalArea(of: ""))
+  }
+
+  /// A page genuinely larger than its work's (a foldout: its scan wider
+  /// than the body pages' by more than a margin) is its scan's own size, in
+  /// the work's em; a page of the body pages' size is its frame and its
+  /// marginalia with their margin.
+  func testAGenuinelyLargerPageIsItsScansOwnSize() throws {
+    let a = "https://example.org/iiif/a/full/1300,/0/default.jpg"
+    let b = "https://example.org/iiif/b/full/1300,/0/default.jpg"
+    let document = """
+      <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><encodingDesc><tagsDecl>\
+      <rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em</rendition>\
+      </tagsDecl></encodingDesc></teiHeader>
+      <facsimile><surface n="1" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\(a)" width="1000px" height="1300px"/>\
+      <zone xml:id="p1-textblock" type="textblock" points="60,60 940,60 940,920 60,920" style="font-size:20px"/></surface>\
+      <surface n="2" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\(b)" width="2400px" height="1300px"/>\
+      <zone xml:id="p2-textblock" type="textblock" points="100,100 200,100 200,150 100,150" style="font-size:20px"/></surface></facsimile>
+      <text><body><pb n="1" facs="\(a)"/><p>Body.</p><pb n="2" facs="\(b)"/><p>Plate.</p></body></text></TEI>
+      """
+    let pages = TEIRenderer.pages(in: document)
+    XCTAssertEqual(pages[0].frame, TEIPageFrame(measure: 44, height: 55.9, margin: 3))
+    XCTAssertEqual(pages[1].frame, TEIPageFrame(measure: 44, height: 55.9, margin: 3, pageWidth: 120, pageHeight: 65))
   }
 
   /// A page read again is laid into the document with its zones: its body

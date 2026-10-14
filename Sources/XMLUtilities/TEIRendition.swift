@@ -1,13 +1,51 @@
 #if SERVER
 import Foundation
 
+/// The frame a work's pages are set in (`TEIRendition.frameRendition`): its
+/// body type on its scans, in their pixels per em, and in that em the main
+/// text block's measure and height and the margin around a page's content.
+public struct TEIWorkFrame: Sendable, Equatable {
+  public let body: Double
+  public let measure: Double
+  public let height: Double
+  public let margin: Double
+
+  public init(body: Double, measure: Double, height: Double, margin: Double) {
+    self.body = body
+    self.measure = measure
+    self.height = height
+    self.margin = margin
+  }
+}
+
+/// The frame one page is set in (`TEIPage.frame`), in em of its work's body
+/// type: the main text block's measure and height, and the equal margin
+/// around the page's content; and, for a page genuinely larger than its
+/// work's (a plate, a foldout), its own size (0 for any other page).
+public struct TEIPageFrame: Sendable, Equatable {
+  public let measure: Double
+  public let height: Double
+  public let margin: Double
+  public let pageWidth: Double
+  public let pageHeight: Double
+
+  public init(measure: Double, height: Double, margin: Double, pageWidth: Double = 0, pageHeight: Double = 0) {
+    self.measure = measure
+    self.height = height
+    self.margin = margin
+    self.pageWidth = pageWidth
+    self.pageHeight = pageHeight
+  }
+}
+
 /// A bounded subset of standard TEI CSS rendition, describing source layout.
 /// No positioning, text coordinates, URLs, arbitrary selectors or fonts.
 public enum TEIRendition {
   public static let properties = [
     "font-size", "line-height", "letter-spacing", "word-spacing", "text-indent", "margin-top", "margin-bottom",
     "margin-left", "margin-right", "margin-block-start", "margin-block-end", "margin-inline-start",
-    "margin-inline-end", "text-align", "font-weight", "font-style", "font-variant-caps", "column-gap",
+    "margin-inline-end", "text-align", "font-weight", "font-style", "font-variant-caps", "font-variant-numeric",
+    "column-gap",
     "inline-size", "block-size", "border-style", "padding", "padding-block", "padding-inline", "padding-block-start",
     "padding-block-end", "padding-inline-start", "padding-inline-end",
   ]
@@ -16,7 +54,7 @@ public enum TEIRendition {
   /// overrides its parent's, and where it has none it takes its parent's.
   static let inherited: Set<String> = [
     "font-size", "line-height", "letter-spacing", "word-spacing", "text-indent", "text-align", "font-weight",
-    "font-style", "font-variant-caps",
+    "font-style", "font-variant-caps", "font-variant-numeric",
   ]
   /// A block's inline margins: its box's, which the boxes inside it stand
   /// within.
@@ -38,12 +76,15 @@ public enum TEIRendition {
     if property == "font-weight" { return ["normal", "bold", "400", "600", "700"].contains(value) }
     if property == "font-style" { return ["normal", "italic"].contains(value) }
     if property == "font-variant-caps" { return ["normal", "small-caps"].contains(value) }
+    // Old-style or lining figures, as the print sets its numerals (the
+    // edition face's onum and lnum).
+    if property == "font-variant-numeric" { return ["normal", "oldstyle-nums", "lining-nums"].contains(value) }
     if property == "border-style" { return ["none", "solid", "double", "dotted", "dashed"].contains(value) }
     guard properties.contains(property), let length = Length(value) else { return false }
     let (number, unit) = (length.value, length.unit)
     switch property {
     case "font-size":
-      return pageEm(of: length).map(fontSizes.contains) ?? false
+      return bodyEm(of: length).map(fontSizes.contains) ?? false
     case "line-height":
       if unit == "" || unit == "em" { return (0.75...3).contains(number) }
       if unit == "%" { return (75...300).contains(number) }
@@ -63,17 +104,17 @@ public enum TEIRendition {
     }
   }
 
-  /// The type sizes a page may set, in page-em (the page's own 1em, the
-  /// renderer's 16 px): each written value, and each element's size as the
+  /// The type sizes a page may set, in em of the work's body type (its
+  /// 1em, the renderer's 16 px): each written value, and each element's size as the
   /// cascade computes it (`cascade`), so a size written inside a smaller
   /// one is held to the same bounds (user, 2026-10-14). gnorium-python's
   /// `tei_encoding.FONT_SIZES`.
   public static let fontSizes: ClosedRange<Double> = 0.5...4
 
-  /// A font-size in page-em: em and rem as written (the page's font is
-  /// the root's), % of it, px of its 16, pt as CSS's 4/3 px; nil for a
-  /// unit a font-size does not take.
-  static func pageEm(of size: Length) -> Double? {
+  /// A font-size in em of the body type: em and rem as written (the
+  /// page's font is the root's, the body type), % of it, px of its 16, pt
+  /// as CSS's 4/3 px; nil for a unit a font-size does not take.
+  static func bodyEm(of size: Length) -> Double? {
     switch size.unit {
     case "em", "rem": return size.value
     case "%": return size.value / 100
@@ -83,11 +124,11 @@ public enum TEIRendition {
     }
   }
 
-  /// The font-size a cascaded rend (`cascade`) computes, in page-em: 1
+  /// The font-size a cascaded rend (`cascade`) computes, in em: 1
   /// where it sets none.
   public static func fontSize(of rend: String) -> Double? {
     guard let size = Setting(rend).length("font-size") else { return 1 }
-    return pageEm(of: size)
+    return bodyEm(of: size)
   }
 
   public static func tokens(_ css: String) -> String {
@@ -114,45 +155,76 @@ public enum TEIRendition {
     }.joined()
   }
 
-  /// The work frame's rendition (gnorium-python `facsimile.frame_rendition`):
-  /// the text block every page of the text is set in, its measure
-  /// (`inline-size`) and its height (`block-size`) in page-em, the median of
-  /// its pages' measured text blocks (`TEIFacsimile.workFrame`). TEI's own
-  /// CSS rendition of `<text>` in the header's `<tagsDecl>`, so a document
-  /// carries it and a page drawn alone is handed it with the rest
-  /// (`header`); derived, written again whenever a page is laid in.
+  /// The work frame's rendition (gnorium-python `facsimile.frame_rendition`,
+  /// user, 2026-10-14): the work's body type on its scans (`font-size`, in
+  /// the scans' pixels, as its surfaces' graphics count them: type set on
+  /// an image shown at its own pixels), and in that em the main text block
+  /// every page of the text is set in—its measure (`inline-size`) and its
+  /// height (`block-size`)—and the margin around a page's content
+  /// (`margin`): the medians of its pages' measured main text blocks
+  /// (`TEIFacsimile.workFrame`). TEI's own CSS rendition of `<text>` in the
+  /// header's `<tagsDecl>`, so a document carries it and a page drawn alone
+  /// is handed it with the rest (`header`); derived, written again whenever
+  /// a page is laid in. Every em the TEI writes is this body type's.
   public static let frameID = "text-block"
 
-  public static func frameRendition(measure: Double, height: Double) -> String {
-    "<rendition xml:id=\"\(frameID)\" scheme=\"css\" selector=\"text\">inline-size:\(Length(value: measure, unit: "em").text);"
-      + "block-size:\(Length(value: height, unit: "em").text)</rendition>"
+  public static func frameRendition(_ frame: TEIWorkFrame) -> String {
+    "<rendition xml:id=\"\(frameID)\" scheme=\"css\" selector=\"text\">"
+      + "font-size:\(Length(value: frame.body, unit: "px").text);inline-size:\(Length(value: frame.measure, unit: "em").text);"
+      + "block-size:\(Length(value: frame.height, unit: "em").text);margin:\(Length(value: frame.margin, unit: "em").text)"
+      + "</rendition>"
   }
 
-  /// The work frame the renditions declare (`frameID`), in page-em; nil
-  /// where they declare none.
-  public static func frame(in definitions: [String: String]) -> (measure: Double, height: Double)? {
+  /// The work frame the renditions declare (`frameID`); nil where they
+  /// declare none, or one without its body type.
+  public static func frame(in definitions: [String: String]) -> TEIWorkFrame? {
     guard let rend = definitions[frameID] else { return nil }
     let setting = Setting(rend)
-    guard let measure = setting.length("inline-size"), measure.unit == "em", measure.value > 0,
-      let height = setting.length("block-size"), height.unit == "em", height.value > 0
+    guard let body = setting.length("font-size"), body.unit == "px", body.value > 0,
+      let measure = setting.length("inline-size"), measure.unit == "em", measure.value > 0,
+      let height = setting.length("block-size"), height.unit == "em", height.value > 0,
+      let margin = setting.length("margin"), margin.unit == "em", margin.value >= 0
     else { return nil }
-    return (measure.value, height.value)
+    return TEIWorkFrame(body: body.value, measure: measure.value, height: height.value, margin: margin.value)
+  }
+
+  /// The work frame's declarations as tokens: its four lengths, each in its
+  /// unit (`frame(in:)`), never a property a page's text takes.
+  static func frameTokens(_ css: String) -> String {
+    let units = ["font-size": "px", "inline-size": "em", "block-size": "em", "margin": "em"]
+    return css.split(separator: ";").compactMap { declaration -> String? in
+      let pair = declaration.split(separator: ":", maxSplits: 1)
+      guard pair.count == 2 else { return nil }
+      let name = pair[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      let value = pair[1].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      guard let unit = units[name], let length = Length(value), length.unit == unit, length.value >= 0 else { return nil }
+      return "css:\(name)=\(value)"
+    }.joined(separator: " ")
   }
 
   public static func header(_ definitions: [String: String]) -> String {
     guard !definitions.isEmpty else { return "" }
     let entries = definitions.keys.sorted().map { id in
       let selector = id == frameID ? " selector=\"text\"" : ""
-      return "<rendition xml:id=\"\(XMLFormatter.escapingAttribute(id))\" scheme=\"css\"\(selector)>\(XMLFormatter.escapingAttribute(css(from: definitions[id] ?? "")))</rendition>"
+      let declared = id == frameID ? frame(in: definitions).map(frameDeclarations) ?? "" : css(from: definitions[id] ?? "")
+      return "<rendition xml:id=\"\(XMLFormatter.escapingAttribute(id))\" scheme=\"css\"\(selector)>\(XMLFormatter.escapingAttribute(declared))</rendition>"
     }.joined()
     return "<teiHeader><encodingDesc><tagsDecl>" + entries + "</tagsDecl></encodingDesc></teiHeader>"
+  }
+
+  /// The work frame's declarations as its rendition writes them.
+  static func frameDeclarations(_ frame: TEIWorkFrame) -> String {
+    let rendition = frameRendition(frame)
+    guard let open = rendition.firstIndex(of: ">"), let close = rendition.range(of: "</rendition>") else { return "" }
+    return String(rendition[rendition.index(after: open)..<close.lowerBound])
   }
 
   static func declarations(in root: TEIMarkup.Element) -> [String: String] {
     var result: [String: String] = [:]
     func visit(_ node: TEIMarkup.Element) {
       if node.name == "rendition", ["", "css"].contains(node.attribute("scheme")), !node.attribute("xml:id").isEmpty {
-        result[node.attribute("xml:id")] = tokens(node.textContent)
+        let id = node.attribute("xml:id")
+        result[id] = id == frameID ? frameTokens(node.textContent) : tokens(node.textContent)
       }
       for child in node.elements { visit(child) }
     }
@@ -297,7 +369,7 @@ public enum TEIRendition {
       let computed = result.length("font-size").flatMap { around in
         own.relativeFont.map { Length(value: around.value * $0, unit: around.unit) }
       } ?? size
-      if !(pageEm(of: computed).map(fontSizes.contains) ?? false) { own.remove(["font-size"]) }
+      if !(bodyEm(of: computed).map(fontSizes.contains) ?? false) { own.remove(["font-size"]) }
     }
     let factor = own.relativeFont
     if case .block(let first) = placement {

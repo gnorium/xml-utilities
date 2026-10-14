@@ -55,13 +55,16 @@
     }
   }
 
-  /// A page's text block on its scan, as the recognition measured it
-  /// (gnorium-python `layout_measure.text_block_corners`, placed by
-  /// `facsimile.place_text_block`; user, 2026-10-13): its four corners,
-  /// clockwise from the top-left and carrying the page's skew, a polygon
-  /// zone (`type="textblock"`, TEI `@points`) of the page's surface, whose
-  /// graphic gives the scan's size in pixels: the 0–1000 space keeps no
-  /// proportions. Measured by tools, never written by the model.
+  /// A page's main text block on its scan, as the recognition measured it
+  /// (gnorium-python `layout_measure.zone_corners`, placed by
+  /// `facsimile.place_text_block`; user, 2026-10-13, 2026-10-14): its four
+  /// corners, clockwise from the top-left and carrying the page's skew, a
+  /// polygon zone (`type="textblock"`, TEI `@points`) of the page's
+  /// surface, whose graphic gives the scan's size in pixels (the 0–1000
+  /// space keeps no proportions), and whose style gives the type the block
+  /// is set in, the scan's pixels per em (`font-size:…px`). Its printed
+  /// text only, never its marginalia. Measured by tools, never written by
+  /// the model.
   public struct TEITextBlock: Sendable, Equatable {
     public let id: String
     /// The corners, x and y in turn, in its surface's coordinates.
@@ -77,11 +80,13 @@
     /// Its surface's image and label: which page it is of.
     public let imageURL: String
     public let label: String
+    /// The type it is set in: the scan's pixels per em (0: not measured).
+    public let body: Double
 
     public init(
       id: String, points: [Double], surfaceULX: Double = 0, surfaceULY: Double = 0, surfaceLRX: Double = 1000,
       surfaceLRY: Double = 1000, imageWidth: Double = 0, imageHeight: Double = 0, imageURL: String = "",
-      label: String = ""
+      label: String = "", body: Double = 0
     ) {
       self.id = id
       self.points = points
@@ -93,6 +98,7 @@
       self.imageHeight = imageHeight
       self.imageURL = imageURL
       self.label = label
+      self.body = body
     }
 
     /// The corners as fractions of the page, x and y in turn: where they
@@ -104,21 +110,34 @@
       }
     }
 
-    /// Its measure and height in page-em (the page 40 wide,
-    /// `TEIRenderer.pageEms`): its top edge's length and its left edge's,
-    /// the scan's proportions restored. Nil where the scan's size is not
-    /// given.
+    /// Its measure and height in the scan's pixels: its top edge's length
+    /// and its left edge's. Nil where the scan's size is not given.
     public var size: (measure: Double, height: Double)? {
       guard imageWidth > 0, imageHeight > 0, points.count == 8 else { return nil }
       let corners = fractions
-      let x = TEIRenderer.pageEms
-      let y = TEIRenderer.pageEms * imageHeight / imageWidth
       func length(_ a: Int, _ b: Int) -> Double {
-        let dx = (corners[2 * b] - corners[2 * a]) * x
-        let dy = (corners[2 * b + 1] - corners[2 * a + 1]) * y
+        let dx = (corners[2 * b] - corners[2 * a]) * imageWidth
+        let dy = (corners[2 * b + 1] - corners[2 * a + 1]) * imageHeight
         return (dx * dx + dy * dy).squareRoot()
       }
       return (length(0, 1), length(0, 3))
+    }
+
+    /// The page as its own work frame, in its own type's em (`body`): its
+    /// main text block's measure and height, and its side margin (half the
+    /// scan's width less the measure). Nil where its size or its type is
+    /// not given.
+    public var frame: TEIWorkFrame? {
+      guard body > 0, let size else { return nil }
+      return TEIWorkFrame(
+        body: body, measure: size.measure / body, height: size.height / body,
+        margin: max(0, (imageWidth - size.measure) / 2 / body))
+    }
+
+    /// Its zone's style, as written: its type, `font-size` in the scan's
+    /// pixels; "" where it was not measured.
+    var style: String {
+      body > 0 ? "font-size:" + TEIRendition.Length(value: body, unit: "px").text : ""
     }
 
     /// Its points as a zone writes them: "x1,y1 x2,y2 x3,y3 x4,y4".
@@ -133,7 +152,7 @@
       TEITextBlock(
         id: id, points: points, surfaceULX: surfaceULX, surfaceULY: surfaceULY, surfaceLRX: surfaceLRX,
         surfaceLRY: surfaceLRY, imageWidth: imageWidth, imageHeight: imageHeight, imageURL: imageURL ?? self.imageURL,
-        label: label ?? self.label)
+        label: label ?? self.label, body: body)
     }
   }
 
@@ -202,11 +221,12 @@
             $0.split(separator: ",").map { Double($0) }
           }
           guard points.count == 8, points.allSatisfy({ $0 != nil }) else { continue }
+          let body = TEIRendition.Setting(TEIRendition.frameTokens(zone.attribute("style"))).length("font-size")
           found.append(
             TEITextBlock(
               id: zone.attribute("xml:id"), points: points.compactMap { $0 }, surfaceULX: left, surfaceULY: top,
               surfaceLRX: right, surfaceLRY: bottom, imageWidth: pixels("width"), imageHeight: pixels("height"),
-              imageURL: graphic?.attribute("url") ?? "", label: surface.attribute("n")))
+              imageURL: graphic?.attribute("url") ?? "", label: surface.attribute("n"), body: body?.value ?? 0))
         }
       }
       return found
@@ -221,18 +241,40 @@
         ?? blocks.first { $0.imageURL.isEmpty && !label.isEmpty && $0.label == label }
     }
 
-    /// The frame every page of a work is set in, its body pages' text
-    /// block (gnorium-python `facsimile.work_frame`): the median measure
-    /// and the median height of its pages' measured text blocks, in
-    /// page-em, each weighted by its block's area, so a title page or an
-    /// imprint counts for the little text it holds. Nil where no page is
-    /// measured.
-    public static func workFrame(in document: String) -> (measure: Double, height: Double)? {
-      let sizes = textBlocks(in: blocks(in: document)).compactMap(\.size)
-      guard !sizes.isEmpty else { return nil }
+    /// The frame every page of a work is set in, its body pages' main text
+    /// block (gnorium-python `facsimile.work_frame`): the median body type,
+    /// measure, height and side margin of its pages' measured text blocks,
+    /// each weighted by its block's area, so a title page or an imprint
+    /// counts for the little text it holds; lengths in the work's em, its
+    /// body type. Nil where no page's type is measured.
+    public static func workFrame(in document: String) -> TEIWorkFrame? {
+      typealias Page = (block: TEITextBlock, measure: Double, height: Double)
+      let pages = textBlocks(in: blocks(in: document)).compactMap { block -> Page? in
+        guard block.body > 0, let size = block.size else { return nil }
+        return (block, size.measure, size.height)
+      }
+      guard !pages.isEmpty else { return nil }
+      func median(_ value: (Page) -> Double) -> Double {
+        weightedMedian(pages.map { (value($0), $0.measure * $0.height) })
+      }
+      let body = median { $0.block.body }
+      return TEIWorkFrame(
+        body: body, measure: median { $0.measure } / body, height: median { $0.height } / body,
+        margin: median { ($0.block.imageWidth - $0.measure) / 2 } / body)
+    }
+
+    /// The size of a work's pages' scans in pixels: the median width and
+    /// height of its measured pages' scans, each weighted by its main text
+    /// block's area as the work frame is (`workFrame`), so its body pages'
+    /// is the size. Nil where none is measured.
+    public static func workPage(of blocks: [TEITextBlock]) -> (width: Double, height: Double)? {
+      let pages = blocks.compactMap { block -> (TEITextBlock, Double)? in
+        guard block.imageWidth > 0, block.imageHeight > 0, let size = block.size else { return nil }
+        return (block, size.measure * size.height)
+      }
+      guard !pages.isEmpty else { return nil }
       return (
-        weightedMedian(sizes.map { ($0.measure, $0.measure * $0.height) }),
-        weightedMedian(sizes.map { ($0.height, $0.measure * $0.height) })
+        weightedMedian(pages.map { ($0.0.imageWidth, $0.1) }), weightedMedian(pages.map { ($0.0.imageHeight, $0.1) })
       )
     }
 
@@ -263,7 +305,7 @@
         framed.removeSubrange(emptied)
       }
       guard let frame = workFrame(in: framed) else { return framed }
-      let rendition = TEIRendition.frameRendition(measure: frame.measure, height: frame.height)
+      let rendition = TEIRendition.frameRendition(frame)
       if let close = framed.range(of: "</tagsDecl>") {
         framed.insert(contentsOf: rendition, at: close.lowerBound)
       } else if let close = framed.range(of: "</encodingDesc>") {
@@ -407,7 +449,8 @@
       if let textBlock {
         out +=
           "<zone xml:id=\"\(XMLFormatter.escapingAttribute(textBlock.id))\" type=\"\(textBlockType)\""
-          + " points=\"\(textBlock.pointsText)\"/>"
+          + " points=\"\(textBlock.pointsText)\""
+          + (textBlock.style.isEmpty ? "" : " style=\"\(textBlock.style)\"") + "/>"
       }
       return out + "</surface>"
     }

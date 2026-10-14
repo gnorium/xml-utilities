@@ -17,6 +17,33 @@ final class TEIRenditionTests: XCTestCase {
 
   /// A block's style cascades as CSS's does: a division's size, leading,
   /// indent and margins reach its paragraphs, whose own rend adds to them.
+  /// Old-style or lining figures, as the print sets its numerals.
+  func testNumeralsTakeOldStyleOrLiningFigures() {
+    XCTAssertTrue(TEIRendition.valid(property: "font-variant-numeric", value: "oldstyle-nums"))
+    XCTAssertTrue(TEIRendition.valid(property: "font-variant-numeric", value: "lining-nums"))
+    XCTAssertFalse(TEIRendition.valid(property: "font-variant-numeric", value: "tabular-nums"))
+    XCTAssertEqual(
+      TEIRendition.css(from: TEIRendition.tokens("font-variant-numeric:oldstyle-nums")),
+      "font-variant-numeric:oldstyle-nums;")
+  }
+
+  /// The work frame's rendition keeps its body type in the scans' pixels
+  /// and its lengths in that em, whatever a page's text may write.
+  func testTheWorkFrameKeepsItsBodyTypeAndMargin() {
+    let frame = TEIWorkFrame(body: 44.78, measure: 54.8, height: 64.86, margin: 4.07)
+    let rendition = TEIRendition.frameRendition(frame)
+    XCTAssertEqual(
+      rendition,
+      #"<rendition xml:id="text-block" scheme="css" selector="text">font-size:44.78px;inline-size:54.8em;block-size:64.86em;margin:4.07em</rendition>"#)
+    let document = "<TEI><teiHeader><encodingDesc><tagsDecl>" + rendition
+      + "</tagsDecl></encodingDesc></teiHeader><text><body><pb n=\"1\" facs=\"https://example.org/a.jpg\"/><p>A</p></body></text></TEI>"
+    let read = try! XCTUnwrap(TEIRenderer.pages(in: document).first).renditions
+    XCTAssertEqual(TEIRendition.frame(in: read), frame)
+    XCTAssertTrue(TEIRendition.header(read).contains(">font-size:44.78px;inline-size:54.8em;block-size:64.86em;margin:4.07em<"))
+    // Without its body type, no frame.
+    XCTAssertNil(TEIRendition.frame(in: [TEIRendition.frameID: "css:inline-size=35.2em css:block-size=44.72em"]))
+  }
+
   func testDivisionStyleCascadesToItsParagraphs() {
     let lines = TEIRenderer.lines(
       in: #"<div style="font-size:0.75em;line-height:1.35;margin-inline-start:2em;text-indent:2em"><p rend="align(justify)">One<lb/>two</p><p style="font-size:0.8em;margin-inline-start:1em">Three</p></div>"#)
