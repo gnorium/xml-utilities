@@ -689,6 +689,10 @@ public enum TEIRendition {
         frame.set("css:" + property, "css:\(property)=\(value)")
       }
     }
+    // Its alignment too: a framed block set centered (an owner's pasted
+    // bookplate regularized to the head's middle, user, 2026-10-14) is a
+    // box centered, not only its lines.
+    for entry in setting.entries where entry.key == "align(" { frame.set(entry.key, entry.token) }
     return frame.rend
   }
 
