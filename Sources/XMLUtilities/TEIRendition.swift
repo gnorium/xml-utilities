@@ -372,6 +372,34 @@ public enum TEIRendition {
     return merged == standing ? document : declaring(merged, in: document)
   }
 
+  /// `document` with `renditions` (a page's header's, as a person edited
+  /// it) laid over its header's: each frame and step `renditions` declares
+  /// in place of the document's, the document's others kept (`joined`,
+  /// `renditions` first). The document as it was where that declares
+  /// nothing new—read as the witness's renditions, not as written.
+  public static func overriding(_ renditions: String, into document: String) -> String {
+    guard !renditions.isEmpty else { return document }
+    let standing = self.renditions(of: document)
+    let merged = joined([renditions, standing])
+    return merged == joined([standing]) ? document : declaring(merged, in: document)
+  }
+
+  /// A page as one TEI document, as every view of a single page shows it
+  /// (user, 2026-10-14) and as an explication keeps a page (gnorium-python
+  /// `tei_review.headed`): its document's renditions as the header's
+  /// `<tagsDecl>` (`joined`, one per line), then the page's fragment as the
+  /// body, on lines of its own. A document declaring none, no header. A
+  /// document stores one header and the fragments (`PageSplice.posted`
+  /// splits an edit of this back).
+  public static func headedPage(_ fragment: String, renditions: String) -> String {
+    let body = "<text><body>\n" + fragment + "\n</body></text>\n</TEI>"
+    let open = "<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">\n"
+    let declared = joined([renditions])
+    guard !declared.isEmpty else { return open + body }
+    let lines = renditionElements(in: declared).joined(separator: "\n")
+    return open + "<teiHeader><encodingDesc><tagsDecl>\n" + lines + "\n</tagsDecl></encodingDesc></teiHeader>\n" + body
+  }
+
   static func declarations(in root: TEIMarkup.Element) -> [String: String] {
     var result: [String: String] = [:]
     func visit(_ node: TEIMarkup.Element) {
