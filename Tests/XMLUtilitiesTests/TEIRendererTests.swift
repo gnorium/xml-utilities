@@ -897,11 +897,11 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(TEIRenderer.typeSetting(of: "align(center) color(red) larger spaced"), "color(red) larger")
   }
 
-  /// A page explicated before zones were kept is given its text block
-  /// where the document keeps none: into the surface its figures have, its
-  /// graphic sized, or a surface of its own; a derived one (the work frame
-  /// placed on a page with no main text) read back as derived and never
-  /// counted in the work frame. The surface is replaced only as found.
+  /// A page's surface given its text block where the document keeps none:
+  /// into the surface its figures have, its graphic sized, or a surface of
+  /// its own; a derived one (the work frame placed on a page with no main
+  /// text) read back as derived and never counted in the work frame. The
+  /// surface is replaced only as found.
   func testATextBlockIsPlacedWhereTheDocumentKeepsNone() throws {
     let a = "https://example.org/iiif/a/full/max/0/default.jpg"
     let b = "https://example.org/iiif/b/full/max/0/default.jpg"
@@ -911,18 +911,12 @@ final class TEIRendererTests: XCTestCase {
       <text><body><pb n="1" facs="\(a)"/><p>One <figure facs="#p1-z1"/></p><pb n="2" facs="\(b)"/><note type="provenance" place="bottom">2</note></body></text></TEI>
       """
     let pages = TEIRenderer.pages(in: document)
-    let measured = #"<zone xml:id="textblock" type="textblock" points="50,50 950,50 950,950 50,950" style="font-size:20.00px"/>"#
-    let first = try XCTUnwrap(
-      TEIFacsimile.placingTextBlock(measured, width: 1000, height: 1300, on: pages[0], position: 1, in: document))
-    XCTAssertEqual(first, """
+    let first = """
       <surface n="1" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\(a)" width="1000px" height="1300px"/><zone xml:id="p1-z1" ulx="100" uly="100" lrx="200" lry="200"/><zone xml:id="p1-textblock" type="textblock" points="50,50 950,50 950,950 50,950" style="font-size:20px"/></surface>
-      """)
-    let derived = #"<zone xml:id="textblock" type="textblock" subtype="derived" points="56.23,41.1 943.77,41.1 943.77,958.9 56.23,958.9" style="font-size:45.89px"/>"#
-    let second = try XCTUnwrap(
-      TEIFacsimile.placingTextBlock(derived, width: 2820, height: 3781, on: pages[1], position: 2, in: document))
-    XCTAssertEqual(second, """
+      """
+    let second = """
       <surface n="2" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\(b)" width="2820px" height="3781px"/><zone xml:id="p2-textblock" type="textblock" subtype="derived" points="56.23,41.1 943.77,41.1 943.77,958.9 56.23,958.9" style="font-size:45.89px"/></surface>
-      """)
+      """
     let standing = TEIFacsimile.surface(of: pages[0], in: document)
     var placed = try XCTUnwrap(TEIFacsimile.replacingSurface(standing, with: first, of: pages[0], in: document))
     placed = try XCTUnwrap(TEIFacsimile.replacingSurface("", with: second, of: pages[1], in: placed))
@@ -931,7 +925,6 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(blocks.map(\.derived), [false, true])
     XCTAssertEqual(TEIRenderer.pages(in: placed)[1].textBlock?.derived, true)
     XCTAssertEqual(TEIFacsimile.workFrame(in: placed)?.body, 20)
-    XCTAssertNil(TEIFacsimile.placingTextBlock(measured, width: 1000, height: 1300, on: pages[0], position: 1, in: placed))
     // Only as found: a surface changed since is refused; backwards, it is as it was.
     XCTAssertNil(TEIFacsimile.replacingSurface("", with: second, of: pages[1], in: placed))
     XCTAssertNil(TEIFacsimile.replacingSurface(standing, with: first, of: pages[0], in: placed))

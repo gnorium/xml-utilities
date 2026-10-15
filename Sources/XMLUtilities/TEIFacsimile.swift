@@ -94,9 +94,10 @@
     /// blocks, their lines and the lines' words, flat zones in reading
     /// order after the text block's (`type="block"` with its subtype `main`
     /// or `marginalia`, `type="line"`, `type="word"`; a line is the block's
-    /// before it, a word the line's), each its four corners. Kept with the
-    /// text block wherever its surface is written; "" where none was
-    /// measured. Never written by the model.
+    /// before it, a word the line's), each its four corners, a word's zone
+    /// with its id, which its `<w>`'s `@facs` names (user, 2026-10-15:
+    /// `TEIWord.zones`). Kept with the text block wherever its surface is
+    /// written; "" where none was measured. Never written by the model.
     public let layout: String
 
     public init(
@@ -166,11 +167,11 @@
     }
 
     /// The same text block under another id (a page's place in a document).
-    func renamed(_ id: String, imageURL: String? = nil, label: String? = nil) -> TEITextBlock {
+    func renamed(_ id: String, imageURL: String? = nil, label: String? = nil, layout: String? = nil) -> TEITextBlock {
       TEITextBlock(
         id: id, points: points, surfaceULX: surfaceULX, surfaceULY: surfaceULY, surfaceLRX: surfaceLRX,
         surfaceLRY: surfaceLRY, imageWidth: imageWidth, imageHeight: imageHeight, imageURL: imageURL ?? self.imageURL,
-        label: label ?? self.label, body: body, derived: derived, layout: layout)
+        label: label ?? self.label, body: body, derived: derived, layout: layout ?? self.layout)
     }
   }
 
@@ -231,11 +232,13 @@
 
     /// One zone of a scan's measured layout (`TEITextBlock.layout`): its
     /// type ("block", "line" or "word"), a block's subtype ("main" or
-    /// "marginalia"), and its four corners, x and y in turn, as fractions
-    /// of its surface.
+    /// "marginalia"), its id (a word's, which its `<w>`'s `@facs` names:
+    /// `TEIWord.zones`; "" for a block's and a line's), and its four
+    /// corners, x and y in turn, as fractions of its surface.
     public struct LayoutZone: Sendable, Equatable {
       public let type: String
       public let subtype: String
+      public let id: String
       public let fractions: [Double]
     }
 
@@ -256,29 +259,11 @@
         guard points.count == 8, points.allSatisfy({ $0 != nil }) else { return nil }
         let values = points.compactMap { $0 }
         return LayoutZone(
-          type: zone.attribute("type"), subtype: zone.attribute("subtype"),
+          type: zone.attribute("type"), subtype: zone.attribute("subtype"), id: zone.attribute("xml:id"),
           fractions: values.enumerated().map { index, value in
             index % 2 == 0 ? (value - block.surfaceULX) / width : (value - block.surfaceULY) / height
           })
       }
-    }
-
-    /// A page's surface with the scan's measured layout (`layout`, as
-    /// gnorium-python `/text-block-zones` gives it) after its text block's
-    /// zone, where its text block keeps none (measure-pages, for pages
-    /// measured before the layout was kept). Nil where the page has no
-    /// text block, already keeps a layout, or `layout` holds none.
-    public static func placingLayout(_ layout: String, on page: TEIPage, in document: String) -> String? {
-      let zones = layoutZones(in: layout)
-      guard !zones.isEmpty, let block = page.textBlock, block.layout.isEmpty else { return nil }
-      let standing = surface(of: page, in: document)
-      guard !standing.isEmpty,
-        let zone = standing.range(
-          of: #"<zone\b[^>]*\btype="textblock"[^>]*/>"#, options: .regularExpression)
-      else { return nil }
-      var written = standing
-      written.insert(contentsOf: zones, at: zone.upperBound)
-      return written
     }
 
     /// Every surface's measured text block (`TEITextBlock`), in document
@@ -466,20 +451,22 @@
           laid.removeSubrange(range)
         }
       }
-      let taken = Set(zones(in: blocks(in: laid)).keys).union(textBlocks(in: blocks(in: laid)).map(\.id))
+      let standing = blocks(in: laid)
+      let taken = Set(zones(in: standing).keys).union(textBlocks(in: standing).map(\.id))
+        .union(textBlocks(in: standing).flatMap { layoutIDs(in: $0.layout) })
       let own = zones(in: page).values.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
       let ownBlock = textBlocks(in: blocks(in: page)).first
+      // Its word zones' ids, which its words' `@facs` name.
+      let ownWords = ownBlock.map { layoutIDs(in: $0.layout) } ?? []
+      let ids = own.map(\.id) + (ownBlock.map { [$0.id] } ?? []) + ownWords
       var prefix = "p\(position)-"
       var attempt = 1
-      while own.contains(where: { taken.contains(prefix + $0.id) }) || ownBlock.map({ taken.contains(prefix + $0.id) }) == true {
+      while ids.contains(where: { taken.contains(prefix + $0) }) {
         attempt += 1
         prefix = "p\(position)-\(attempt)-"
       }
-      var renamed = fragment
-      for range in matches(of: referencePattern, in: renamed, group: 2).reversed()
-      where own.contains(where: { $0.id == renamed[range] }) {
-        renamed.replaceSubrange(range, with: prefix + renamed[range])
-      }
+      let named = Set(own.map(\.id) + ownWords)
+      let renamed = renamingPointers(in: fragment, named: named, prefix: prefix)
       // The body first (the facsimile precedes it, so its range moves).
       let index = position - 1
       let pages = TEIRenderer.pages(in: laid)
@@ -493,7 +480,12 @@
           TEIZone(
             id: prefix + $0.id, ulx: $0.ulx, uly: $0.uly, lrx: $0.lrx, lry: $0.lry, surfaceULX: $0.surfaceULX,
             surfaceULY: $0.surfaceULY, surfaceLRX: $0.surfaceLRX, surfaceLRY: $0.surfaceLRY)
-        }, textBlock: ownBlock.map { $0.renamed(prefix + $0.id, imageURL: old.facsimileURL, label: old.label) },
+        },
+        textBlock: ownBlock.map {
+          $0.renamed(
+            prefix + $0.id, imageURL: old.facsimileURL, label: old.label,
+            layout: renamingLayoutIDs(in: $0.layout, prefix: prefix))
+        },
         label: old.label, imageURL: old.facsimileURL)
       // An empty facsimile goes; a new surface joins the one there is, or
       // starts one after the header.
@@ -510,6 +502,38 @@
       // a step the page references declared in the document it is laid in.
       // The work frame as the pages laid in now give it.
       return framing(TEIRendition.joining(TEIRendition.renditions(of: page), into: laid))
+    }
+
+    private static let layoutIDPattern = try! NSRegularExpression(pattern: #"(xml:id\s*=\s*")([^"]+)(")"#)
+    private static let facsPattern = try! NSRegularExpression(pattern: #"(\sfacs\s*=\s*")([^"]*)(")"#)
+
+    /// The ids a text block's layout zones carry (its word zones'), in order.
+    static func layoutIDs(in layout: String) -> [String] {
+      matches(of: layoutIDPattern, in: layout, group: 2).map { String(layout[$0]) }
+    }
+
+    /// A text block's layout zones with each id prefixed (`laying`).
+    static func renamingLayoutIDs(in layout: String, prefix: String) -> String {
+      var renamed = layout
+      for range in matches(of: layoutIDPattern, in: renamed, group: 2).reversed() {
+        renamed.replaceSubrange(range, with: prefix + renamed[range])
+      }
+      return renamed
+    }
+
+    /// Markup with each `@facs` pointer to one of the `named` zones
+    /// prefixed: a `@facs` names one zone or several (`#a #b`: a word's
+    /// pieces on the scan).
+    static func renamingPointers(in markup: String, named: Set<String>, prefix: String) -> String {
+      var renamed = markup
+      for range in matches(of: facsPattern, in: renamed, group: 2).reversed() {
+        let pointers = renamed[range].split(whereSeparator: \.isWhitespace).map { pointer -> String in
+          guard pointer.hasPrefix("#"), named.contains(String(pointer.dropFirst())) else { return String(pointer) }
+          return "#" + prefix + pointer.dropFirst()
+        }
+        renamed.replaceSubrange(range, with: pointers.joined(separator: " "))
+      }
+      return renamed
     }
 
     /// The range of the surface a document's facsimile holds for a page:
@@ -533,53 +557,6 @@
     /// written; "" where it holds none.
     public static func surface(of page: TEIPage, in document: String) -> String {
       surfaceRange(of: page.facsimileURL, label: page.label, in: document).map { String(document[$0]) } ?? ""
-    }
-
-    /// A page's surface with its text block placed, where the document
-    /// keeps none for it (gnorium-python `/text-block-zones`, the zone
-    /// exactly as `save_page` writes it, and its scan's size in pixels): the
-    /// surface it has with its graphic sized and the zone at its end, or a
-    /// new one (its label, image and extent); the zone's id prefixed with
-    /// the page's place (`p3-textblock`, as the assembly writes it,
-    /// gnorium-python `document_surface`), another prefix where that one is
-    /// taken. Nil where the zone is no text block or the page already keeps
-    /// one.
-    public static func placingTextBlock(
-      _ zone: String, width: Double, height: Double, on page: TEIPage, position: Int, in document: String
-    ) -> String? {
-      guard
-        let measured = textBlocks(in: "<surface ulx=\"0\" uly=\"0\" lrx=\"1000\" lry=\"1000\">" + zone + "</surface>")
-          .first,
-        textBlock(of: page.facsimileURL, label: page.label, in: textBlocks(in: blocks(in: document))) == nil
-      else { return nil }
-      let taken = Set(zones(in: blocks(in: document)).keys).union(textBlocks(in: blocks(in: document)).map(\.id))
-      var prefix = "p\(position)-"
-      var attempt = 1
-      while taken.contains(prefix + measured.id) {
-        attempt += 1
-        prefix = "p\(position)-\(attempt)-"
-      }
-      let block = TEITextBlock(
-        id: prefix + measured.id, points: measured.points, imageWidth: width, imageHeight: height,
-        imageURL: page.facsimileURL, label: page.label, body: measured.body, derived: measured.derived,
-        layout: measured.layout)
-      let standing = surface(of: page, in: document)
-      guard !standing.isEmpty else { return surface([], textBlock: block, label: page.label, imageURL: page.facsimileURL) }
-      let placed = surface([], textBlock: block, label: "", imageURL: XMLFormatter.attribute("url", in: standing).isEmpty
-        ? page.facsimileURL : XMLFormatter.attribute("url", in: standing))
-      // The new surface's sized graphic and its zone, in the standing one.
-      guard let graphic = placed.range(of: #"<graphic\b[^>]*/>"#, options: .regularExpression),
-        let zoneRange = placed.range(of: #"<zone\b[^>]*/>"#, options: .regularExpression)
-      else { return nil }
-      var written = standing
-      if let old = written.range(of: #"<graphic\b[^>]*/>"#, options: .regularExpression) {
-        written.replaceSubrange(old, with: placed[graphic])
-      } else if let opening = written.range(of: ">") {
-        written.insert(contentsOf: placed[graphic], at: opening.upperBound)
-      }
-      guard let close = written.range(of: "</surface>", options: .backwards) else { return nil }
-      written.insert(contentsOf: placed[zoneRange] + measured.layout, at: close.lowerBound)
-      return written
     }
 
     /// `document` with a page's surface `from` (as `surface(of:in:)` gives

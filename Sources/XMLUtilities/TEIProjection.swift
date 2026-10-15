@@ -72,6 +72,10 @@
       /// Its lexico type (`@type`, a gnorium-shared PartOfSpeech raw value:
       /// "noun", "preposition", "suffix"); "" where none is written.
       var type = ""
+      /// The zones its `@facs` names (their ids, without `#`): its ink on the
+      /// scan, the tools' word zones (gnorium-python
+      /// `facsimile.with_word_links`); empty where it names none.
+      var zones: [String] = []
     }
 
     /// A word as an anchor counts it (gnorium-python `quotations/text.py`
@@ -92,6 +96,8 @@
       var msd = ""
       var language = ""
       var type = ""
+      /// The zones its parts' `@facs` name, in order (`Word.zones`).
+      var zones: [String] = []
       var range: Range<Int> { ranges[0].lowerBound..<ranges[ranges.count - 1].upperBound }
     }
 
@@ -281,7 +287,9 @@
         let word = Word(
           range: start..<size, part: element.attribute("part"), element: element.name,
           lemma: element.attribute("lemma"), msd: element.attribute("msd"), language: languages.last ?? "",
-          type: element.attribute("type"))
+          type: element.attribute("type"),
+          zones: element.attribute("facs").split(whereSeparator: \.isWhitespace).filter { $0.hasPrefix("#") }
+            .map { String($0.dropFirst()) })
         if element.name == "w" {
           // An <m> inside this <w> is part of it (gnorium-python `diplomatic_text`).
           words.removeAll { $0.element == "m" && word.range.contains($0.range.lowerBound) }
@@ -385,6 +393,7 @@
             last.ranges.append(range)
             last.surface += text(range)
             last.runsOn = part == "M"
+            last.zones += word?.zones.filter { !last.zones.contains($0) } ?? []
             found[found.count - 1] = last
             continue
           }
@@ -396,7 +405,7 @@
           .init(
             line: line, number: perLine[line]!, ranges: [range], surface: text(range),
             runsOn: part == "I" || part == "M", element: word?.element ?? "", lemma: word?.lemma ?? "",
-            msd: word?.msd ?? "", language: word?.language ?? "", type: word?.type ?? ""))
+            msd: word?.msd ?? "", language: word?.language ?? "", type: word?.type ?? "", zones: word?.zones ?? []))
       }
       return found
     }
@@ -487,6 +496,11 @@
     /// Its lexico type (`@type`: "noun", "preposition", "suffix"); "" where
     /// none is written.
     public let type: String
+    /// Its zones on the scan, as its `@facs` names them (their ids): the
+    /// tools' word zones its ink is in, one per piece (a word the print
+    /// spaces apart, or broken over lines, has several); empty where it
+    /// names none.
+    public let zones: [String]
 
     /// Whether it is not a whole word (user, 2026-09-29): a form cited as a
     /// form (`<m>`: an affix, a root, a stem), or its lemma or surface an
@@ -506,7 +520,7 @@
       TEIProjection.of(markup: page.markup).units.map {
         TEIWord(
           place: .init(line: $0.line, word: $0.number), surface: $0.surface, element: $0.element,
-          lemma: $0.lemma, morphology: $0.msd, language: $0.language, type: $0.type)
+          lemma: $0.lemma, morphology: $0.msd, language: $0.language, type: $0.type, zones: $0.zones)
       }
     }
 
@@ -610,7 +624,8 @@
               id,
               TEIWord(
                 place: .init(line: unit.line, word: unit.number), surface: unit.surface, element: unit.element,
-                lemma: unit.lemma, morphology: unit.msd, language: unit.language, type: unit.type)
+                lemma: unit.lemma, morphology: unit.msd, language: unit.language, type: unit.type,
+                zones: unit.zones)
             ))
         }
       }
