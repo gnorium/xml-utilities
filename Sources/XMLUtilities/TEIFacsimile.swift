@@ -559,6 +559,17 @@
       surfaceRange(of: page.facsimileURL, label: page.label, in: document).map { String(document[$0]) } ?? ""
     }
 
+    /// A headed page (`TEIRendition.headedPage`) with its surface as its
+    /// `<facsimile>`, after the header and before the text, a zone a line,
+    /// as a document holds it: what a page's XML and its diff show alike
+    /// (user, 2026-10-16). As it is with no surface.
+    public static func headed(_ headed: String, surface: String) -> String {
+      guard !surface.isEmpty, let text = headed.range(of: "<text><body>") else { return headed }
+      var out = headed
+      out.insert(contentsOf: XMLFormatter.prettified("<facsimile>" + surface + "</facsimile>") + "\n", at: text.lowerBound)
+      return out
+    }
+
     /// `document` with a page's surface `from` (as `surface(of:in:)` gives
     /// it; "" for none) made `to` ("" removes it): a surface added joins
     /// the document's facsimile, or starts one after its header; a
