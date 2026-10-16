@@ -2,7 +2,7 @@
 <titlePage>
   <docTitle rend="align(center)">
     <titlePart type="main" rend="align(center)">
-<bibl xml:id="bibl-3" xml:lang="eng" type="dictionary"><title><s ana="#autonomy-0"><hi rend="spaced smaller"><w lemma="an" class="article" msd="Definite=Ind|PronType=Art">AN</w></hi><lb/>
+<bibl xml:id="bibl-3" xml:lang="eng" class="dictionary"><title><s ana="#autonomy-0"><hi rend="spaced smaller"><w lemma="an" class="article" msd="Definite=Ind|PronType=Art">AN</w></hi><lb/>
 <hi rend="larger"><w lemma="etymological" class="adjective" msd="Degree=Pos">ETYMOLOGICAL</w> <w lemma="dictionary" class="noun" msd="Number=Sing">DICTIONARY</w></hi><lb/>
 <hi rend="spaced smaller"><w lemma="of" class="preposition">OF</w> <w lemma="the" class="article" msd="Definite=Def|PronType=Art">THE</w></hi><lb/>
 <hi rend="larger"><w lemma="English" class="proper_noun" msd="Number=Sing">ENGLISH</w> <w lemma="language" class="noun" msd="Number=Sing">LANGUAGE</w></hi></s><lb/></title></bibl>
@@ -27,7 +27,7 @@
           <l rend="align(left)"><s ana="#autonomy-0"><pc>‘</pc><w lemma="step" class="noun" msd="Number=Sing">Step</w> <w lemma="after" class="preposition">after</w> <w lemma="step" class="noun" msd="Number=Sing">step</w> <w lemma="the" class="article" msd="Definite=Def|PronType=Art">the</w> <w lemma="ladder" class="noun" msd="Number=Sing">ladder</w> <w lemma="be" class="auxiliary" msd="Mood=Ind|Number=Sing|Person=3|Tense=Pres|VerbForm=Fin">is</w> <w lemma="ascend" class="verb" msd="Tense=Past|VerbForm=Part|Voice=Pass">ascended</w><pc>.</pc><pc>’</pc></s><lb/></l>
         </lg>
       </quote>
-<bibl xml:id="bibl-1" xml:lang="eng" type="poem" rend="align(right)"><s type="citation" ana="#autonomy-0"><author><persName><hi rend="smallcaps"><w lemma="George" class="proper_noun" msd="Number=Sing">GEORGE</w> <w lemma="Herbert" class="proper_noun" msd="Number=Sing">HERBERT</w></hi></persName></author><pc>,</pc> <title xml:lang="lat"><hi rend="italic"><w lemma="jaculum" class="noun" xml:lang="lat" msd="Case=Nom|Number=Plur">Jacula</w> <w lemma="prudens" class="adjective" xml:lang="lat" msd="Case=Gen|Degree=Pos|Number=Plur">Prudentum</w></hi></title><pc>.</pc></s><lb/></bibl>
+<bibl xml:id="bibl-1" xml:lang="eng" class="poem" rend="align(right)"><s type="citation" ana="#autonomy-0"><author><persName><hi rend="smallcaps"><w lemma="George" class="proper_noun" msd="Number=Sing">GEORGE</w> <w lemma="Herbert" class="proper_noun" msd="Number=Sing">HERBERT</w></hi></persName></author><pc>,</pc> <title xml:lang="lat"><hi rend="italic"><w lemma="jaculum" class="noun" xml:lang="lat" msd="Case=Nom|Number=Plur">Jacula</w> <w lemma="prudens" class="adjective" xml:lang="lat" msd="Case=Gen|Degree=Pos|Number=Plur">Prudentum</w></hi></title><pc>.</pc></s><lb/></bibl>
     </cit>
   </epigraph>
   <epigraph rend="align(center) smaller">
@@ -38,7 +38,7 @@
           <l rend="align(left) indent(1)"><s part="F"><w lemma="something" class="pronoun" msd="Number=Sing|PronType=Ind">Something</w> <w lemma="still" class="adverb" msd="Degree=Pos">still</w> <w lemma="remain" class="verb" msd="Mood=Ind|Number=Sing|Person=3|Tense=Pres|VerbForm=Fin">remains</w> <w lemma="undone" class="adjective" msd="Degree=Pos">undone</w><pc>.</pc><pc>’</pc></s><lb/></l>
         </lg>
       </quote>
-<bibl xml:id="bibl-2" xml:lang="eng" type="poem" rend="align(right)"><s type="citation" ana="#autonomy-0"><author><persName><hi rend="smallcaps"><w lemma="Longfellow" class="proper_noun" msd="Number=Sing">LONGFELLOW</w></hi></persName></author><pc>,</pc> <title><hi rend="italic"><w lemma="bird" class="noun" msd="Number=Plur">Birds</w> <w lemma="of" class="preposition">of</w> <w lemma="passage" class="noun" msd="Number=Sing">Passage</w></hi></title><pc>.</pc></s><lb/></bibl>
+<bibl xml:id="bibl-2" xml:lang="eng" class="poem" rend="align(right)"><s type="citation" ana="#autonomy-0"><author><persName><hi rend="smallcaps"><w lemma="Longfellow" class="proper_noun" msd="Number=Sing">LONGFELLOW</w></hi></persName></author><pc>,</pc> <title><hi rend="italic"><w lemma="bird" class="noun" msd="Number=Plur">Birds</w> <w lemma="of" class="preposition">of</w> <w lemma="passage" class="noun" msd="Number=Sing">Passage</w></hi></title><pc>.</pc></s><lb/></bibl>
     </cit>
   </epigraph>
   <space dim="vertical" quantity="6" unit="lines"/>
