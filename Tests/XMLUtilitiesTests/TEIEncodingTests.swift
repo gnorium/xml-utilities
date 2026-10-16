@@ -11,8 +11,8 @@ final class TEIEncodingTests: XCTestCase {
     <TEI><text><body>\
     <pb n="1" facs="https://example.org/iiif/p0/full/1300,/0/default.jpg"/>\
     <fw type="pageNum">12</fw>\
-    <p><s><persName ref="https://viaf.org/viaf/1"><w lemma="john" type="proper_noun">Iohn</w></persName> \
-    <w lemma="the" type="article"><choice><abbr>yͤ</abbr><expan>the</expan></choice></w> \
+    <p><s><persName ref="https://viaf.org/viaf/1"><w lemma="john" class="proper_noun">Iohn</w></persName> \
+    <w lemma="the" class="article"><choice><abbr>yͤ</abbr><expan>the</expan></choice></w> \
     <w lemma="word" msd="Number=Sing" ana="#x"><hi rend="italic">wor</hi><supplied reason="damage">d</supplied></w> \
     <choice><sic><w lemma="the">teh</w></sic><corr>the</corr></choice> \
     <date when="1611">1611</date>.</s></p>\

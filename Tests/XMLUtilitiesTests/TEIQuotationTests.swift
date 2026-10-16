@@ -78,9 +78,9 @@ final class TEIQuotationTests: XCTestCase {
   /// and punctuation between words are of none.
   func testARunSaysWhichWordItIsOf() {
     let markup = """
-      <p><w lemma="the" type="article" msd="Definite=Def|PronType=Art">The</w> \
-      <w lemma="computer" type="noun" msd="Number=Plur">Compu-<lb break="no"/>tors</w><pc>,</pc> \
-      <w lemma="very" type="adverb">v<supplied>e</supplied>ry</w></p>
+      <p><w lemma="the" class="article" msd="Definite=Def|PronType=Art">The</w> \
+      <w lemma="computer" class="noun" msd="Number=Plur">Compu-<lb break="no"/>tors</w><pc>,</pc> \
+      <w lemma="very" class="adverb">v<supplied>e</supplied>ry</w></p>
       """
     let lines = TEIRenderer.lines(in: markup, marksWords: true)
     let runs = lines.flatMap(\.runs)
@@ -93,7 +93,7 @@ final class TEIQuotationTests: XCTestCase {
     XCTAssertNil(place(of: ","))
     let words = TEIRenderer.words(of: .init(label: "", facsimileURL: "", lines: [], markup: markup))
     XCTAssertEqual(words.map(\.surface), ["The", "Compu-tors", "vry"])
-    XCTAssertEqual(words[1].type, "noun")
+    XCTAssertEqual(words[1].wordClass, "noun")
     XCTAssertEqual(words[1].element, "w")
     XCTAssertEqual(words[1].morphology, "Number=Plur")
     XCTAssertEqual(words.map(\.language), ["", "", ""])
@@ -101,12 +101,12 @@ final class TEIQuotationTests: XCTestCase {
     let mentioned = TEIRenderer.words(
       of: .init(
         label: "", facsimileURL: "", lines: [],
-        markup: #"<p xml:lang="eng">from <mentioned xml:lang="grc"><m type="prefix" lemma="μετα-">με-</m></mentioned> <w lemma="measure" type="noun"><m type="root" lemma="meas">meas</m>ure</w></p>"#))
+        markup: #"<p xml:lang="eng">from <mentioned xml:lang="grc"><m class="prefix" lemma="μετα-">με-</m></mentioned> <w lemma="measure" class="noun"><m class="root" lemma="meas">meas</m>ure</w></p>"#))
     XCTAssertEqual(mentioned.map(\.surface), ["from", "με-", "measure"], "an <m> in a <w> is part of it")
     XCTAssertEqual(mentioned.map(\.language), ["", "grc", "eng"], "a token no <w> covers says nothing")
     XCTAssertEqual(mentioned.map(\.element), ["", "m", "w"])
     XCTAssertEqual(mentioned.map(\.isFragment), [false, true, false])
-    XCTAssertEqual(mentioned.map(\.type), ["", "prefix", "noun"])
+    XCTAssertEqual(mentioned.map(\.wordClass), ["", "prefix", "noun"])
     // Read whole, no run is of a word.
     XCTAssertTrue(TEIRenderer.lines(in: markup).flatMap(\.runs).allSatisfy { $0.word == nil })
   }
@@ -255,11 +255,11 @@ final class TEIQuotationTests: XCTestCase {
     let math = #"<math xmlns="http://www.w3.org/1998/Math/MathML" display="inline">"#
     let page =
       #"<TEI><text><body><pb n="1" facs="https://example.org/iiif/f0/full/1300,/0/default.jpg"/>"#
-      + #"<p><s><w lemma="let" type="verb">Let</w> <formula notation="mathml">"# + math
+      + #"<p><s><w lemma="let" class="verb">Let</w> <formula notation="mathml">"# + math
       + "<semantics><mrow><mi>sin</mi><mo>\u{2061}</mo><mi>x</mi><mo>=</mo>"
       + "<mfrac><mrow><mi>a</mi><mo>+</mo><mi>b</mi></mrow><mrow><mi>c</mi></mrow></mfrac></mrow>"
       + #"<annotation encoding="application/x-tex">\sin x=\frac{a+b}{c}</annotation></semantics></math></formula> "#
-      + #"<w lemma="hold" type="verb">hold</w><pc>.</pc></s><lb/>and <formula notation="mathml">"# + math
+      + #"<w lemma="hold" class="verb">hold</w><pc>.</pc></s><lb/>and <formula notation="mathml">"# + math
       + "<semantics>\n  <mrow>\n    <mn>2</mn><mo>×</mo><mi>log</mi><mi>y</mi>\n    <mtext>for all</mtext>\n  </mrow>\n"
       + #"  <annotation encoding="application/x-tex">2\times\log y\text{for all}</annotation>\#n</semantics></math>"#
       + #"</formula> <formula notation="tex">\log z</formula> so</p></body></text></TEI>"#

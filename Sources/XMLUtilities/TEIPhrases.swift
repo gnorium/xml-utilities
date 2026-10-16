@@ -7,8 +7,8 @@
   public struct TEIPhrase: Sendable, Equatable {
     /// Its words in reading order, each by its place on the page.
     public let words: [TEIWordPlace]
-    /// Its kind (`@type`: "idiom", "phrase", …); "" where none is written.
-    public let type: String
+    /// Its class (`@class`: "idiom", "phrase", …); "" where none is written.
+    public let wordClass: String
     /// Its dictionary form (`@lemma`); "" where none is written.
     public let lemma: String
     /// Its words as written, one space between them.
@@ -17,9 +17,9 @@
     /// none does.
     public let language: String
 
-    public init(words: [TEIWordPlace], type: String, lemma: String, surface: String, language: String) {
+    public init(words: [TEIWordPlace], wordClass: String, lemma: String, surface: String, language: String) {
       self.words = words
-      self.type = type
+      self.wordClass = wordClass
       self.lemma = lemma
       self.surface = surface
       self.language = language
@@ -52,7 +52,7 @@
             found.append(
               TEIPhrase(
                 words: members.map { .init(line: $0.line, word: $0.number) },
-                type: element.attribute("type"), lemma: element.attribute("lemma"),
+                wordClass: element.attribute("class"), lemma: element.attribute("lemma"),
                 surface: members.map(\.surface).joined(separator: " "), language: languages.last ?? ""))
           }
         }

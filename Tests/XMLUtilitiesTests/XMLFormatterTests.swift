@@ -60,9 +60,9 @@ final class XMLFormatterTests: XCTestCase {
 
   static let titlePage =
     ##"<titlePage><docTitle rend="align(center)"><titlePart type="main"><s ana="#autonomy-0">"##
-    + ##"<w lemma="an" type="article" msd="Definite=Ind|PronType=Art">AN</w> "##
-    + ##"<w lemma="etymological" type="adjective" msd="Degree=Pos">ETYMOLOGICAL</w><lb/>"##
-    + ##"<w lemma="dictionary" type="noun">DICTIONARY</w><lb/></s></titlePart></docTitle>"##
+    + ##"<w lemma="an" class="article" msd="Definite=Ind|PronType=Art">AN</w> "##
+    + ##"<w lemma="etymological" class="adjective" msd="Degree=Pos">ETYMOLOGICAL</w><lb/>"##
+    + ##"<w lemma="dictionary" class="noun">DICTIONARY</w><lb/></s></titlePart></docTitle>"##
     + ##"<docImprint><s><w lemma="Frowde">FROWDE</w><pc>,</pc> <persName><w>Henry</w></persName><pc>.</pc></s></docImprint>"##
     + ##"</titlePage>"##
 
@@ -75,8 +75,8 @@ final class XMLFormatterTests: XCTestCase {
       """
       <titlePage>
         <docTitle rend="align(center)">
-          <titlePart type="main"><s ana="#autonomy-0"><w lemma="an" type="article" msd="Definite=Ind|PronType=Art">AN</w> <w lemma="etymological" type="adjective" msd="Degree=Pos">ETYMOLOGICAL</w><lb/>
-      <w lemma="dictionary" type="noun">DICTIONARY</w><lb/></s></titlePart>
+          <titlePart type="main"><s ana="#autonomy-0"><w lemma="an" class="article" msd="Definite=Ind|PronType=Art">AN</w> <w lemma="etymological" class="adjective" msd="Degree=Pos">ETYMOLOGICAL</w><lb/>
+      <w lemma="dictionary" class="noun">DICTIONARY</w><lb/></s></titlePart>
         </docTitle>
         <docImprint><s><w lemma="Frowde">FROWDE</w><pc>,</pc> <persName><w>Henry</w></persName><pc>.</pc></s></docImprint>
       </titlePage>

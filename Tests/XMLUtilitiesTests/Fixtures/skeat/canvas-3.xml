@@ -9,11 +9,11 @@
 <titlePage>
 <docTitle rend="align(center)">
 <titlePart type="main" rend="align(center)" rendition="#size-1 #leading-1">
-<s ana="#autonomy-0"><hi style="letter-spacing:0.094em;word-spacing:0.3em" rendition="#size-5 #leading-5"><w lemma="an" type="article" msd="Definite=Ind|PronType=Art">AN</w> <w lemma="etymological" type="adjective" msd="Degree=Pos">ETYMOLOGICAL</w> <w lemma="dictionary" type="noun" msd="Number=Sing">DICTIONARY</w></hi><lb/>
+<s ana="#autonomy-0"><hi style="letter-spacing:0.094em;word-spacing:0.3em" rendition="#size-5 #leading-5"><w lemma="an" class="article" msd="Definite=Ind|PronType=Art">AN</w> <w lemma="etymological" class="adjective" msd="Degree=Pos">ETYMOLOGICAL</w> <w lemma="dictionary" class="noun" msd="Number=Sing">DICTIONARY</w></hi><lb/>
 <space dim="vertical" quantity="3.138" unit="em"/>
-<hi style="letter-spacing:0.175em;word-spacing:0.3em" rendition="#size-1 #leading-1"><w lemma="of" type="preposition">OF</w> <w lemma="the" type="article" msd="Definite=Def|PronType=Art">THE</w></hi><lb/>
+<hi style="letter-spacing:0.175em;word-spacing:0.3em" rendition="#size-1 #leading-1"><w lemma="of" class="preposition">OF</w> <w lemma="the" class="article" msd="Definite=Def|PronType=Art">THE</w></hi><lb/>
 <space dim="vertical" quantity="3.138" unit="em"/>
-<hi style="letter-spacing:0.094em;word-spacing:0.3em" rendition="#size-5 #leading-5"><w lemma="English" type="adjective" msd="Degree=Pos">ENGLISH</w> <w lemma="language" type="noun" msd="Number=Sing">LANGUAGE</w></hi></s><lb/>
+<hi style="letter-spacing:0.094em;word-spacing:0.3em" rendition="#size-5 #leading-5"><w lemma="English" class="adjective" msd="Degree=Pos">ENGLISH</w> <w lemma="language" class="noun" msd="Number=Sing">LANGUAGE</w></hi></s><lb/>
 </titlePart>
 </docTitle>
 </titlePage></body></text></TEI>

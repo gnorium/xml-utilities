@@ -9,13 +9,13 @@ final class TEIPhrasesTests: XCTestCase {
       label: "", facsimileURL: "", lines: [],
       markup: """
         <p xml:lang="eng"><w lemma="he">He</w> \
-        <phr type="idiom" lemma="kick the bucket"><w lemma="kick">kicked</w> <w lemma="the">the</w><lb/>\
-        <w lemma="bucket">bucket</w></phr> <phr type="phrase" lemma="at last"><w>at</w> \
-        <phr type="phrase" lemma="last"><w>last</w></phr></phr></p>
+        <phr class="idiom" lemma="kick the bucket"><w lemma="kick">kicked</w> <w lemma="the">the</w><lb/>\
+        <w lemma="bucket">bucket</w></phr> <phr class="phrase" lemma="at last"><w>at</w> \
+        <phr class="phrase" lemma="last"><w>last</w></phr></phr></p>
         """)
     let phrases = TEIRenderer.phrases(of: page)
     XCTAssertEqual(phrases.map(\.lemma), ["kick the bucket", "at last", "last"])
-    XCTAssertEqual(phrases[0].type, "idiom")
+    XCTAssertEqual(phrases[0].wordClass, "idiom")
     XCTAssertEqual(phrases[0].language, "eng")
     XCTAssertEqual(phrases[0].surface, "kicked the bucket")
     XCTAssertEqual(

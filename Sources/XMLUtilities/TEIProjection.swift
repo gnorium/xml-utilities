@@ -58,8 +58,8 @@
     /// A `<w>`, or a form cited as a form (an `<m>` outside any `<w>`): its
     /// span, its `part` ("I", "M" or "F" for a word broken over lines or
     /// pages; "" when whole), its element, and what the transcription says
-    /// of it: its lemma, its lexico type and its morphology (`@lemma`,
-    /// `@type`, `@msd`; "" when it says nothing).
+    /// of it: its lemma, its word class and its morphology (`@lemma`,
+    /// `@class`, `@msd`; "" when it says nothing).
     struct Word: Equatable {
       let range: Range<Int>
       let part: String
@@ -69,9 +69,9 @@
       /// The language it is in, as the nearest `xml:lang` over it (its own
       /// included) names it; "" where none does.
       var language = ""
-      /// Its lexico type (`@type`, a gnorium-shared PartOfSpeech raw value:
+      /// Its word class (`@class`, a gnorium-shared PartOfSpeech raw value:
       /// "noun", "preposition", "suffix"); "" where none is written.
-      var type = ""
+      var wordClass = ""
       /// The zones its `@facs` names (their ids, without `#`): its ink on the
       /// scan, the tools' word zones (gnorium-python
       /// `facsimile.with_word_links`); empty where it names none.
@@ -88,14 +88,14 @@
       var ranges: [Range<Int>]
       var surface: String
       var runsOn: Bool
-      /// Its `<w>`'s (or cited form's `<m>`) element, lemma, type,
+      /// Its `<w>`'s (or cited form's `<m>`) element, lemma, word class,
       /// morphology and language, as its first part carries them; "" for a
       /// token neither covers.
       var element = ""
       var lemma = ""
       var msd = ""
       var language = ""
-      var type = ""
+      var wordClass = ""
       /// The zones its parts' `@facs` name, in order (`Word.zones`).
       var zones: [String] = []
       var range: Range<Int> { ranges[0].lowerBound..<ranges[ranges.count - 1].upperBound }
@@ -287,7 +287,7 @@
         let word = Word(
           range: start..<size, part: element.attribute("part"), element: element.name,
           lemma: element.attribute("lemma"), msd: element.attribute("msd"), language: languages.last ?? "",
-          type: element.attribute("type"),
+          wordClass: element.attribute("class"),
           zones: element.attribute("facs").split(whereSeparator: \.isWhitespace).filter { $0.hasPrefix("#") }
             .map { String($0.dropFirst()) })
         if element.name == "w" {
@@ -405,7 +405,7 @@
           .init(
             line: line, number: perLine[line]!, ranges: [range], surface: text(range),
             runsOn: part == "I" || part == "M", element: word?.element ?? "", lemma: word?.lemma ?? "",
-            msd: word?.msd ?? "", language: word?.language ?? "", type: word?.type ?? "", zones: word?.zones ?? []))
+            msd: word?.msd ?? "", language: word?.language ?? "", wordClass: word?.wordClass ?? "", zones: word?.zones ?? []))
       }
       return found
     }
@@ -477,7 +477,7 @@
 
   /// A word of a page and what the transcription says of it: its place,
   /// its surface as written on the page, and its `<w>`'s (or a cited
-  /// form's `<m>`) lemma, lexico type (`@type`, a gnorium-shared
+  /// form's `<m>`) lemma, word class (`@class`, a gnorium-shared
   /// PartOfSpeech raw value; UD UPOS derives from it) and morphology
   /// (`@msd`, UD features); "" where the transcription says nothing (a
   /// token neither covers says nothing).
@@ -493,9 +493,9 @@
     /// Its language, as the nearest `xml:lang` over it names it (ISO 639-3,
     /// as recognition writes it); "" where none does.
     public let language: String
-    /// Its lexico type (`@type`: "noun", "preposition", "suffix"); "" where
+    /// Its word class (`@class`: "noun", "preposition", "suffix"); "" where
     /// none is written.
-    public let type: String
+    public let wordClass: String
     /// Its zones on the scan, as its `@facs` names them (their ids): the
     /// tools' word zones its ink is in, one per piece (a word the print
     /// spaces apart, or broken over lines, has several); empty where it
@@ -520,7 +520,7 @@
       TEIProjection.of(markup: page.markup).units.map {
         TEIWord(
           place: .init(line: $0.line, word: $0.number), surface: $0.surface, element: $0.element,
-          lemma: $0.lemma, morphology: $0.msd, language: $0.language, type: $0.type, zones: $0.zones)
+          lemma: $0.lemma, morphology: $0.msd, language: $0.language, wordClass: $0.wordClass, zones: $0.zones)
       }
     }
 
@@ -624,7 +624,7 @@
               id,
               TEIWord(
                 place: .init(line: unit.line, word: unit.number), surface: unit.surface, element: unit.element,
-                lemma: unit.lemma, morphology: unit.msd, language: unit.language, type: unit.type,
+                lemma: unit.lemma, morphology: unit.msd, language: unit.language, wordClass: unit.wordClass,
                 zones: unit.zones)
             ))
         }
