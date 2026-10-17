@@ -94,7 +94,8 @@
     /// blocks, their lines and the lines' words, flat zones in reading
     /// order after the text block's (`type="block"` with its subtype `main`
     /// or `marginalia`, `type="line"`, `type="word"`; a line is the block's
-    /// before it, a word the line's), each its four corners, a word's zone
+    /// before it, a word the line's), each its four corners, a line's
+    /// holding its baseline's `<path type="baseline">`, a word's zone
     /// with its id, which its `<w>`'s `@facs` names (user, 2026-10-15:
     /// `TEIWord.zones`). Kept with the text block wherever its surface is
     /// written; "" where none was measured. Never written by the model.
@@ -182,7 +183,8 @@
     private static let blockPattern = try! NSRegularExpression(
       pattern: #"\s*<facsimile\b[^>]*>[\s\S]*?</facsimile>"#)
     private static let surfacePattern = try! NSRegularExpression(pattern: #"<surface\b[^>]*>[\s\S]*?</surface>"#)
-    private static let referencePattern = try! NSRegularExpression(pattern: #"(\sfacs\s*=\s*")#([^"\s]+)(")"#)
+    private static let zoneIDPattern = try! NSRegularExpression(
+      pattern: #"<zone\b[^>]*?\sxml:id\s*=\s*(["'])([^"']+)\1"#)
 
     /// The facsimile blocks of a document, as written ("" where it has none).
     public static func blocks(in xml: String) -> String {
@@ -221,8 +223,12 @@
     public static let derivedSubtype = "derived"
     /// The zone types of the scan's measured layout (`TEITextBlock.layout`).
     public static let layoutTypes: Set<String> = ["block", "line", "word"]
+    /// A layout zone as written: self-closing, or a line's holding its
+    /// baseline's `<path type="baseline">` (TEI's own element for it, as
+    /// ALTO and PAGE keep a line's baseline; gnorium-python
+    /// `facsimile.layout_zones_xml`, user, 2026-10-17).
     private static let layoutZonePattern = try! NSRegularExpression(
-      pattern: #"<zone\b[^>]*\btype="(?:block|line|word)"[^>]*/>"#)
+      pattern: #"<zone\b[^>]*\btype="(?:block|line|word)"[^>]*?(?:/>|>\s*<path\b[^>]*/>\s*</zone>)"#)
 
     /// The layout zones a surface holds (`TEITextBlock.layout`), as
     /// written, in order; "" for none.
@@ -233,13 +239,17 @@
     /// One zone of a scan's measured layout (`TEITextBlock.layout`): its
     /// type ("block", "line" or "word"), a block's subtype ("main" or
     /// "marginalia"), its id (a word's, which its `<w>`'s `@facs` names:
-    /// `TEIWord.zones`; "" for a block's and a line's), and its four
-    /// corners, x and y in turn, as fractions of its surface.
+    /// `TEIWord.zones`; "" for a block's and a line's), its four corners,
+    /// x and y in turn, as fractions of its surface, and a line's baseline
+    /// (its `<path type="baseline">`: where its letters sit, from its left
+    /// to its right), its two ends the same way; empty where it has none
+    /// (a line with no x-height measured, a block, a word).
     public struct LayoutZone: Sendable, Equatable {
       public let type: String
       public let subtype: String
       public let id: String
       public let fractions: [Double]
+      public var baseline: [Double] = []
     }
 
     /// A text block's layout zones (`TEITextBlock.layout`) read, in order;
@@ -257,12 +267,19 @@
           $0.split(separator: ",").map { Double($0) }
         }
         guard points.count == 8, points.allSatisfy({ $0 != nil }) else { return nil }
-        let values = points.compactMap { $0 }
+        func fractions(_ values: [Double]) -> [Double] {
+          values.enumerated().map { index, value in
+            index % 2 == 0 ? (value - block.surfaceULX) / width : (value - block.surfaceULY) / height
+          }
+        }
+        let path = zone.elements.first { $0.name == "path" && $0.attribute("type") == "baseline" }
+        let ends = (path?.attribute("points") ?? "").split(whereSeparator: \.isWhitespace).flatMap {
+          $0.split(separator: ",").map { Double($0) }
+        }
         return LayoutZone(
           type: zone.attribute("type"), subtype: zone.attribute("subtype"), id: zone.attribute("xml:id"),
-          fractions: values.enumerated().map { index, value in
-            index % 2 == 0 ? (value - block.surfaceULX) / width : (value - block.surfaceULY) / height
-          })
+          fractions: fractions(points.compactMap { $0 }),
+          baseline: ends.count == 4 && ends.allSatisfy({ $0 != nil }) ? fractions(ends.compactMap { $0 }) : [])
       }
     }
 
@@ -390,9 +407,23 @@
       return framed
     }
 
-    /// The ids of the zones a page's markup names (`facs="#…"`), in order.
+    /// The ids of the zones a page's markup names (`facs="#…"`), in order: a
+    /// `@facs` names one zone or several (`#a #b`: a word's pieces on the
+    /// scan), and a pointer to anything but a zone of the document (a page
+    /// break's image address) is none.
     public static func references(in markup: String) -> [String] {
-      matches(of: referencePattern, in: markup, group: 2).map { String(markup[$0]) }
+      matches(of: facsPattern, in: markup, group: 2).flatMap { range in
+        markup[range].split(whereSeparator: \.isWhitespace).filter { $0.count > 1 && $0.first == "#" }
+          .map { String($0.dropFirst()) }
+      }
+    }
+
+    /// The ids of every zone a facsimile holds, whatever it is: a figure's or
+    /// an initial's box, the page's text block, a word's polygon on the scan
+    /// (`type="word"`). What a `@facs` may name; `TEIPage.zones` holds the
+    /// boxes alone, the zones that are regions of the image.
+    public static func zoneIDs(in facsimile: String) -> Set<String> {
+      Set(matches(of: zoneIDPattern, in: facsimile, group: 2).map { String(facsimile[$0]) })
     }
 
     /// A page's markup with the zones it names ahead of it, in a facsimile
@@ -505,7 +536,7 @@
     }
 
     private static let layoutIDPattern = try! NSRegularExpression(pattern: #"(xml:id\s*=\s*")([^"]+)(")"#)
-    private static let facsPattern = try! NSRegularExpression(pattern: #"(\sfacs\s*=\s*")([^"]*)(")"#)
+    private static let facsPattern = try! NSRegularExpression(pattern: #"(\sfacs\s*=\s*["'])([^"']*)(["'])"#)
 
     /// The ids a text block's layout zones carry (its word zones'), in order.
     static func layoutIDs(in layout: String) -> [String] {

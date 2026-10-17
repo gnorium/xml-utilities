@@ -144,10 +144,13 @@
         faults.append(.init(kind: .unbalanced, detail: tag))
       }
       // A stored page keeps a box as a zone: never a bbox, never a reference
-      // to a zone the document lacks.
+      // to a zone the document lacks. Any zone of its facsimile is one a
+      // pointer may name—a figure's box, the text block, a word's polygon
+      // on the scan (gnorium-python `facsimile.facsimile_violations`: the
+      // same rule, the same pages in both suites).
       if markup.range(of: #"\sbbox\s*="#, options: .regularExpression) != nil {
         faults.append(.init(kind: .zone, detail: "bbox"))
-      } else if let missing = TEIFacsimile.references(in: markup).first(where: { page.zones[$0] == nil }) {
+      } else if let missing = TEIFacsimile.references(in: markup).first(where: { !page.zoneIDs.contains($0) }) {
         faults.append(.init(kind: .zone, detail: "#" + missing))
       }
       return faults

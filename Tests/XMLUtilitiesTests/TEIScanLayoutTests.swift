@@ -28,6 +28,26 @@ final class TEIScanLayoutTests: XCTestCase {
     XCTAssertTrue(TEIFacsimile.block(for: page).contains(Self.layout))
   }
 
+  /// A line's zone holds its baseline as TEI's `<path type="baseline">`
+  /// (user, 2026-10-17): read with it, kept with it, never a zone of its
+  /// own (no `@facs` names it).
+  func testALinesBaselineIsReadAndKeptWithItsZone() throws {
+    let layout =
+      #"<zone type="block" subtype="main" points="100,100 900,100 900,200 100,200"/>"#
+      + #"<zone type="line" points="100,100 900,100 900,150 100,150"><path type="baseline" points="100,140 900,142"/></zone>"#
+      + #"<zone xml:id="wz1" type="word" points="100,100 300,100 300,150 100,150"/>"#
+    let page = try XCTUnwrap(TEIRenderer.pages(in: Self.document(layout: layout)).first)
+    let block = try XCTUnwrap(page.textBlock)
+    XCTAssertEqual(block.layout, layout)
+    let zones = TEIFacsimile.layout(of: block)
+    XCTAssertEqual(zones.map(\.type), ["block", "line", "word"])
+    XCTAssertEqual(zones[1].baseline, [0.1, 0.14, 0.9, 0.142])
+    XCTAssertEqual(zones[0].baseline, [])
+    XCTAssertEqual(zones[2].baseline, [])
+    XCTAssertTrue(TEIFacsimile.block(for: page).contains(layout))
+    XCTAssertEqual(page.zoneIDs.contains("wz1"), true)
+  }
+
   func testEachWordNamesItsZonesAndKeepsThemWhenItsPageIsLaidIn() throws {
     let block = try XCTUnwrap(TEIRenderer.pages(in: Self.document(layout: Self.layout)).first?.textBlock)
     XCTAssertEqual(TEIFacsimile.layout(of: block).map(\.id), ["", "", "wz1"])
@@ -52,6 +72,39 @@ final class TEIScanLayoutTests: XCTestCase {
     let kept = try XCTUnwrap(TEIRenderer.pages(in: laid).first)
     XCTAssertEqual(TEIFacsimile.layout(of: try XCTUnwrap(kept.textBlock)).map(\.id), ["", "", "p1-wz1", "p1-wz2"])
     XCTAssertEqual(TEIRenderer.words(of: kept).first?.zones, ["p1-wz1", "p1-wz2"])
+  }
+
+  /// A word's `@facs` names polygons of the scan's layout, which are zones of
+  /// the document's facsimile but not boxes: a page whose words point at their
+  /// zones is whole, one whose pointer names no zone—one pointer or one of
+  /// several—is not (prod madrigal dd5cc0b2, 2026-10-17: `#p5-wz17` was
+  /// reported missing while the facsimile held it). The same pages as
+  /// gnorium-python `test_facsimile.test_a_pointer_names_any_zone_of_the_document`.
+  func testAPointerNamesAnyZoneOfTheDocumentsFacsimile() throws {
+    let layout =
+      #"<zone type="block" subtype="main" points="100,100 900,100 900,200 100,200"/>"#
+      + #"<zone type="line" points="100,100 900,100 900,150 100,150"/>"#
+      + #"<zone xml:id="p5-wz1" type="word" points="100,100 300,100 300,150 100,150"/>"#
+      + #"<zone xml:id="p5-wz2" type="word" points="310,100 500,100 500,150 310,150"/>"#
+      + #"<zone xml:id="p5-wz3" type="word" points="100,160 200,160 200,200 100,200"/>"#
+    func document(_ body: String) -> String {
+      Self.document(layout: layout).replacingOccurrences(of: "<p>One<lb/></p>", with: body)
+    }
+    let body = ##"<p><w facs="#p5-wz1">One</w> <w facs="#p5-wz2 #p5-wz3">bro-<lb break="no"/>ken</w><lb/></p>"##
+    let page = try XCTUnwrap(TEIRenderer.pages(in: document(body)).first)
+    // The boxes are the regions of the image; the zones are all of them.
+    XCTAssertTrue(page.zones.isEmpty)
+    XCTAssertEqual(page.zoneIDs, ["textblock", "p5-wz1", "p5-wz2", "p5-wz3"])
+    XCTAssertEqual(TEIFacsimile.references(in: page.markup), ["p5-wz1", "p5-wz2", "p5-wz3"])
+    XCTAssertEqual(TEIRenderer.faults(in: page).filter { $0.kind == .zone }.count, 0)
+    // A pointer to no zone: alone, or among a word's several.
+    for (dangling, detail) in [("p5-wz1", "p5-wz7"), ("p5-wz3", "p5-wz9")] {
+      let broken = try XCTUnwrap(
+        TEIRenderer.pages(in: document(body.replacingOccurrences(of: "#" + dangling, with: "#" + detail))).first)
+      XCTAssertEqual(TEIRenderer.faults(in: broken).filter { $0.kind == .zone }.map(\.detail), ["#" + detail])
+    }
+    // A page break's image address is no pointer to a zone.
+    XCTAssertEqual(TEIFacsimile.references(in: ##"<pb facs="https://example.org/a.jpg"/><w facs='#a #b'>x</w>"##), ["a", "b"])
   }
 
   func testTheBodysLeadingIsTheLeadingOfTheSizeNearestTheBody() throws {

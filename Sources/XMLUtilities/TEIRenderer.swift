@@ -18,6 +18,11 @@
     /// page's figures and decorated initials sit, which its markup names by
     /// `facs="#…"` but does not hold.
     public let zones: [String: TEIZone]
+    /// The ids of every zone the document's facsimile holds, of any kind
+    /// (`TEIFacsimile.zoneIDs`): the boxes in `zones`, the page's text block
+    /// and the scan's measured layout, which a word's `@facs` names. What a
+    /// `facs="#…"` must name (`TEIFault.Kind.zone`).
+    public let zoneIDs: Set<String>
     public let renditions: [String: String]
     /// Its main text block as measured on its scan (its surface's
     /// `textblock` zone), nil where it was not measured.
@@ -29,25 +34,26 @@
 
     public init(
       label: String, facsimileURL: String, lines: [TEILine], markup: String, zones: [String: TEIZone] = [:],
-      renditions: [String: String] = [:], textBlock: TEITextBlock? = nil,
+      zoneIDs: Set<String>? = nil, renditions: [String: String] = [:], textBlock: TEITextBlock? = nil,
       workPage: (width: Double, height: Double)? = nil
     ) {
       self.init(
-        label: label, facsimileURL: facsimileURL, markup: markup, zones: zones, renditions: renditions,
-        textBlock: textBlock, workPage: workPage
+        label: label, facsimileURL: facsimileURL, markup: markup, zones: zones, zoneIDs: zoneIDs,
+        renditions: renditions, textBlock: textBlock, workPage: workPage
       ) { lines }
     }
 
     init(
-      label: String, facsimileURL: String, markup: String, zones: [String: TEIZone], renditions: [String: String] = [:],
-      textBlock: TEITextBlock? = nil, workPage: (width: Double, height: Double)? = nil,
-      read: @escaping @Sendable () -> [TEILine]
+      label: String, facsimileURL: String, markup: String, zones: [String: TEIZone], zoneIDs: Set<String>? = nil,
+      renditions: [String: String] = [:], textBlock: TEITextBlock? = nil,
+      workPage: (width: Double, height: Double)? = nil, read: @escaping @Sendable () -> [TEILine]
     ) {
       self.label = label
       self.facsimileURL = facsimileURL
       self.reading = Reading(read)
       self.markup = markup
       self.zones = zones
+      self.zoneIDs = zoneIDs ?? Set(zones.keys)
       self.renditions = renditions
       self.textBlock = textBlock
       self.workPage = workPage
@@ -528,6 +534,7 @@
     ) -> [TEIPage] {
       let facsimile = TEIFacsimile.blocks(in: xml)
       let zones = TEIFacsimile.zones(in: facsimile)
+      let zoneIDs = TEIFacsimile.zoneIDs(in: facsimile)
       let textBlocks = TEIFacsimile.textBlocks(in: facsimile)
       let workPage = TEIFacsimile.workPage(of: textBlocks)
       let renditions = TEIRendition.declarations(in: TEIMarkup.document(xml))
@@ -538,7 +545,7 @@
           label: open.label,
           facsimileURL: open.facsimileURL,
           markup: markup.trimmingCharacters(in: .whitespacesAndNewlines),
-          zones: zones, renditions: renditions,
+          zones: zones, zoneIDs: zoneIDs, renditions: renditions,
           textBlock: TEIFacsimile.textBlock(of: open.facsimileURL, label: open.label, in: textBlocks),
           workPage: workPage
         ) {

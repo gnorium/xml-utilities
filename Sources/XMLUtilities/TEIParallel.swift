@@ -144,6 +144,13 @@
       "quote", "said", "mentioned", "soCalled", "gap", "cb", "milestone", "graphic", "anchor", "metamark",
     ]
 
+    /// One page's segments as translation reads the page alone: its markup
+    /// under its own page break. None: nothing on it to translate.
+    public static func segments(ofPage markup: String, label: String, facsimileURL: String) -> [Segment] {
+      let single = "<TEI><text><body><pb n=\"\(XMLFormatter.escapingAttribute(label))\" facs=\"\(XMLFormatter.escapingAttribute(facsimileURL))\"/>\(markup)</body></text></TEI>"
+      return TEIParallel(source: single).pages.first?.segments ?? []
+    }
+
     /// The source document, read into pages and segments as its kind
     /// carries them.
     public init(source teiXml: String, profile: Profile = .markup) {
