@@ -9,12 +9,18 @@ public struct TEIWorkFrame: Sendable, Equatable {
   public let measure: Double
   public let height: Double
   public let margin: Double
+  /// The width of the work's scans in its em (`max-inline-size`; gnorium-python
+  /// `WorkFrame.width`, user, 2026-10-18): the book is set in one type, so a
+  /// scan of it, at any resolution, has its em as its width over this. 0
+  /// where the frame does not declare it.
+  public let width: Double
 
-  public init(body: Double, measure: Double, height: Double, margin: Double) {
+  public init(body: Double, measure: Double, height: Double, margin: Double, width: Double = 0) {
     self.body = body
     self.measure = measure
     self.height = height
     self.margin = margin
+    self.width = width
   }
 }
 
@@ -188,7 +194,7 @@ public enum TEIRendition {
     "<rendition xml:id=\"\(frameID)\" scheme=\"css\" selector=\"text\">"
       + "font-size:\(Length(value: frame.body, unit: "px").text);inline-size:\(Length(value: frame.measure, unit: "em").text);"
       + "block-size:\(Length(value: frame.height, unit: "em").text);margin:\(Length(value: frame.margin, unit: "em").text)"
-      + "</rendition>"
+      + (frame.width > 0 ? ";max-inline-size:\(Length(value: frame.width, unit: "em").text)" : "") + "</rendition>"
   }
 
   /// The work frame the renditions declare (`frameID`); nil where they
@@ -201,13 +207,16 @@ public enum TEIRendition {
       let height = setting.length("block-size"), height.unit == "em", height.value > 0,
       let margin = setting.length("margin"), margin.unit == "em", margin.value >= 0
     else { return nil }
-    return TEIWorkFrame(body: body.value, measure: measure.value, height: height.value, margin: margin.value)
+    let width = setting.length("max-inline-size")
+    return TEIWorkFrame(
+      body: body.value, measure: measure.value, height: height.value, margin: margin.value,
+      width: width?.unit == "em" ? width?.value ?? 0 : 0)
   }
 
   /// The work frame's declarations as tokens: its four lengths, each in its
   /// unit (`frame(in:)`), never a property a page's text takes.
   static func frameTokens(_ css: String) -> String {
-    let units = ["font-size": "px", "inline-size": "em", "block-size": "em", "margin": "em"]
+    let units = ["font-size": "px", "inline-size": "em", "block-size": "em", "margin": "em", "max-inline-size": "em"]
     return css.split(separator: ";").compactMap { declaration -> String? in
       let pair = declaration.split(separator: ":", maxSplits: 1)
       guard pair.count == 2 else { return nil }
@@ -288,7 +297,8 @@ public enum TEIRendition {
     let header = frame.map { frame in
       "<rendition xml:id=\"\(frameID)\" scheme=\"css\" selector=\"text\">"
         + "font-size:\(String(format: "%.2f", frame.body))px;inline-size:\(String(format: "%.2f", frame.measure))em;"
-        + "block-size:\(String(format: "%.2f", frame.height))em;margin:\(String(format: "%.2f", frame.margin))em</rendition>"
+        + "block-size:\(String(format: "%.2f", frame.height))em;margin:\(String(format: "%.2f", frame.margin))em"
+        + (frame.width > 0 ? ";max-inline-size:\(String(format: "%.2f", frame.width))em" : "") + "</rendition>"
     } ?? ""
     return header
       + steps.sorted { order($0) < order($1) }.map { step in
@@ -323,7 +333,8 @@ public enum TEIRendition {
         if let body = length(css["font-size"], "px"), body > 0, let measure = length(css["inline-size"], "em"),
           let height = length(css["block-size"], "em"), let margin = length(css["margin"], "em")
         {
-          frame = TEIWorkFrame(body: body, measure: measure, height: height, margin: margin)
+          frame = TEIWorkFrame(
+            body: body, measure: measure, height: height, margin: margin, width: length(css["max-inline-size"], "em") ?? 0)
         }
         continue
       }

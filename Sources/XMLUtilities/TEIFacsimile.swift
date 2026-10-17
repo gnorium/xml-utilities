@@ -151,7 +151,7 @@
       guard body > 0, let size else { return nil }
       return TEIWorkFrame(
         body: body, measure: size.measure / body, height: size.height / body,
-        margin: max(0, (imageWidth - size.measure) / 2 / body))
+        margin: max(0, (imageWidth - size.measure) / 2 / body), width: imageWidth / body)
     }
 
     /// Its zone's style, as written: its type, `font-size` in the scan's
@@ -346,7 +346,7 @@
       let body = median { $0.block.body }
       return TEIWorkFrame(
         body: body, measure: median { $0.measure } / body, height: median { $0.height } / body,
-        margin: median { ($0.block.imageWidth - $0.measure) / 2 } / body)
+        margin: median { ($0.block.imageWidth - $0.measure) / 2 } / body, width: median { $0.block.imageWidth } / body)
     }
 
     /// The size of a work's pages' scans in pixels: the median width and

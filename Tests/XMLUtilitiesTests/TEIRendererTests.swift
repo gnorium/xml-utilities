@@ -311,7 +311,7 @@ final class TEIRendererTests: XCTestCase {
     // little text; the header declares it and every page is set in it.
     let framed = TEIFacsimile.framing(document)
     XCTAssertTrue(framed.contains(
-      #"<encodingDesc><p>Joined.</p><tagsDecl><rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em</rendition></tagsDecl></encodingDesc>"#))
+      #"<encodingDesc><p>Joined.</p><tagsDecl><rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em;max-inline-size:50em</rendition></tagsDecl></encodingDesc>"#))
     for page in TEIRenderer.pages(in: framed) {
       XCTAssertEqual(page.frame, TEIPageFrame(measure: 44, height: 55.9, margin: 3))
     }
@@ -341,7 +341,7 @@ final class TEIRendererTests: XCTestCase {
     // Only a document declaring none is framed by its text blocks: two body
     // pages now.
     let undeclared = laid.replacingOccurrences(
-      of: #"<tagsDecl><rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em</rendition></tagsDecl>"#,
+      of: #"<tagsDecl><rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em;max-inline-size:50em</rendition></tagsDecl>"#,
       with: "")
     XCTAssertNotEqual(undeclared, laid)
     let reframed = try XCTUnwrap(TEIRenderer.pages(in: TEIFacsimile.framing(undeclared)).first?.frame)

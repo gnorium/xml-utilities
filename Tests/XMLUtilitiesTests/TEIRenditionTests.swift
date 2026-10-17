@@ -43,6 +43,13 @@ final class TEIRenditionTests: XCTestCase {
     let read = try! XCTUnwrap(TEIRenderer.pages(in: document).first).renditions
     XCTAssertEqual(TEIRendition.frame(in: read), frame)
     XCTAssertTrue(TEIRendition.header(read).contains(">font-size:44.78px;inline-size:54.8em;block-size:64.86em;margin:4.07em<"))
+    // The scans' width in that em, where it is declared (the book's one em).
+    let wide = TEIWorkFrame(body: 44.78, measure: 54.8, height: 64.86, margin: 4.07, width: 61.45)
+    XCTAssertTrue(TEIRendition.frameRendition(wide).hasSuffix("margin:4.07em;max-inline-size:61.45em</rendition>"))
+    let wideDocument = "<TEI><teiHeader><encodingDesc><tagsDecl>" + TEIRendition.frameRendition(wide)
+      + "</tagsDecl></encodingDesc></teiHeader><text><body><pb n=\"1\" facs=\"https://example.org/a.jpg\"/><p>A</p></body></text></TEI>"
+    let wideRead = try! XCTUnwrap(TEIRenderer.pages(in: wideDocument).first).renditions
+    XCTAssertEqual(TEIRendition.frame(in: wideRead), wide)
     // Without its body type, no frame.
     XCTAssertNil(TEIRendition.frame(in: [TEIRendition.frameID: "css:inline-size=35.2em css:block-size=44.72em"]))
   }
