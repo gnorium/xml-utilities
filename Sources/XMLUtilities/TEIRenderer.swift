@@ -459,6 +459,12 @@
       }
     }
 
+    /// The header of `tei` as nested labelled entries (`TEIHeaderRenderer`),
+    /// read from official TEI elements alone, whatever the header describes.
+    public static func header(of tei: String) -> [TEIHeaderEntry] {
+      TEIHeaderRenderer.entries(of: tei)
+    }
+
     /// Split the body at the page breaks that carry a facsimile.
     ///
     /// A document holds two kinds of `<pb>`: one per image, labeled for the
