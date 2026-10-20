@@ -76,6 +76,8 @@
       /// scan, the tools' word zones (gnorium-python
       /// `facsimile.with_word_links`); empty where it names none.
       var zones: [String] = []
+      /// Its `xml:id`, as the first pass's code writes it; "" where it has none.
+      var id = ""
     }
 
     /// A word as an anchor counts it (gnorium-python `quotations/text.py`
@@ -98,6 +100,8 @@
       var wordClass = ""
       /// The zones its parts' `@facs` name, in order (`Word.zones`).
       var zones: [String] = []
+      /// Its first part's `xml:id` (`Word.id`); "" for none.
+      var id = ""
       var range: Range<Int> { ranges[0].lowerBound..<ranges[ranges.count - 1].upperBound }
     }
 
@@ -289,7 +293,7 @@
           lemma: element.attribute("lemma"), msd: element.attribute("msd"), language: languages.last ?? "",
           wordClass: element.attribute("class"),
           zones: element.attribute("facs").split(whereSeparator: \.isWhitespace).filter { $0.hasPrefix("#") }
-            .map { String($0.dropFirst()) })
+            .map { String($0.dropFirst()) }, id: element.attribute("xml:id"))
         if element.name == "w" {
           // An <m> inside this <w> is part of it (gnorium-python `diplomatic_text`).
           words.removeAll { $0.element == "m" && word.range.contains($0.range.lowerBound) }
@@ -405,7 +409,8 @@
           .init(
             line: line, number: perLine[line]!, ranges: [range], surface: text(range),
             runsOn: part == "I" || part == "M", element: word?.element ?? "", lemma: word?.lemma ?? "",
-            msd: word?.msd ?? "", language: word?.language ?? "", wordClass: word?.wordClass ?? "", zones: word?.zones ?? []))
+            msd: word?.msd ?? "", language: word?.language ?? "", wordClass: word?.wordClass ?? "", zones: word?.zones ?? [],
+            id: word?.id ?? ""))
       }
       return found
     }
@@ -501,6 +506,9 @@
     /// spaces apart, or broken over lines, has several); empty where it
     /// names none.
     public let zones: [String]
+    /// Its `xml:id` (its first part's, for a word split over lines or
+    /// pages): what its sentiment assignment names it by. "" where it has none.
+    public let id: String
 
     /// Whether it is not a whole word (user, 2026-09-29): a form cited as a
     /// form (`<m>`: an affix, a root, a stem), or its lemma or surface an
@@ -520,7 +528,8 @@
       TEIProjection.of(markup: page.markup).units.map {
         TEIWord(
           place: .init(line: $0.line, word: $0.number), surface: $0.surface, element: $0.element,
-          lemma: $0.lemma, morphology: $0.msd, language: $0.language, wordClass: $0.wordClass, zones: $0.zones)
+          lemma: $0.lemma, morphology: $0.msd, language: $0.language, wordClass: $0.wordClass, zones: $0.zones,
+          id: $0.id)
       }
     }
 
@@ -625,7 +634,7 @@
               TEIWord(
                 place: .init(line: unit.line, word: unit.number), surface: unit.surface, element: unit.element,
                 lemma: unit.lemma, morphology: unit.msd, language: unit.language, wordClass: unit.wordClass,
-                zones: unit.zones)
+                zones: unit.zones, id: unit.id)
             ))
         }
       }

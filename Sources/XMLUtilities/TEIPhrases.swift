@@ -16,8 +16,14 @@
     /// Its language, as the nearest `xml:lang` over it names it; "" where
     /// none does.
     public let language: String
+    /// Its `xml:id`: what its sentiment assignment names it by; "" where it
+    /// has none.
+    public let id: String
 
-    public init(words: [TEIWordPlace], wordClass: String, lemma: String, surface: String, language: String) {
+    public init(
+      words: [TEIWordPlace], wordClass: String, lemma: String, surface: String, language: String, id: String = ""
+    ) {
+      self.id = id
       self.words = words
       self.wordClass = wordClass
       self.lemma = lemma
@@ -53,7 +59,8 @@
               TEIPhrase(
                 words: members.map { .init(line: $0.line, word: $0.number) },
                 wordClass: element.attribute("class"), lemma: element.attribute("lemma"),
-                surface: members.map(\.surface).joined(separator: " "), language: languages.last ?? ""))
+                surface: members.map(\.surface).joined(separator: " "), language: languages.last ?? "",
+                id: element.attribute("xml:id")))
           }
         }
         for child in element.elements { visit(child, languages: languages) }
