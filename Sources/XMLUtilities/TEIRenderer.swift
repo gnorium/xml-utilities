@@ -459,10 +459,21 @@
       }
     }
 
-    /// The header of `tei` as nested labelled entries (`TEIHeaderRenderer`),
-    /// read from official TEI elements alone, whatever the header describes.
-    public static func header(of tei: String) -> [TEIHeaderEntry] {
-      TEIHeaderRenderer.entries(of: tei)
+    /// The `<teiHeader>` of a document as written, where it declares one:
+    /// where its renditions declare the witness's frame or type scale
+    /// (`TEIRendition.declarations`, as a session reads the declared type,
+    /// gnorium-server `DeclaredType`)—a madrigal's or a book's TEI once
+    /// Calibration froze it. Nil where the document has no header or one
+    /// that declares none: a bare `fileDesc` describes a document, it does
+    /// not declare its type. A testament's XML pane shows it above a page's
+    /// lines, read-only, under its Header switch (user, 2026-10-20).
+    public static func declaredHeader(of document: String) -> String? {
+      guard
+        let range = document.range(
+          of: #"<teiHeader\b[^>]*?(?:/>|>[\s\S]*?</teiHeader>)"#, options: .regularExpression)
+      else { return nil }
+      let header = String(document[range])
+      return TEIRendition.declarations(of: header).isEmpty ? nil : header
     }
 
     /// Split the body at the page breaks that carry a facsimile.

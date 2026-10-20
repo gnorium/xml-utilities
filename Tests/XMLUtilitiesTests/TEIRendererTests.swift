@@ -932,4 +932,26 @@ final class TEIRendererTests: XCTestCase {
     back = try XCTUnwrap(TEIFacsimile.replacingSurface(first, with: standing, of: pages[0], in: back))
     XCTAssertEqual(back, document)
   }
+
+  func testADocumentDeclaresItsHeaderAsWritten() throws {
+    let document = """
+      <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><fileDesc><titleStmt><title>T</title></titleStmt></fileDesc>
+      <encodingDesc><tagsDecl>
+      <rendition xml:id="size-1" scheme="css">font-size:0.8251rem</rendition>
+      </tagsDecl></encodingDesc></teiHeader><text><body><pb n="1"/><p>A</p></body></text></TEI>
+      """
+    let header = try XCTUnwrap(TEIRenderer.declaredHeader(of: document))
+    XCTAssertTrue(header.hasPrefix("<teiHeader>"))
+    XCTAssertTrue(header.hasSuffix("</teiHeader>"))
+    XCTAssertTrue(header.contains("size-1"))
+    XCTAssertFalse(header.contains("<body>"))
+  }
+
+  func testAHeaderThatDeclaresNoTypeIsNone() {
+    XCTAssertNil(TEIRenderer.declaredHeader(of: "<TEI><text><body/></text></TEI>"))
+    XCTAssertNil(TEIRenderer.declaredHeader(of: "<TEI><teiHeader/><text/></TEI>"))
+    XCTAssertNil(
+      TEIRenderer.declaredHeader(
+        of: "<TEI><teiHeader><fileDesc><titleStmt><title>A</title></titleStmt></fileDesc></teiHeader><text/></TEI>"))
+  }
 }
