@@ -465,8 +465,8 @@
     /// gnorium-server `DeclaredType`)—a madrigal's or a book's TEI once
     /// Calibration froze it. Nil where the document has no header or one
     /// that declares none: a bare `fileDesc` describes a document, it does
-    /// not declare its type. A testament's XML pane shows it above a page's
-    /// lines, read-only, under its Header switch (user, 2026-10-20).
+    /// not declare its type. A testament's Header pane shows it as code,
+    /// read-only, independent of the XML pane (user, 2026-10-21).
     public static func declaredHeader(of document: String) -> String? {
       guard
         let range = document.range(
