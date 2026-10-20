@@ -41,12 +41,13 @@
       }
 
       /// What to ask for. The model is given this verbatim, so it speaks of the
-      /// canvas image label, never of a canvas (a model-facing word).
+      /// image and its label, never of a canvas (user, 2026-10-20: the
+      /// model-facing word is image).
       public var instruction: String {
         switch self {
         case .labelMismatch:
           return
-            "A side here is named differently from its canvas image label. Name each side exactly "
+            "A side here is named differently from its image label. Name each side exactly "
             + "as the image label names it, in its own words and spelling."
         case .sidesUnmarked:
           return
@@ -68,7 +69,7 @@
         case .zone:
           return
             "A figure or a decorated initial here has no box the page keeps. Give it its box as "
-            + "bbox=\"x y w h\", four whole numbers in the 0–1000 space over the canvas image."
+            + "bbox=\"x y w h\", four whole numbers in the 0–1000 space over the image."
         }
       }
     }
