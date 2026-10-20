@@ -81,7 +81,7 @@ final class TEIParallelTests: XCTestCase {
   }
 
   /// A dictionary entry carries its definitions and its English prose, and
-  /// keeps its forms, its quotations and their sources, its equivalents and
+  /// keeps its forms, its quotes and their sources, its equivalents and
   /// its labels as they are.
   func testADictionaryEntryCarriesOnlyItsDefinitionsAndEnglishProse() throws {
     let entry = """
@@ -91,7 +91,7 @@ final class TEIParallelTests: XCTestCase {
       <sense xml:id="haus-1"><usg type="dom">architecture</usg>\
       <def>A building for people to <hi rend="italic">live</hi> in.</def>\
       <cit type="translation"><quote>house</quote></cit>\
-      <cit type="quotation"><quote>Das Haus ist alt.</quote><bibl><date when="1905">1905</date></bibl></cit>\
+      <cit type="quote"><quote>Das Haus ist alt.</quote><bibl><date when="1905">1905</date></bibl></cit>\
       </sense>\
       <etym>From Middle High German <mentioned>hūs</mentioned>.</etym>\
       </entry></body></text></TEI>
@@ -112,7 +112,7 @@ final class TEIParallelTests: XCTestCase {
     // Carried: the definition and the etymology's prose.
     XCTAssertTrue(translation.contains(">Ein Gebäude, in dem Menschen <hi rend=\"italic\" corresp=\"#e10\">wohnen</hi>.</def>"))
     XCTAssertTrue(translation.contains(">Aus dem Mittelhochdeutschen <mentioned corresp=\"#e18\">hūs</mentioned>.</etym>"))
-    // Untouched: the forms, the title, the equivalent, the quotation and
+    // Untouched: the forms, the title, the equivalent, the quote and
     // its source, the labels.
     for kept in [">Haus</orth>", ">haʊs</pron>", ">noun</pos>", ">architecture</usg>", ">house</quote>",
       ">Das Haus ist alt.</quote>", ">1905</date>"]

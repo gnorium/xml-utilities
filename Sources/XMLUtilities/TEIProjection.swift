@@ -1,14 +1,14 @@
 #if SERVER
   import Foundation
 
-  /// A stretch of a page's reading to set apart, counted as the quotations service
-  /// counts a page (`TEIProjection`): a quotation's sentence, and its word.
+  /// A stretch of a page's reading to set apart, counted as the quotes service
+  /// counts a page (`TEIProjection`): a quote's sentence, and its word.
   public struct TEIHighlight: Sendable, Equatable {
     public enum Kind: String, Sendable {
-      /// The sentence a quotation is: an `<s>`, or the passage an anchor
+      /// The sentence a quote is: an `<s>`, or the passage an anchor
       /// names where no `<s>` holds its word.
       case sentence
-      /// The quotation's own word: the anchor's title.
+      /// The quote's own word: the anchor's title.
       case title
     }
 
@@ -22,9 +22,9 @@
     }
   }
 
-  /// A page's text as the quotations service counts it (`diplomatic-codepoints-v7`,
-  /// gnorium-python `quotations/text.py` `diplomatic_text`), so that an
-  /// quotation's anchor, which counts in it, can be found in the page's
+  /// A page's text as the quotes service counts it (`diplomatic-codepoints-v7`,
+  /// gnorium-python `quotes/text.py` `diplomatic_text`), so that an
+  /// quote's anchor, which counts in it, can be found in the page's
   /// markup: Unicode scalars, not normalized; a `<choice>` reads its orig,
   /// sic or abbr (else its first child); what an editor adds beside the
   /// surface (supplied, reg, expan, corr, ex), the encoder's descriptions
@@ -80,7 +80,7 @@
       var id = ""
     }
 
-    /// A word as an anchor counts it (gnorium-python `quotations/text.py`
+    /// A word as an anchor counts it (gnorium-python `quotes/text.py`
     /// `units`): its line (`breaks`), its place among
     /// the words starting on that line, its parts on this page, its surface
     /// as written here, and whether it runs on to the next page.
@@ -451,7 +451,7 @@
     }
   }
 
-  /// A word of a page as a quotation's anchor names it (`tei-line-word-v4`):
+  /// A word of a page as a quote's anchor names it (`tei-line-word-v4`):
   /// its line (`TEIProjection.breaks`), its place among the words
   /// starting on that line, and its surface as written, which must still read
   /// there.
@@ -467,7 +467,7 @@
     }
   }
 
-  /// Where a word stands on its page, as a quotation's anchor counts it
+  /// Where a word stands on its page, as a quote's anchor counts it
   /// (`tei-line-word-v4`): its line and its place among the words starting
   /// on that line. What a reader's word is found by.
   public struct TEIWordPlace: Sendable, Hashable {
@@ -519,7 +519,7 @@
   }
 
   extension TEIRenderer {
-    /// A page's words as a quotation's anchor counts them
+    /// A page's words as a quote's anchor counts them
     /// (`tei-line-word-v4`), in reading order: each its place, its surface
     /// as written on this page and what its `<w>` says of it. A word broken
     /// over the page break is its part on this page; the part a page begins
@@ -533,20 +533,20 @@
       }
     }
 
-    /// Where a quotation reads in a document's pages: its words, found by
+    /// Where a quote reads in a document's pages: its words, found by
     /// their line and place in the line on the anchor's page (`start` to
     /// `end`), and the sentence holding them—the smallest `<s>` of the page
     /// holding the words, a sentence split across pages (`<s part="I|M|F">`)
-    /// joined over the pages it runs on, as the quotations service joins its
+    /// joined over the pages it runs on, as the quotes service joins its
     /// `sentence_parts`—by page (its image service). Where no `<s>` holds
     /// the words, their lines stand for the sentence. Nil when the page is
     /// not among `pages`, or a word is not there or reads otherwise than its
     /// surface: nothing is highlighted rather than the wrong words.
-    public static func quotation(
-      in pages: [TEIPage], resemblanceID: String, start: TEIWordPosition, end: TEIWordPosition
+    public static func quote(
+      in pages: [TEIPage], imageID: String, start: TEIWordPosition, end: TEIWordPosition
     ) -> [String: [TEIHighlight]]? {
       let ids = pages.map { serviceID(ofFacsimile: $0.facsimileURL) }
-      guard let at = ids.firstIndex(of: resemblanceID) else { return nil }
+      guard let at = ids.firstIndex(of: imageID) else { return nil }
       let projections = pages.map { TEIProjection.of(markup: $0.markup) }
       let projection = projections[at]
       // Each word's whole surface: a word broken over the page break is its
@@ -607,21 +607,21 @@
         let breaks = projection.breaks
         let from = first.line >= 2 && first.line - 2 < breaks.count ? breaks[first.line - 2] : 0
         let to = last.line - 1 < breaks.count ? breaks[last.line - 1] : projection.size
-        highlights[resemblanceID, default: []].append(.init(min(from, title.lowerBound)..<max(to, title.upperBound), kind: .sentence))
+        highlights[imageID, default: []].append(.init(min(from, title.lowerBound)..<max(to, title.upperBound), kind: .sentence))
       }
-      highlights[resemblanceID, default: []].append(.init(title, kind: .title))
+      highlights[imageID, default: []].append(.init(title, kind: .title))
       return highlights
     }
 
-    /// The words a quotation reads, in reading order (user, 2026-10-09):
+    /// The words a quote reads, in reading order (user, 2026-10-09):
     /// each page's words (`words(of:)`) that its sentence highlight
-    /// (`quotation`) covers, by the page they start on. Empty where the
+    /// (`quote`) covers, by the page they start on. Empty where the
     /// anchor no longer reads.
-    public static func quotationWords(
-      in pages: [TEIPage], resemblanceID: String, start: TEIWordPosition, end: TEIWordPosition
-    ) -> [(resemblanceID: String, word: TEIWord)] {
-      guard let highlights = quotation(in: pages, resemblanceID: resemblanceID, start: start, end: end) else { return [] }
-      var found: [(resemblanceID: String, word: TEIWord)] = []
+    public static func quoteWords(
+      in pages: [TEIPage], imageID: String, start: TEIWordPosition, end: TEIWordPosition
+    ) -> [(imageID: String, word: TEIWord)] {
+      guard let highlights = quote(in: pages, imageID: imageID, start: start, end: end) else { return [] }
+      var found: [(imageID: String, word: TEIWord)] = []
       for page in pages {
         let id = serviceID(ofFacsimile: page.facsimileURL)
         let sentences = (highlights[id] ?? []).filter { $0.kind == .sentence }.map(\.range)
@@ -645,13 +645,13 @@
     /// Uses the same validated surfaces, diplomatic projection and explicit
     /// cross-page sentence continuation as the reader. No unseen text is added.
     public static func surroundingSentence(
-      in pages: [TEIPage], resemblanceID: String, start: TEIWordPosition, end: TEIWordPosition
+      in pages: [TEIPage], imageID: String, start: TEIWordPosition, end: TEIWordPosition
     ) -> String? {
-      guard let highlights = quotation(in: pages, resemblanceID: resemblanceID, start: start, end: end) else {
+      guard let highlights = quote(in: pages, imageID: imageID, start: start, end: end) else {
         return nil
       }
       var excludedByPage = highlights.mapValues { $0.filter { $0.kind == .title }.map(\.range) }
-      if let at = pages.firstIndex(where: { serviceID(ofFacsimile: $0.facsimileURL) == resemblanceID }),
+      if let at = pages.firstIndex(where: { serviceID(ofFacsimile: $0.facsimileURL) == imageID }),
         TEIProjection.of(markup: pages[at].markup).units.first(where: {
           $0.line == end.line && $0.number == end.word
         })?.runsOn == true

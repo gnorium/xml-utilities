@@ -282,7 +282,7 @@
       // The document and its divisions.
       "TEI", "teiCorpus", "text", "front", "body", "back", "group", "floatingText",
       "div", "div1", "div2", "div3", "div4", "div5", "div6", "div7",
-      // Verse, drama, title pages, quotations, lists, tables, figures.
+      // Verse, drama, title pages, quotes, lists, tables, figures.
       "lg", "sp", "spGroup", "castList", "castGroup", "titlePage", "docTitle", "epigraph", "argument", "cit",
       "list", "listBibl", "listPerson", "listPlace", "table", "row", "figure", "entry", "superEntry",
       // The facsimile and stand-off markup.
