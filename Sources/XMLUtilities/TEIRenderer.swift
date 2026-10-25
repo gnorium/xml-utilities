@@ -1209,6 +1209,11 @@
               lineBroken = true
               breakInWord = element.name == "lb" && element.attribute("break") == "no"
             case "pb":
+              // Its page-level renditions (gnorium-python `base_tei.page_pair`:
+              // the page's ground and its default ink as the print has them)
+              // are never drawn: the reader maps that pair alone to its theme
+              // (user, 2026-10-25); every other ink and fill is drawn as
+              // encoded.
               flush()
               currentColumn = 0
               currentColumnRend = ""

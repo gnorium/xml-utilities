@@ -134,6 +134,11 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertEqual(filled[1].frame, filled[0].frame)
     XCTAssertEqual(filled[2].frame, "")
     XCTAssertEqual(filled[3].frame, "")
+    // The page's own pair on its <pb> (its ground, its default ink) is the
+    // theme's: no frame and no color on any line.
+    let cover = TEIRenderer.lines(
+      in: ##"<TEI><teiHeader><encodingDesc><tagsDecl><rendition xml:id="ground-1c2230" scheme="css">background-color:#1c2230</rendition><rendition xml:id="ink-cfb784" scheme="css">color:#cfb784</rendition></tagsDecl></encodingDesc></teiHeader><text><body><pb n="Front cover" rendition="#ground-1c2230 #ink-cfb784"/><lb/>HAMLET</body></text></TEI>"##)
+    XCTAssertTrue(cover.allSatisfy { $0.frame.isEmpty && !$0.rend.contains("color") })
     XCTAssertTrue(TEIRendition.frames("css:background-color=#d7e4f3"))
     XCTAssertFalse(TEIRendition.valid(property: "background-color", value: "#d7e4f"))
     let leader = TEIRenderer.lines(in: #"<p style="letter-spacing:0.05em">Title <pc style="word-spacing:2.5em">. . .</pc></p>"#)
