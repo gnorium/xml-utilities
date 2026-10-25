@@ -283,6 +283,57 @@
       }
     }
 
+    /// A page's scan layout as the reader's structure overlay reads it: its
+    /// text block's measured layout (`layout(of:)` a block) where its
+    /// surface keeps one; else the lines its line breaks name (each `<lb
+    /// facs>`'s zone: gnorium-python `calibration.base_tei` writes a zone a
+    /// measured line, `z-L7`, the box of its corners on the scan, and no
+    /// layout zones), the main text's after its text block as its block, a
+    /// marginal note's (`<note place>`) after a block of their own, the box
+    /// around them. Such a line has no baseline: it is seated on its box's
+    /// foot. None where the page has no measured text block.
+    public static func layout(of page: TEIPage) -> [LayoutZone] {
+      guard let block = page.textBlock else { return [] }
+      let measured = layout(of: block)
+      guard measured.isEmpty, block.fractions.count == 8 else { return measured }
+      var main: [LayoutZone] = []
+      var notes: [[LayoutZone]] = []
+      func corners(_ zone: TEIZone) -> [Double] {
+        let box = zone.percent
+        let (left, top) = (box.x / 100, box.y / 100)
+        let (right, bottom) = ((box.x + box.width) / 100, (box.y + box.height) / 100)
+        return [left, top, right, top, right, bottom, left, bottom]
+      }
+      func visit(_ element: TEIMarkup.Element, note: Int?) {
+        var note = note
+        if element.name == "note", TEIRenderer.marginalArea(of: element.attribute("place")) != nil {
+          notes.append([])
+          note = notes.count - 1
+        }
+        if element.name == "lb" {
+          for pointer in element.attribute("facs").split(whereSeparator: \.isWhitespace) where pointer.hasPrefix("#") {
+            guard let zone = page.zones[String(pointer.dropFirst())] else { continue }
+            let line = LayoutZone(type: "line", subtype: "", id: "", fractions: corners(zone))
+            if let note { notes[note].append(line) } else { main.append(line) }
+          }
+        }
+        for child in element.elements { visit(child, note: note) }
+      }
+      visit(TEIMarkup.document(page.markup), note: nil)
+      guard !main.isEmpty || notes.contains(where: { !$0.isEmpty }) else { return [] }
+      var out = [LayoutZone(type: "block", subtype: "main", id: "", fractions: block.fractions)] + main
+      for lines in notes where !lines.isEmpty {
+        let xs = lines.flatMap { line in stride(from: 0, to: 8, by: 2).map { line.fractions[$0] } }
+        let ys = lines.flatMap { line in stride(from: 1, to: 8, by: 2).map { line.fractions[$0] } }
+        let (left, top, right, bottom) = (xs.min() ?? 0, ys.min() ?? 0, xs.max() ?? 0, ys.max() ?? 0)
+        out.append(
+          LayoutZone(
+            type: "block", subtype: "marginalia", id: "", fractions: [left, top, right, top, right, bottom, left, bottom]))
+        out += lines
+      }
+      return out
+    }
+
     /// Every surface's measured text block (`TEITextBlock`), in document
     /// order. A zone whose points are not four corners, or whose surface
     /// declares no extent, is left out.
@@ -497,7 +548,13 @@
         prefix = "p\(position)-\(attempt)-"
       }
       let named = Set(own.map(\.id) + ownWords)
-      let renamed = renamingPointers(in: fragment, named: named, prefix: prefix)
+      // Its renditions made to agree with the document's: a step the page
+      // numbers as the document numbers another keeps its own value
+      // (`TEIRendition.reconciled`).
+      let reconciled = TEIRendition.reconciled(
+        TEIRendition.renditions(of: page), fragment: renamingPointers(in: fragment, named: named, prefix: prefix),
+        with: TEIRendition.renditions(of: laid))
+      let renamed = reconciled.fragment
       // The body first (the facsimile precedes it, so its range moves).
       let index = position - 1
       let pages = TEIRenderer.pages(in: laid)
@@ -532,7 +589,7 @@
       // The page's renditions joined into the header's (`TEIRendition.joining`):
       // a step the page references declared in the document it is laid in.
       // The work frame as the pages laid in now give it.
-      return framing(TEIRendition.joining(TEIRendition.renditions(of: page), into: laid))
+      return framing(TEIRendition.joining(reconciled.renditions, into: laid))
     }
 
     private static let layoutIDPattern = try! NSRegularExpression(pattern: #"(xml:id\s*=\s*")([^"]+)(")"#)

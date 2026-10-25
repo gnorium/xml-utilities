@@ -181,4 +181,30 @@ final class TEIRenditionTests: XCTestCase {
       TEIRendition.joining(size, into: "<TEI><text/></TEI>"),
       "<TEI><teiHeader><encodingDesc><tagsDecl>" + size + "</tagsDecl></encodingDesc></teiHeader><text/></TEI>")
   }
+
+  /// A page encoded under its own scale, laid into a document whose header
+  /// numbers the witness's steps otherwise (a halftone's): each of its
+  /// references names a rendition that declares what it was encoded with—
+  /// the document's alike, else a new id—and its placement renditions
+  /// (no step) join the header.
+  func testAPageKeepsItsOwnSettingInADocumentNumberingOtherwise() {
+    let document = #"<rendition xml:id="size-1" scheme="css">font-size:0.62rem</rendition><rendition xml:id="size-2" scheme="css">font-size:1rem</rendition><rendition xml:id="indent-1" scheme="css">text-indent:1.3373rem</rendition>"#
+    let page = #"<rendition xml:id="size-2" scheme="css">font-size:0.62rem</rendition><rendition xml:id="size-3" scheme="css">font-size:1rem</rendition><rendition xml:id="indent-1" scheme="css">text-indent:1.5456rem</rendition><rendition xml:id="fw-header" scheme="css">text-align:center</rendition>"#
+    let fragment = ##"<ab rendition="#size-3 #indent-1">A</ab><ab rendition="#size-2">B</ab><fw rendition="#fw-header" type="header">C</fw>"##
+    let reconciled = TEIRendition.reconciled(page, fragment: fragment, with: document)
+    // size-2 here is the document's size-1; size-3 the document's size-2
+    // only by the same value (kept: the document lacks size-3); indent-1 a
+    // new step.
+    XCTAssertEqual(
+      reconciled.fragment,
+      ##"<ab rendition="#size-3 #indent-2">A</ab><ab rendition="#size-1">B</ab><fw rendition="#fw-header" type="header">C</fw>"##)
+    XCTAssertTrue(reconciled.renditions.contains(#"<rendition xml:id="indent-2" scheme="css">text-indent:1.5456rem</rendition>"#))
+    XCTAssertFalse(reconciled.renditions.contains(#"xml:id="size-2""#))
+    let laid = TEIRendition.joining(
+      reconciled.renditions, into: "<TEI><teiHeader><encodingDesc><tagsDecl>" + document + "</tagsDecl></encodingDesc></teiHeader><text/></TEI>")
+    let declared = TEIRendition.declarations(of: laid)
+    XCTAssertEqual(declared["fw-header"], "css:text-align=center")
+    XCTAssertEqual(declared["indent-2"], "css:text-indent=1.5456rem")
+    XCTAssertEqual(declared["size-2"], "css:font-size=1rem")
+  }
 }

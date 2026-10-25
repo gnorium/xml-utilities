@@ -379,8 +379,120 @@ public enum TEIRendition {
   public static func joining(_ renditions: String, into document: String) -> String {
     guard !renditions.isEmpty else { return document }
     let standing = self.renditions(of: document)
-    let merged = joined([standing, renditions])
+    let merged = joined([standing, renditions]) + kept([standing, renditions])
     return merged == standing ? document : declaring(merged, in: document)
+  }
+
+  /// The renditions of `declared` (each `renditions(of:)` a header) that
+  /// are neither the work frame nor a step of the scale (`joined` leaves
+  /// them out): a furniture role's placement (`fw-header`), a centering
+  /// step (`align-center-1`), a display line's spacing or place, a block's
+  /// indent, the tracking steps, a space's character (gnorium-python
+  /// `calibration.scale`). Each as written, the first declaration of an
+  /// id kept, in the order declared: a reader's document declares every
+  /// rendition its pages reference, or a page's line is set without it.
+  public static func kept(_ declared: [String]) -> String {
+    var seen: Set<String> = []
+    var out = ""
+    for renditions in declared {
+      for written in renditionElements(in: renditions) {
+        let id = identifier(of: written)
+        guard !id.isEmpty, id != frameID, !isStep(id), seen.insert(id).inserted else { continue }
+        out += written
+      }
+    }
+    return out
+  }
+
+  /// Whether `id` names a step of the type scale (`size-1`, `leading-2`…).
+  static func isStep(_ id: String) -> Bool {
+    id.range(of: #"^(size|leading|indent|gap)-[1-9][0-9]*$"#, options: .regularExpression) != nil
+  }
+
+  /// A written `<rendition>`'s `xml:id`; "" where it has none.
+  static func identifier(of written: String) -> String {
+    TEIMarkup.document(written).elements.first(where: { $0.name == "rendition" })?.attribute("xml:id") ?? ""
+  }
+
+  /// A written `<rendition>`'s declaration, compared as a header's are
+  /// read (`tokens`, the frame's `frameTokens`), else as written.
+  static func declaration(of written: String) -> String {
+    guard let element = TEIMarkup.document(written).elements.first(where: { $0.name == "rendition" }) else { return "" }
+    let text = element.textContent.trimmingCharacters(in: .whitespacesAndNewlines)
+    let read = element.attribute("xml:id") == frameID ? frameTokens(text) : tokens(text)
+    return read.isEmpty ? text : read
+  }
+
+  /// A page's renditions made to agree with the document it is laid into
+  /// (`TEIFacsimile.laying`): a page is encoded under the scale of that
+  /// page alone (gnorium-python `base_tei`), so its `size-2` may be another
+  /// size than the document's `size-2` (a halftone's header numbers the
+  /// witness's steps). Where the document declares a page's id otherwise,
+  /// the page's references to it name the document's rendition that
+  /// declares the same, else a new id (a step the next number of its kind,
+  /// any other its id and the next free number): every line keeps the
+  /// setting it was encoded with. An id the document does not declare, or
+  /// declares alike, is kept. The page's renditions to join (`joining`) and
+  /// its fragment with its `rendition` pointers renamed.
+  public static func reconciled(_ renditions: String, fragment: String, with document: String) -> (
+    renditions: String, fragment: String
+  ) {
+    var standing: [String: String] = [:]
+    var taken: Set<String> = []
+    for written in renditionElements(in: document) {
+      let id = identifier(of: written)
+      guard !id.isEmpty else { continue }
+      taken.insert(id)
+      if standing[id] == nil { standing[id] = declaration(of: written) }
+    }
+    let own = renditionElements(in: renditions)
+    for written in own { taken.insert(identifier(of: written)) }
+    var renamed: [String: String] = [:]
+    var out = ""
+    for written in own {
+      let id = identifier(of: written)
+      let declared = declaration(of: written)
+      guard !id.isEmpty, id != frameID, let theirs = standing[id], theirs != declared else {
+        out += written
+        continue
+      }
+      let kind = isStep(id) ? String(id.prefix { $0 != "-" }) + "-" : ""
+      if let alike = standing.keys.sorted().first(where: { other in
+        standing[other] == declared && (kind.isEmpty ? !isStep(other) : other.hasPrefix(kind) && isStep(other))
+      }) {
+        renamed[id] = alike
+        continue
+      }
+      let stem = kind.isEmpty ? id + "-" : kind
+      var number = 1
+      if !kind.isEmpty {
+        number = (taken.compactMap { $0.hasPrefix(kind) && isStep($0) ? Int($0.dropFirst(kind.count)) : nil }.max() ?? 0) + 1
+      }
+      while taken.contains(stem + String(number)) { number += 1 }
+      let fresh = stem + String(number)
+      taken.insert(fresh)
+      renamed[id] = fresh
+      standing[fresh] = declared
+      out += written.replacingOccurrences(of: "xml:id=\"\(id)\"", with: "xml:id=\"\(fresh)\"")
+    }
+    guard !renamed.isEmpty else { return (out, fragment) }
+    return (out, renamingRenditionPointers(in: fragment, renamed))
+  }
+
+  /// `markup` with each `rendition` pointer (`#id`) to an id of `renamed`
+  /// naming its new id instead.
+  static func renamingRenditionPointers(in markup: String, _ renamed: [String: String]) -> String {
+    let pattern = try! NSRegularExpression(pattern: #"(\brendition\s*=\s*")([^"]*)(")"#)
+    var text = markup
+    for match in pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
+      guard let range = Range(match.range(at: 2), in: text) else { continue }
+      let pointers = text[range].split(whereSeparator: \.isWhitespace).map { pointer -> String in
+        guard pointer.hasPrefix("#"), let to = renamed[String(pointer.dropFirst())] else { return String(pointer) }
+        return "#" + to
+      }
+      text.replaceSubrange(range, with: pointers.joined(separator: " "))
+    }
+    return text
   }
 
   /// `document` with `renditions` (a page's header's, as a person edited
@@ -391,8 +503,8 @@ public enum TEIRendition {
   public static func overriding(_ renditions: String, into document: String) -> String {
     guard !renditions.isEmpty else { return document }
     let standing = self.renditions(of: document)
-    let merged = joined([renditions, standing])
-    return merged == joined([standing]) ? document : declaring(merged, in: document)
+    let merged = joined([renditions, standing]) + kept([renditions, standing])
+    return merged == joined([standing]) + kept([standing]) ? document : declaring(merged, in: document)
   }
 
   /// A page as one TEI document, as every view of a single page shows it
