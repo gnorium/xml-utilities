@@ -53,7 +53,7 @@ public enum TEIRendition {
     "margin-inline-end", "text-align", "font-weight", "font-style", "font-variant-caps", "font-variant-numeric",
     "column-gap",
     "inline-size", "block-size", "border-style", "padding", "padding-block", "padding-inline", "padding-block-start",
-    "padding-block-end", "padding-inline-start", "padding-inline-end",
+    "padding-block-end", "padding-inline-start", "padding-inline-end", "background-color",
   ]
 
   /// The properties CSS inherits: a child's own declaration of one
@@ -70,11 +70,12 @@ public enum TEIRendition {
   /// A block's margin after it: its last child's collapses with it.
   static let endMargins: Set<String> = ["margin-bottom", "margin-block-end"]
   /// What draws a block's frame—a printed ruled box (`border-style`), its
-  /// inset (`padding…`), its measure (`inline-size`)—and places it: its
+  /// inset (`padding…`), its measure (`inline-size`), its own ground (a
+  /// shaded box, a tinted panel: `background-color`)—and places it: its
   /// own box's, which no child takes.
   public static let frameProperties: Set<String> = [
     "border-style", "padding", "padding-block", "padding-inline", "padding-block-start", "padding-block-end",
-    "padding-inline-start", "padding-inline-end", "inline-size", "block-size",
+    "padding-inline-start", "padding-inline-end", "inline-size", "block-size", "background-color",
   ]
 
   /// The largest length a CSS length (and a `<space>`'s) may measure in
@@ -93,6 +94,9 @@ public enum TEIRendition {
     // edition face's onum and lnum).
     if property == "font-variant-numeric" { return ["normal", "oldstyle-nums", "lining-nums"].contains(value) }
     if property == "border-style" { return ["none", "solid", "double", "dotted", "dashed"].contains(value) }
+    // A region's own ground (user, 2026-10-25: gnorium-python
+    // `base_tei.fills`), drawn as encoded in every theme: "#rrggbb" only.
+    if property == "background-color" { return isHexColor(value) }
     guard properties.contains(property), let length = Length(value) else { return false }
     let (number, unit) = (length.value, length.unit)
     switch property {
@@ -843,10 +847,20 @@ public enum TEIRendition {
     return setting.rend
   }
 
-  /// Whether a rend draws a printed frame around its block.
+  /// Whether a rend draws a frame around its block: a printed rule
+  /// (`border-style`) or a ground of its own (`background-color`).
   public static func frames(_ rend: String) -> Bool {
-    guard let style = Setting(rend).value("border-style") else { return false }
+    let setting = Setting(rend)
+    if setting.value("background-color") != nil { return true }
+    guard let style = setting.value("border-style") else { return false }
     return style != "none"
+  }
+
+  /// Whether a value is a color as "#rrggbb": six hexadecimal digits.
+  static func isHexColor(_ value: String) -> Bool {
+    let scalars = Array(value.unicodeScalars)
+    guard scalars.count == 7, scalars[0] == "#" else { return false }
+    return scalars.dropFirst().allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) || ("A"..."F").contains($0) }
   }
 
   /// A column container's gap, counted in the font around it, as `frame`

@@ -1343,6 +1343,25 @@
               }
               flush()
               blockPending = true
+            case "ab" where TEIRendition.frames(TEIRenderer.blockSetting(of: ownRend)):
+              // A run of lines on a ground of its own (a shaded box, a tinted
+              // panel, user, 2026-10-25: `background-color`, gnorium-python
+              // `base_tei.fills`) or in a printed rule: its frame draws the
+              // ground as encoded, in every theme, and its inset; its lines
+              // are set inside it, as a framed note's are. Its ink and its
+              // type's size are its words' own.
+              flush()
+              let setting = TEIRendition.cascade(
+                rend, TEIRenderer.blockSetting(of: ownRend), .block(first: lines.count == opened && runs.isEmpty))
+              let type = TEIRenderer.typeSetting(of: ownRend)
+              let outerFrame = currentFrame
+              currentFrame = framing(setting)
+              walk(
+                element, kind: kind, rend: TEIRendition.inside(frame: setting),
+                inlineRend: type.isEmpty ? inlineRend : joined(type), alternative: alternative, zone: initialZone,
+                gloss: glossing(element), opened: lines.count)
+              flush()
+              currentFrame = outerFrame
             default:
               // Words, punctuation, sentences, glyphs, names, dates, numbers,
               // quotes and references add nothing to the reading but

@@ -122,6 +122,20 @@ final class TEIRenditionTests: XCTestCase {
       in: #"<note type="provenance" style="border-style:solid;padding:1em;inline-size:20em;margin-inline-start:8em"><p rend="color(blue)" style="font-size:0.5em">Gift</p></note>"#)
     XCTAssertEqual(framed[0].frame, "css:border-style=solid css:padding=1em css:inline-size=20em css:margin-inline-start=8em")
     XCTAssertEqual(framed[0].rend, "color(blue) css:font-size=0.5em")
+    // A run of lines on a ground of its own (user, 2026-10-25: a shaded
+    // box, gnorium-python `base_tei.fills`): its rendition's
+    // `background-color` and its inset frame its lines, drawn as encoded;
+    // a color that is no "#rrggbb" is none, and the run after it is no
+    // part of it.
+    let filled = TEIRenderer.lines(
+      in: ##"<TEI><teiHeader><encodingDesc><tagsDecl><rendition xml:id="fill-d7e4f3" scheme="css">background-color:#D7E4F3</rendition></tagsDecl></encodingDesc></teiHeader><text><body><ab rendition="#fill-d7e4f3" rend="color(red)" style="padding:1em"><lb/>Boxed<lb/>lines</ab><ab><lb/>After</ab><ab style="background-color:blue"><lb/>Plain</ab></body></text></TEI>"##)
+    XCTAssertEqual(filled.map(\.text), ["Boxed", "lines", "After", "Plain"])
+    XCTAssertEqual(filled[0].frame, "css:background-color=#d7e4f3 css:padding=1em")
+    XCTAssertEqual(filled[1].frame, filled[0].frame)
+    XCTAssertEqual(filled[2].frame, "")
+    XCTAssertEqual(filled[3].frame, "")
+    XCTAssertTrue(TEIRendition.frames("css:background-color=#d7e4f3"))
+    XCTAssertFalse(TEIRendition.valid(property: "background-color", value: "#d7e4f"))
     let leader = TEIRenderer.lines(in: #"<p style="letter-spacing:0.05em">Title <pc style="word-spacing:2.5em">. . .</pc></p>"#)
     XCTAssertEqual(leader[0].rend, "css:letter-spacing=0.05em")
     XCTAssertEqual(leader[0].runs.last?.rend, "css:word-spacing=2.5em")
