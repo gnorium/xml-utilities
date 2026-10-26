@@ -506,6 +506,35 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(TEIRenderer.pages(in: laid)[1].renditions["size-1"], "css:font-size=0.8251rem")
   }
 
+  /// Pages laid together read as the same pages laid one after another,
+  /// their renditions joined and their bodies in place; a place given
+  /// twice is laid once.
+  func testPagesLaidTogetherAreThePagesLaidInTurn() throws {
+    let document = Self.laidDocument(["<p>One.</p>", "<p>Two.</p>", "<p>Three.</p>"])
+    let pages = TEIRenderer.pages(in: document)
+    func page(_ step: String, _ text: String) -> String {
+      #"<TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><encodingDesc><tagsDecl>"#
+        + #"<rendition xml:id="size-1" scheme="css">font-size:\#(step)rem</rendition>"#
+        + ##"</tagsDecl></encodingDesc></teiHeader><text><body><p rendition="#size-1">"## + text + "</p></body></text></TEI>"
+    }
+    let layings = [
+      TEIFacsimile.Laying(page: page("0.8251", "Uno."), fragment: ##"<p rendition="#size-1">Uno.</p>"##, over: pages[0], position: 1),
+      TEIFacsimile.Laying(page: page("1.2000", "Tres."), fragment: ##"<p rendition="#size-1">Tres.</p>"##, over: pages[2], position: 3),
+      TEIFacsimile.Laying(page: page("1.2000", "Again."), fragment: "<p>Again.</p>", over: pages[2], position: 3),
+    ]
+    var inTurn = document
+    for laying in layings.prefix(2) {
+      inTurn = try XCTUnwrap(
+        TEIFacsimile.laying(page: laying.page, fragment: laying.fragment, over: laying.old, position: laying.position, in: inTurn))
+    }
+    let together = TEIFacsimile.laying(layings, in: document)
+    XCTAssertEqual(together.laid, [0, 1])
+    XCTAssertEqual(together.document, inTurn)
+    XCTAssertEqual(
+      TEIRenderer.pages(in: together.document).map(\.markup),
+      [##"<p rendition="#size-1">Uno.</p>"##, "<p>Two.</p>", ##"<p rendition="#size-2">Tres.</p>"##])
+  }
+
   /// Identical markup on two pages is two pages: only the named one changes.
   func testLayingChangesOnlyTheNamedPageWhenTwoReadTheSame() throws {
     let document = Self.laidDocument(["<p>Same.</p>", "<p>Same.</p>", "<p>Same.</p>"])

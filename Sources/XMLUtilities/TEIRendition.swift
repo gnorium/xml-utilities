@@ -273,10 +273,12 @@ public enum TEIRendition {
     return renditionElements(in: String(tei[declared])).joined()
   }
 
+  private static let renditionPattern = try! NSRegularExpression(
+    pattern: #"<rendition\b[^>]*>[\s\S]*?</rendition>|<rendition\b[^>]*/>"#)
+
   /// Each `<rendition>` element in `markup`, as written.
   static func renditionElements(in markup: String) -> [String] {
-    let pattern = try! NSRegularExpression(pattern: #"<rendition\b[^>]*>[\s\S]*?</rendition>|<rendition\b[^>]*/>"#)
-    return pattern.matches(in: markup, range: NSRange(markup.startIndex..., in: markup)).compactMap {
+    renditionPattern.matches(in: markup, range: NSRange(markup.startIndex..., in: markup)).compactMap {
       Range($0.range, in: markup).map { String(markup[$0]) }
     }
   }
@@ -324,10 +326,10 @@ public enum TEIRendition {
       return length.value
     }
     for written in renditionElements(in: renditions) {
-      guard let element = TEIMarkup.document(written).elements.first(where: { $0.name == "rendition" }) else { continue }
-      let id = element.attribute("xml:id")
+      guard let element = read(written) else { continue }
+      let id = element.id
       var css: [String: String] = [:]
-      for declaration in element.textContent.split(separator: ";") {
+      for declaration in element.text.split(separator: ";") {
         let pair = declaration.split(separator: ":", maxSplits: 1)
         guard pair.count == 2 else { continue }
         css[pair[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] =
@@ -403,8 +405,17 @@ public enum TEIRendition {
   public static func joining(_ renditions: String, into document: String) -> String {
     guard !renditions.isEmpty else { return document }
     let standing = self.renditions(of: document)
-    let merged = joined([standing, renditions]) + kept([standing, renditions])
+    let merged = merging(renditions, into: standing)
     return merged == standing ? document : declaring(merged, in: document)
+  }
+
+  /// A header's renditions (`standing`, as `renditions(of:)` reads them)
+  /// with a page's joined in (`joined`, then the others `kept`), as
+  /// `joining` declares them: the header's alone where the page declares
+  /// none.
+  static func merging(_ renditions: String, into standing: String) -> String {
+    guard !renditions.isEmpty else { return standing }
+    return joined([standing, renditions]) + kept([standing, renditions])
   }
 
   /// The renditions of `declared` (each `renditions(of:)` a header) that
@@ -433,17 +444,38 @@ public enum TEIRendition {
     id.range(of: #"^(size|leading|indent|gap)-[1-9][0-9]*$"#, options: .regularExpression) != nil
   }
 
+  /// A written `<rendition>`'s `xml:id` and its text: its opening tag's
+  /// attributes and the text it holds, read without parsing it as a
+  /// document where it holds no markup and no character reference (laying
+  /// a long book's pages read every rendition of its header for each page:
+  /// Hamlet's 81, dev 2026-10-26); parsed where it does. Nil where it is no
+  /// rendition.
+  static func read(_ written: String) -> (id: String, text: String)? {
+    guard let open = written.range(of: "<rendition"), let close = written[open.upperBound...].firstIndex(of: ">") else {
+      return nil
+    }
+    let tag = String(written[open.lowerBound...close])
+    let id = TEIMarkup.attributes(in: tag)["xml:id"] ?? ""
+    if written[..<close].hasSuffix("/") { return (id, "") }
+    let body = written[written.index(after: close)...]
+    let end = body.range(of: "</rendition>", options: .backwards)?.lowerBound ?? body.endIndex
+    let content = body[..<end]
+    guard content.contains("<") || content.contains("&#") else { return (id, XMLFormatter.decodingEntities(String(content))) }
+    guard let element = TEIMarkup.document(written).elements.first(where: { $0.name == "rendition" }) else { return nil }
+    return (element.attribute("xml:id"), element.textContent)
+  }
+
   /// A written `<rendition>`'s `xml:id`; "" where it has none.
   static func identifier(of written: String) -> String {
-    TEIMarkup.document(written).elements.first(where: { $0.name == "rendition" })?.attribute("xml:id") ?? ""
+    read(written)?.id ?? ""
   }
 
   /// A written `<rendition>`'s declaration, compared as a header's are
   /// read (`tokens`, the frame's `frameTokens`), else as written.
   static func declaration(of written: String) -> String {
-    guard let element = TEIMarkup.document(written).elements.first(where: { $0.name == "rendition" }) else { return "" }
-    let text = element.textContent.trimmingCharacters(in: .whitespacesAndNewlines)
-    let read = element.attribute("xml:id") == frameID ? frameTokens(text) : tokens(text)
+    guard let element = read(written) else { return "" }
+    let text = element.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let read = element.id == frameID ? frameTokens(text) : tokens(text)
     return read.isEmpty ? text : read
   }
 

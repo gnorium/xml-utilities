@@ -159,14 +159,29 @@
     /// gnorium-python `facsimile.LEAF`) kept with the scan's structure
     /// (`layout`). The whole scan where it keeps none, as the measuring
     /// takes a scan whose leaf it found no edge of (`layout_measure.leaf_box`).
-    public var paperWidth: Double {
-      guard let range = layout.range(of: #"<zone\b[^>]*\btype="leaf"[^>]*/>"#, options: .regularExpression),
-        surfaceLRX > surfaceULX
-      else { return imageWidth }
-      let xs = XMLFormatter.attribute("points", in: String(layout[range])).split(whereSeparator: \.isWhitespace)
-        .compactMap { $0.split(separator: ",").first.flatMap { Double($0) } }
-      guard let left = xs.min(), let right = xs.max(), right > left else { return imageWidth }
-      return (right - left) / (surfaceLRX - surfaceULX) * imageWidth
+    public var paperWidth: Double { paperSize.width }
+
+    /// The leaf's height on the scan, as `paperWidth` its width: the whole
+    /// scan's where it keeps no leaf.
+    public var paperHeight: Double { paperSize.height }
+
+    /// The leaf's size on the scan (`paperWidth`, `paperHeight`), each
+    /// extent the whole scan's where its zone gives none.
+    private var paperSize: (width: Double, height: Double) {
+      guard let range = layout.range(of: #"<zone\b[^>]*\btype="leaf"[^>]*/>"#, options: .regularExpression) else {
+        return (imageWidth, imageHeight)
+      }
+      let points = XMLFormatter.attribute("points", in: String(layout[range])).split(whereSeparator: \.isWhitespace)
+        .map { $0.split(separator: ",").compactMap { Double($0) } }.filter { $0.count == 2 }
+      func extent(_ axis: Int, from low: Double, to high: Double, scan: Double) -> Double {
+        let values = points.map { $0[axis] }
+        guard high > low, let first = values.min(), let last = values.max(), last > first else { return scan }
+        return (last - first) / (high - low) * scan
+      }
+      return (
+        extent(0, from: surfaceULX, to: surfaceLRX, scan: imageWidth),
+        extent(1, from: surfaceULY, to: surfaceLRY, scan: imageHeight)
+      )
     }
 
     /// Its zone's style, as written: its type, `font-size` in the scan's
@@ -415,10 +430,14 @@
         margin: median { max(0, ($0.block.paperWidth - $0.measure) / 2) } / body, width: median { $0.block.imageWidth } / body)
     }
 
-    /// The size of a work's pages' scans in pixels: the median width and
-    /// height of its measured pages' scans, each weighted by its main text
-    /// block's area as the work frame is (`workFrame`), so its body pages'
-    /// is the size. Nil where none is measured.
+    /// The size of a work's leaves on their scans in pixels: the median
+    /// width and height of its measured pages' leaves (`paperWidth`,
+    /// `paperHeight`: the scan's own where it keeps no leaf), each weighted
+    /// by its main text block's area as the work frame is (`workFrame`), so
+    /// its body pages' is the size. Its leaves, never its photographs: a
+    /// photograph holds a ruler, a color chart, the next leaf, more or less
+    /// of each from page to page (user, 2026-10-26). Nil where none is
+    /// measured.
     public static func workPage(of blocks: [TEITextBlock]) -> (width: Double, height: Double)? {
       let pages = blocks.compactMap { block -> (TEITextBlock, Double)? in
         guard block.imageWidth > 0, block.imageHeight > 0, !block.derived, let size = block.size else { return nil }
@@ -426,7 +445,7 @@
       }
       guard !pages.isEmpty else { return nil }
       return (
-        weightedMedian(pages.map { ($0.0.imageWidth, $0.1) }), weightedMedian(pages.map { ($0.0.imageHeight, $0.1) })
+        weightedMedian(pages.map { ($0.0.paperWidth, $0.1) }), weightedMedian(pages.map { ($0.0.paperHeight, $0.1) })
       )
     }
 
@@ -535,82 +554,145 @@
     /// document's facsimile in place of the old page's surface, each id
     /// prefixed with the page's place (`p3-z1`, gnorium-python
     /// `document_surface`) and the fragment's references renamed to match,
-    /// and its renditions joined into the document's header.
+    /// and its renditions joined into the document's header; the work
+    /// frame then declared as the pages laid in give it (`framing`), unless
+    /// the caller declares it itself (`framed` false).
     /// The page is found by its place (`position`, counted from 1, in
     /// `TEIRenderer.pageRanges`), never by searching for its text: a blank
     /// page's empty markup is in no document, and identical markup on an
     /// earlier page would be found first (prod, 2026-10-10). Nil when that
     /// place holds no page reading `old`'s image.
     public static func laying(
-      page: String, fragment: String, over old: TEIPage, position: Int, in document: String
+      page: String, fragment: String, over old: TEIPage, position: Int, in document: String, framed: Bool = true
     ) -> String? {
-      let service = TEIRenderer.serviceID(ofFacsimile: old.facsimileURL)
-      // The old page's surface goes; the other pages' zones stay.
+      let laid = laying(
+        [Laying(page: page, fragment: fragment, over: old, position: position)], in: document, framed: framed)
+      return laid.laid.isEmpty ? nil : laid.document
+    }
+
+    /// A page to lay into a document (`laying`): its whole TEI, its body,
+    /// the page it takes the place of and that page's place, from 1.
+    public struct Laying: Sendable {
+      public let page: String
+      public let fragment: String
+      public let old: TEIPage
+      public let position: Int
+
+      public init(page: String, fragment: String, over old: TEIPage, position: Int) {
+        self.page = page
+        self.fragment = fragment
+        self.old = old
+        self.position = position
+      }
+    }
+
+    /// Pages laid into a document, each as `laying(page:…)` lays one, in
+    /// order, the document read once for all of them: its old surfaces
+    /// taken out together, every body laid in one pass
+    /// (`TEIRenderer.layingPages`), the new surfaces joined together and
+    /// the header declared once. Laying a long book's pages one at a time
+    /// read the whole document several times for each (Hamlet's 81: 62
+    /// seconds, dev 2026-10-26). The document, and which of `pages` were
+    /// laid (by their place in `pages`): a page whose place holds no page
+    /// reading its old page's image, or a place already given, is not.
+    public static func laying(_ pages: [Laying], in document: String, framed: Bool = true) -> (
+      document: String, laid: [Int]
+    ) {
+      // Each page found by its place, reading its old page's image.
+      let images = TEIRenderer.pageImages(in: document)
+      var chosen: [Int] = []
+      var places: Set<Int> = []
+      for (number, page) in pages.enumerated() {
+        let index = page.position - 1
+        guard images.indices.contains(index),
+          TEIRenderer.serviceID(ofFacsimile: images[index]) == TEIRenderer.serviceID(ofFacsimile: page.old.facsimileURL),
+          places.insert(index).inserted
+        else { continue }
+        chosen.append(number)
+      }
+      guard !chosen.isEmpty else { return (document, []) }
+      // Their old surfaces go; the other pages' zones stay.
+      let services = Set(chosen.map { TEIRenderer.serviceID(ofFacsimile: pages[$0].old.facsimileURL) })
+      let labels = Set(chosen.map { pages[$0].old.label })
       var laid = document
       for range in matches(of: surfacePattern, in: laid).reversed() {
-        let tag = String(laid[range].prefix { $0 != ">" })
-        let graphic = XMLFormatter.attribute("url", in: String(laid[range]))
-        if TEIRenderer.serviceID(ofFacsimile: graphic) == service || XMLFormatter.attribute("n", in: tag) == old.label {
+        let written = laid[range]
+        let tag = String(written.prefix { $0 != ">" })
+        // Its image read from its graphic's tag alone, never its zones.
+        let graphic = written.range(of: "<graphic").map {
+          XMLFormatter.attribute("url", in: String(written[$0.lowerBound...].prefix { $0 != ">" }))
+        } ?? ""
+        if services.contains(TEIRenderer.serviceID(ofFacsimile: graphic)) || labels.contains(XMLFormatter.attribute("n", in: tag)) {
           laid.removeSubrange(range)
         }
       }
-      let standing = blocks(in: laid)
-      let taken = Set(zones(in: standing).keys).union(textBlocks(in: standing).map(\.id))
-        .union(textBlocks(in: standing).flatMap { layoutIDs(in: $0.layout) })
-      let own = zones(in: page).values.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
-      let ownBlock = textBlocks(in: blocks(in: page)).first
-      // Its word zones' ids, which its words' `@facs` name.
-      let ownWords = ownBlock.map { layoutIDs(in: $0.layout) } ?? []
-      let ids = own.map(\.id) + (ownBlock.map { [$0.id] } ?? []) + ownWords
-      var prefix = "p\(position)-"
-      var attempt = 1
-      while ids.contains(where: { taken.contains(prefix + $0) }) {
-        attempt += 1
-        prefix = "p\(position)-\(attempt)-"
+      // Every zone id the document's facsimile holds (its boxes, its text
+      // blocks, their layouts' words), read by their ids alone, and each
+      // page's as it is laid.
+      var taken = zoneIDs(in: blocks(in: laid))
+      // The header's renditions, each page's joined in turn.
+      let declared = TEIRendition.renditions(of: laid)
+      var standing = declared
+      var bodies: [(index: Int, markup: String)] = []
+      var surfaces = ""
+      for number in chosen {
+        let laying = pages[number]
+        let own = zones(in: laying.page).values.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+        let ownBlock = textBlocks(in: blocks(in: laying.page)).first
+        // Its word zones' ids, which its words' `@facs` name.
+        let ownWords = ownBlock.map { layoutIDs(in: $0.layout) } ?? []
+        let ids = own.map(\.id) + (ownBlock.map { [$0.id] } ?? []) + ownWords
+        var prefix = "p\(laying.position)-"
+        var attempt = 1
+        while ids.contains(where: { taken.contains(prefix + $0) }) {
+          attempt += 1
+          prefix = "p\(laying.position)-\(attempt)-"
+        }
+        taken.formUnion(ids.map { prefix + $0 })
+        let named = Set(own.map(\.id) + ownWords)
+        // Its renditions made to agree with the document's: a step the page
+        // numbers as the document numbers another keeps its own value
+        // (`TEIRendition.reconciled`).
+        let reconciled = TEIRendition.reconciled(
+          TEIRendition.renditions(of: laying.page),
+          fragment: renamingPointers(in: laying.fragment, named: named, prefix: prefix), with: standing)
+        bodies.append((laying.position - 1, reconciled.fragment))
+        let old = laying.old
+        surfaces += surface(
+          own.map {
+            TEIZone(
+              id: prefix + $0.id, ulx: $0.ulx, uly: $0.uly, lrx: $0.lrx, lry: $0.lry, surfaceULX: $0.surfaceULX,
+              surfaceULY: $0.surfaceULY, surfaceLRX: $0.surfaceLRX, surfaceLRY: $0.surfaceLRY)
+          },
+          textBlock: ownBlock.map {
+            $0.renamed(
+              prefix + $0.id, imageURL: old.facsimileURL, label: old.label,
+              layout: renamingLayoutIDs(in: $0.layout, prefix: prefix))
+          },
+          label: old.label, imageURL: old.facsimileURL)
+        // The page's renditions joined into the header's (`TEIRendition.merging`):
+        // a step the page references declared in the document it is laid in.
+        standing = TEIRendition.merging(reconciled.renditions, into: standing)
       }
-      let named = Set(own.map(\.id) + ownWords)
-      // Its renditions made to agree with the document's: a step the page
-      // numbers as the document numbers another keeps its own value
-      // (`TEIRendition.reconciled`).
-      let reconciled = TEIRendition.reconciled(
-        TEIRendition.renditions(of: page), fragment: renamingPointers(in: fragment, named: named, prefix: prefix),
-        with: TEIRendition.renditions(of: laid))
-      let renamed = reconciled.fragment
-      // The body first (the facsimile precedes it, so its range moves).
-      let index = position - 1
-      let pages = TEIRenderer.pages(in: laid)
-      guard pages.indices.contains(index),
-        TEIRenderer.serviceID(ofFacsimile: pages[index].facsimileURL) == service,
-        let replaced = TEIRenderer.layingPage(index, with: renamed, in: laid)
-      else { return nil }
+      // The bodies first (the facsimile precedes them, so their ranges move).
+      guard let replaced = TEIRenderer.layingPages(bodies, in: laid) else { return (document, []) }
       laid = replaced
-      let surfaces = surface(
-        own.map {
-          TEIZone(
-            id: prefix + $0.id, ulx: $0.ulx, uly: $0.uly, lrx: $0.lrx, lry: $0.lry, surfaceULX: $0.surfaceULX,
-            surfaceULY: $0.surfaceULY, surfaceLRX: $0.surfaceLRX, surfaceLRY: $0.surfaceLRY)
-        },
-        textBlock: ownBlock.map {
-          $0.renamed(
-            prefix + $0.id, imageURL: old.facsimileURL, label: old.label,
-            layout: renamingLayoutIDs(in: $0.layout, prefix: prefix))
-        },
-        label: old.label, imageURL: old.facsimileURL)
-      // An empty facsimile goes; a new surface joins the one there is, or
-      // starts one after the header.
+      // An empty facsimile goes; the new surfaces join the one there is, or
+      // start one after the header.
       if let open = laid.range(of: "<facsimile"), let close = laid.range(of: "</facsimile>", range: open.upperBound..<laid.endIndex) {
         laid.insert(contentsOf: surfaces, at: close.lowerBound)
-        if let emptied = laid.range(of: #"\s*<facsimile\b[^>]*>\s*</facsimile>"#, options: .regularExpression) {
+        if surfaces.isEmpty,
+          let emptied = laid.range(of: #"\s*<facsimile\b[^>]*>\s*</facsimile>"#, options: .regularExpression)
+        {
           laid.removeSubrange(emptied)
         }
       } else if !surfaces.isEmpty {
         let at = laid.range(of: "</teiHeader>")?.upperBound ?? laid.range(of: "<text")?.lowerBound
         if let at { laid.insert(contentsOf: "\n  <facsimile>" + surfaces + "</facsimile>", at: at) }
       }
-      // The page's renditions joined into the header's (`TEIRendition.joining`):
-      // a step the page references declared in the document it is laid in.
+      if standing != declared { laid = TEIRendition.declaring(standing, in: laid) }
       // The work frame as the pages laid in now give it.
-      return framing(TEIRendition.joining(reconciled.renditions, into: laid))
+      return (framed ? framing(laid) : laid, chosen)
     }
 
     private static let layoutIDPattern = try! NSRegularExpression(pattern: #"(xml:id\s*=\s*")([^"]+)(")"#)

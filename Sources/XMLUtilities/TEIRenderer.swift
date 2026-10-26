@@ -64,17 +64,20 @@
     /// measured main text block (`TEITextBlock.frame`), else none. The
     /// page is its frame and its marginalia with the frame's margin, equal,
     /// around them (`TEIView`), unless it is genuinely larger than its
-    /// work's pages (a plate, a foldout, a manuscript leaf): its scan
+    /// work's pages (a plate, a foldout, a manuscript leaf): its leaf
     /// larger than theirs by more than a margin either way. Then it is its
-    /// scan's own size, at the same scale (`TEIPageFrame.page`).
+    /// leaf's own size, at the same scale (`TEIPageFrame.page`). Leaves,
+    /// never photographs: a photograph of an opening, a ruler beside it, is
+    /// no larger page, and every leaf of a size is one box, its blank's
+    /// mark where every other blank's is (user, 2026-10-26).
     public var frame: TEIPageFrame? {
       guard let work = TEIRendition.frame(in: renditions) ?? textBlock?.frame else { return nil }
       var page: (width: Double, height: Double)?
       if let workPage, let textBlock, textBlock.imageWidth > 0, textBlock.imageHeight > 0,
-        textBlock.imageWidth - workPage.width > work.margin * work.body
-          || textBlock.imageHeight - workPage.height > work.margin * work.body
+        textBlock.paperWidth - workPage.width > work.margin * work.body
+          || textBlock.paperHeight - workPage.height > work.margin * work.body
       {
-        page = (textBlock.imageWidth / work.body, textBlock.imageHeight / work.body)
+        page = (textBlock.paperWidth / work.body, textBlock.paperHeight / work.body)
       }
       return TEIPageFrame(
         measure: work.measure, height: work.height, margin: work.margin, pageWidth: page?.width ?? 0,
@@ -598,6 +601,13 @@
       }
     }
 
+    /// The image each page reads, in order (`pages(in:)`'s
+    /// `facsimileURL`s), read from its page breaks alone.
+    public static func pageImages(in xml: String) -> [String] {
+      guard let text = XMLFormatter.textRange(of: xml) else { return [] }
+      return pageBreaks(in: xml[text]).map(\.facsimileURL)
+    }
+
     /// `xml` with page `index` (as `pageRanges` places it) holding `markup`
     /// in place of its own: its content between the white space at its
     /// edges replaced, or, on a page with none, set on the line after its
@@ -639,22 +649,56 @@
     /// beginnings at one point, and its label twice. Nil when there is no
     /// such page.
     public static func layingPage(_ index: Int, with markup: String, in xml: String) -> String? {
-      let (side, rest) = openingSideBreak(of: markup)
+      layingPages([(index, markup)], in: xml)
+    }
+
+    /// `xml` with each page (`index`, as `pageRanges` places it) holding its
+    /// `markup`, every one laid as `layingPage` lays one, in one pass over
+    /// the document: laying a long book's pages one at a time read it whole
+    /// for each (Hamlet's 81, dev 2026-10-26). Nil when a place holds no
+    /// page, or is given twice.
+    public static func layingPages(_ pages: [(index: Int, markup: String)], in xml: String) -> String? {
       let spans = pageSpans(in: xml)
-      guard spans.indices.contains(index) else { return nil }
-      guard let side else { return replacingPage(index, with: markup, in: xml) }
-      let tag = spans[index].open.tag
-      let image = String(xml[tag])
-      let (start, end) = (xml.utf8.distance(from: xml.startIndex, to: tag.lowerBound), xml.utf8.distance(from: xml.startIndex, to: tag.upperBound))
-      guard var laid = replacingPage(index, with: rest, in: xml) else { return nil }
-      var folded = side
-      if let facs = image.range(of: #"\sfacs\s*=\s*("[^"]*"|'[^']*')"#, options: .regularExpression),
-        let close = folded.range(of: #"\s*/?>$"#, options: .regularExpression)
-      {
-        folded.insert(contentsOf: image[facs], at: close.lowerBound)
+      var out = ""
+      var cursor = xml.startIndex
+      for (index, markup) in pages.sorted(by: { $0.index < $1.index }) {
+        guard spans.indices.contains(index), cursor <= spans[index].open.tag.lowerBound else { return nil }
+        let (open, range) = spans[index]
+        out += xml[cursor..<open.tag.lowerBound]
+        // The side's own break, where the markup opens with one, is the
+        // image's break, carrying its `facs`.
+        let (side, rest) = openingSideBreak(of: markup)
+        if var folded = side {
+          let image = xml[open.tag]
+          if let facs = image.range(of: #"\sfacs\s*=\s*("[^"]*"|'[^']*')"#, options: .regularExpression),
+            let close = folded.range(of: #"\s*/?>$"#, options: .regularExpression)
+          {
+            folded.insert(contentsOf: image[facs], at: close.lowerBound)
+          }
+          out += folded
+        } else {
+          out += xml[open.tag]
+        }
+        let content = side == nil ? markup : rest
+        out += xml[open.tag.upperBound..<range.lowerBound]
+        // Its content between the white space at its edges replaced, or, on
+        // a page with none, set on the line after its page break
+        // (`replacingPage`).
+        if let first = xml[range].firstIndex(where: { !$0.isWhitespace }),
+          let last = xml[range].lastIndex(where: { !$0.isWhitespace })
+        {
+          out += xml[range.lowerBound..<first]
+          out += content
+          cursor = xml.index(after: last)
+        } else {
+          let at = xml[range].firstIndex(where: \.isNewline).map { xml.index(after: $0) } ?? range.lowerBound
+          out += xml[range.lowerBound..<at]
+          out += content
+          cursor = at
+        }
       }
-      laid.replaceSubrange(laid.utf8.index(laid.startIndex, offsetBy: start)..<laid.utf8.index(laid.startIndex, offsetBy: end), with: folded)
-      return laid
+      out += xml[cursor...]
+      return out
     }
 
     /// Each image as a complete XML document, preserving front/body/back
