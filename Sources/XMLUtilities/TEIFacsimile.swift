@@ -668,6 +668,30 @@
       surfaceRange(of: page.facsimileURL, label: page.label, in: document).map { String(document[$0]) } ?? ""
     }
 
+    /// The surfaces a document holds for `pages`, in their order
+    /// (`surface(of:in:)` for each), the facsimile read once: a page at a
+    /// time read it whole for every page, minutes for a long book's
+    /// revision (dev, 2026-10-26).
+    public static func surfaces(of pages: [TEIPage], in document: String) -> [String] {
+      var byService: [String: String] = [:]
+      var byLabel: [String: String] = [:]
+      for range in matches(of: surfacePattern, in: document) {
+        let written = String(document[range])
+        let graphic = XMLFormatter.attribute("url", in: written)
+        if graphic.isEmpty {
+          let label = XMLFormatter.attribute("n", in: String(written.prefix { $0 != ">" }))
+          if !label.isEmpty, byLabel[label] == nil { byLabel[label] = written }
+        } else {
+          let service = TEIRenderer.serviceID(ofFacsimile: graphic)
+          if byService[service] == nil { byService[service] = written }
+        }
+      }
+      return pages.map { page in
+        let service = TEIRenderer.serviceID(ofFacsimile: page.facsimileURL)
+        return byService[service] ?? (page.label.isEmpty ? nil : byLabel[page.label]) ?? ""
+      }
+    }
+
     /// A headed page (`TEIRendition.headedPage`) with its surface as its
     /// `<facsimile>`, after the header and before the text, a zone a line,
     /// as a document holds it: what a page's XML and its diff show alike
