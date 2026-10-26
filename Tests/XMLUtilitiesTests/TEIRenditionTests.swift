@@ -119,7 +119,7 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertEqual(TEIRendition.columnMargins(of: note[0].columnRend), "padding-inline-start:0.5em;")
     XCTAssertEqual(TEIRendition.inColumns(note[0].rend, of: note[0].columnRend), "align(justify) css:font-size=0.5em css:column-gap=2em")
     let framed = TEIRenderer.lines(
-      in: #"<note type="provenance" style="border-style:solid;padding:1em;inline-size:20em;margin-inline-start:8em"><p rend="color(blue)" style="font-size:0.5em">Gift</p></note>"#)
+      in: #"<note type="binding" subtype="edition" style="border-style:solid;padding:1em;inline-size:20em;margin-inline-start:8em"><p rend="color(blue)" style="font-size:0.5em">Gift</p></note>"#)
     XCTAssertEqual(framed[0].frame, "css:border-style=solid css:padding=1em css:inline-size=20em css:margin-inline-start=8em")
     XCTAssertEqual(framed[0].rend, "color(blue) css:font-size=0.5em")
     // A run of lines on a ground of its own (user, 2026-10-25: a shaded
@@ -173,10 +173,19 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertTrue(joined.hasPrefix(#"<rendition xml:id="text-block" scheme="css" selector="text">font-size:46.10px;"#))
     XCTAssertTrue(joined.contains("font-size:0.83rem") && joined.contains(#"xml:id="size-7""#) && joined.contains(#"xml:id="gap-5""#))
     XCTAssertFalse(joined.contains(#"xml:id="title""#) || joined.contains("gap-0"))
-    // A page's header written again as Python heads it (`with_renditions`).
+    // A page's header written again, formatted one element per line.
     let page = try fixture("canvas-5")
-    XCTAssertEqual(TEIRendition.declaring(TEIRendition.renditions(of: page), in: page), page)
-    XCTAssertEqual(TEIRendition.declaring(pages[4], in: TEIRendition.declaring("", in: page)), page)
+    let redeclared = TEIRendition.declaring(TEIRendition.renditions(of: page), in: page)
+    XCTAssertEqual(TEIRendition.renditions(of: redeclared), pages[4])
+    XCTAssertEqual(TEIRendition.declaring(pages[4], in: TEIRendition.declaring("", in: page)), redeclared)
+    XCTAssertTrue(
+      redeclared.hasPrefix(
+        """
+        <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader>
+          <encodingDesc>
+            <tagsDecl>
+              <rendition xml:id="text-block"
+        """))
   }
 
   /// A page's renditions joined into a document's header: added where it
@@ -188,17 +197,78 @@ final class TEIRenditionTests: XCTestCase {
     let document = #"<TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><fileDesc><titleStmt><title>T</title></titleStmt></fileDesc><encodingDesc><p>Joined.</p></encodingDesc></teiHeader><text><body><p>A</p></body></text></TEI>"#
     let joined = TEIRendition.joining(frame + size, into: document)
     XCTAssertEqual(TEIRendition.renditions(of: joined), frame + size)
-    XCTAssertTrue(joined.contains("<encodingDesc><tagsDecl>" + frame + size + "</tagsDecl><p>Joined.</p>"))
+    XCTAssertTrue(
+      joined.contains(
+        """
+        <encodingDesc>
+            <tagsDecl>
+              \(frame)
+              \(size)
+            </tagsDecl><p>Joined.</p></encodingDesc>
+        """))
     XCTAssertEqual(TEIRendition.joining(size, into: joined), joined)
     XCTAssertEqual(TEIRendition.joining("", into: document), document)
     let other = #"<rendition xml:id="size-1" scheme="css">font-size:0.9rem</rendition><rendition xml:id="gap-1" scheme="css">margin-block-start:0.7845rem</rendition>"#
     XCTAssertEqual(
       TEIRendition.renditions(of: TEIRendition.joining(other, into: joined)),
       frame + size + #"<rendition xml:id="gap-1" scheme="css">margin-block-start:0.7845rem</rendition>"#)
-    // A document with no header is given one.
+    // A document with no header is given one, formatted one element per line.
     XCTAssertEqual(
       TEIRendition.joining(size, into: "<TEI><text/></TEI>"),
-      "<TEI><teiHeader><encodingDesc><tagsDecl>" + size + "</tagsDecl></encodingDesc></teiHeader><text/></TEI>")
+      """
+      <TEI><teiHeader>
+        <encodingDesc>
+          <tagsDecl>
+            \(size)
+          </tagsDecl>
+        </encodingDesc>
+      </teiHeader><text/></TEI>
+      """)
+    // Indented consistently with an explicated document's header, and
+    // `TEIRendition.header(_:)` formatted one element per line.
+    let explicated = """
+      <TEI xmlns="http://www.tei-c.org/ns/1.0">
+        <teiHeader>
+          <fileDesc>
+            <titleStmt>
+              <title>T</title>
+            </titleStmt>
+          </fileDesc>
+        </teiHeader>
+        <text/>
+      </TEI>
+      """
+    XCTAssertEqual(
+      TEIRendition.declaring(frame + size, in: explicated),
+      """
+      <TEI xmlns="http://www.tei-c.org/ns/1.0">
+        <teiHeader>
+          <fileDesc>
+            <titleStmt>
+              <title>T</title>
+            </titleStmt>
+          </fileDesc>
+          <encodingDesc>
+            <tagsDecl>
+              \(frame)
+              \(size)
+            </tagsDecl>
+          </encodingDesc>
+        </teiHeader>
+        <text/>
+      </TEI>
+      """)
+    XCTAssertEqual(
+      TEIRendition.header(TEIRendition.declarations(of: "<tagsDecl>" + size + "</tagsDecl>")),
+      """
+      <teiHeader>
+        <encodingDesc>
+          <tagsDecl>
+            <rendition xml:id="size-1" scheme="css">font-size:0.8251rem;</rendition>
+          </tagsDecl>
+        </encodingDesc>
+      </teiHeader>
+      """)
   }
 
   /// A page encoded under its own scale, laid into a document whose header

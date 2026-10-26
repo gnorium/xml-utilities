@@ -144,14 +144,29 @@
     }
 
     /// The page as its own work frame, in its own type's em (`body`): its
-    /// main text block's measure and height, and its side margin (half the
-    /// scan's width less the measure). Nil where its size or its type is
-    /// not given.
+    /// main text block's measure and height, and its side margin (half its
+    /// leaf's width less the measure: the white the typesetter left beside
+    /// the text, never the photograph's beyond the leaf, user, 2026-10-26).
+    /// Nil where its size or its type is not given.
     public var frame: TEIWorkFrame? {
       guard body > 0, let size else { return nil }
       return TEIWorkFrame(
         body: body, measure: size.measure / body, height: size.height / body,
-        margin: max(0, (imageWidth - size.measure) / 2 / body), width: imageWidth / body)
+        margin: max(0, (paperWidth - size.measure) / 2 / body), width: imageWidth / body)
+    }
+
+    /// The leaf's width on the scan, in its pixels: its zone (`type="leaf"`,
+    /// gnorium-python `facsimile.LEAF`) kept with the scan's structure
+    /// (`layout`). The whole scan where it keeps none, as the measuring
+    /// takes a scan whose leaf it found no edge of (`layout_measure.leaf_box`).
+    public var paperWidth: Double {
+      guard let range = layout.range(of: #"<zone\b[^>]*\btype="leaf"[^>]*/>"#, options: .regularExpression),
+        surfaceLRX > surfaceULX
+      else { return imageWidth }
+      let xs = XMLFormatter.attribute("points", in: String(layout[range])).split(whereSeparator: \.isWhitespace)
+        .compactMap { $0.split(separator: ",").first.flatMap { Double($0) } }
+      guard let left = xs.min(), let right = xs.max(), right > left else { return imageWidth }
+      return (right - left) / (surfaceLRX - surfaceULX) * imageWidth
     }
 
     /// Its zone's style, as written: its type, `font-size` in the scan's
@@ -228,7 +243,7 @@
     /// ALTO and PAGE keep a line's baseline; gnorium-python
     /// `facsimile.layout_zones_xml`, user, 2026-10-17).
     private static let layoutZonePattern = try! NSRegularExpression(
-      pattern: #"<zone\b[^>]*\btype="(?:block|line|word)"[^>]*?(?:/>|>\s*<path\b[^>]*/>\s*</zone>)"#)
+      pattern: #"<zone\b[^>]*\btype="(?:block|line|word|leaf)"[^>]*?(?:/>|>\s*<path\b[^>]*/>\s*</zone>)"#)
 
     /// The layout zones a surface holds (`TEITextBlock.layout`), as
     /// written, in order; "" for none.
@@ -397,7 +412,7 @@
       let body = median { $0.block.body }
       return TEIWorkFrame(
         body: body, measure: median { $0.measure } / body, height: median { $0.height } / body,
-        margin: median { ($0.block.imageWidth - $0.measure) / 2 } / body, width: median { $0.block.imageWidth } / body)
+        margin: median { max(0, ($0.block.paperWidth - $0.measure) / 2) } / body, width: median { $0.block.imageWidth } / body)
     }
 
     /// The size of a work's pages' scans in pixels: the median width and
@@ -449,7 +464,13 @@
       guard let frame = workFrame(in: framed) else { return framed }
       let rendition = TEIRendition.frameRendition(frame)
       if let close = framed.range(of: "</tagsDecl>") {
-        framed.insert(contentsOf: rendition, at: close.lowerBound)
+        let lineStart = framed[..<close.lowerBound].lastIndex(of: "\n")
+        if let lineStart, framed[framed.index(after: lineStart)..<close.lowerBound].allSatisfy({ $0 == " " }) {
+          let indent = String(framed[framed.index(after: lineStart)..<close.lowerBound])
+          framed.insert(contentsOf: "  " + rendition + "\n" + indent, at: close.lowerBound)
+        } else {
+          framed.insert(contentsOf: rendition, at: close.lowerBound)
+        }
       } else if let close = framed.range(of: "</encodingDesc>") {
         framed.insert(contentsOf: "<tagsDecl>" + rendition + "</tagsDecl>", at: close.lowerBound)
       } else if let at = framed.range(of: "</fileDesc>")?.upperBound {

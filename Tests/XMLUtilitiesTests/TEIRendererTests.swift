@@ -280,6 +280,27 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(TEIRenderer.faults(in: boxed).filter { $0.kind == .zone }.map(\.detail), ["bbox"])
   }
 
+  /// A page's margin is its leaf's white beside its main text block (its
+  /// `type="leaf"` zone, kept with the scan's structure), never the
+  /// photograph's beyond the leaf (user, 2026-10-26); the whole scan where
+  /// it keeps no leaf.
+  func testAPagesMarginIsItsLeafsWhiteBesideTheText() throws {
+    let a = "https://example.org/iiif/a/full/1300,/0/default.jpg"
+    func page(_ leaf: String) -> TEIPage? {
+      TEIRenderer.pages(in: """
+        <TEI xmlns="http://www.tei-c.org/ns/1.0"><facsimile><surface n="1" ulx="0" uly="0" lrx="1000" lry="1000">\
+        <graphic url="\(a)" width="2000px" height="1300px"/>\
+        <zone xml:id="textblock" type="textblock" points="280,60 720,60 720,920 280,920" style="font-size:20px"/>\
+        \(leaf)</surface></facsimile><text><body><pb n="1" facs="\(a)"/><p>Body.</p></body></text></TEI>
+        """).first
+    }
+    // The text 880px wide on a leaf 1000px wide, a scan 2000px wide.
+    let leafed = try XCTUnwrap(page(#"<zone type="leaf" points="250,0 750,0 750,1000 250,1000"/>"#)?.frame)
+    XCTAssertEqual(leafed.measure, 44, accuracy: 0.001)
+    XCTAssertEqual(leafed.margin, 3, accuracy: 0.001)
+    XCTAssertEqual(try XCTUnwrap(page("")?.frame).margin, 28, accuracy: 0.001)
+  }
+
   /// Every page is set in the work's frame, its body pages' main text
   /// block in their body type's em: the header's rendition where the
   /// document has one, else the page's own measured text block (its
@@ -479,7 +500,9 @@ final class TEIRendererTests: XCTestCase {
     let old = TEIRenderer.pages(in: document)[1]
     let laid = try XCTUnwrap(
       TEIFacsimile.laying(page: page, fragment: ##"<p rendition="#size-1">Two.</p>"##, over: old, position: 2, in: document))
-    XCTAssertTrue(laid.contains("<teiHeader><encodingDesc><tagsDecl>" + size + "</tagsDecl></encodingDesc></teiHeader>"))
+    // Written formatted, one element per line (user, 2026-10-26).
+    XCTAssertEqual(TEIRendition.renditions(of: laid), size)
+    XCTAssertTrue(laid.contains("<tagsDecl>\n") && laid.contains("\n</teiHeader>"), laid)
     XCTAssertEqual(TEIRenderer.pages(in: laid)[1].renditions["size-1"], "css:font-size=0.8251rem")
   }
 
@@ -882,7 +905,7 @@ final class TEIRendererTests: XCTestCase {
   /// stands a paragraph's space apart (user, 2026-10-11).
   func testAnEpigraphFramesItsLines() {
     let lines = TEIRenderer.lines(
-      in: #"<p>Before</p><epigraph rend="align(center) smaller"><cit><quote><lg><l rend="align(left)">A line<lb/></l></lg></quote><bibl rend="align(right)">Author<lb/></bibl></cit></epigraph><note type="provenance"><stamp>Stamp</stamp></note>"#)
+      in: #"<p>Before</p><epigraph rend="align(center) smaller"><cit><quote><lg><l rend="align(left)">A line<lb/></l></lg></quote><bibl rend="align(right)">Author<lb/></bibl></cit></epigraph><note type="binding" subtype="edition"><stamp>Stamp</stamp></note>"#)
     XCTAssertEqual(lines.map(\.text), ["Before", "A line", "Author", "Stamp"])
     XCTAssertEqual(lines.map(\.frame), ["", "align(center) smaller", "align(center) smaller", ""])
     XCTAssertEqual(lines.map(\.rend), ["", "align(left)", "align(right)", ""])
@@ -892,9 +915,35 @@ final class TEIRendererTests: XCTestCase {
   /// A phrase element's ink and size are its words' own (user, 2026-10-11):
   /// a stamp's blue reaches its runs.
   func testAStampsInkReachesItsWords() {
-    let lines = TEIRenderer.lines(in: #"<note type="provenance"><stamp rend="color(blue) align(center)">LIBRARY</stamp></note>"#)
+    let lines = TEIRenderer.lines(in: #"<note type="binding" subtype="edition"><stamp rend="color(blue) align(center)">LIBRARY</stamp></note>"#)
     XCTAssertEqual(lines.first?.runs.first?.rend, "color(blue)")
     XCTAssertEqual(TEIRenderer.typeSetting(of: "align(center) color(red) larger spaced"), "color(red) larger")
+  }
+
+  /// Copy evidence (`<note type="provenance">` and `<note type="binding" subtype="copy">`)
+  /// is omitted from the reading pane and gives its bounding zones on the scan,
+  /// while edition and issue binding notes render in the reading pane.
+  func testCopyEvidenceIsOmittedFromTheReadingPaneAndGivesItsZones() throws {
+    let url = "https://example.org/iiif/cover/full/max/0/default.jpg"
+    let document = """
+      <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader/>
+        <facsimile><surface n="Cover" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\(url)"/>\
+      <zone xml:id="z-L1" ulx="100" uly="120" lrx="400" lry="160"/>\
+      <zone xml:id="z-L2" ulx="150" uly="200" lrx="550" lry="250"/>\
+      <zone xml:id="z-L3" ulx="160" uly="260" lrx="520" lry="300"/>\
+      <zone xml:id="z-L4" ulx="200" uly="800" lrx="600" lry="840"/></surface></facsimile>
+      <text><body><pb n="Cover" facs="\(url)"/>\
+      <lb facs="#z-L1"/><note type="binding" subtype="copy">BOUND BY MACDONALD</note>\
+      <note type="provenance"><lb facs="#z-L2"/>Ex libris<lb facs="#z-L3"/>69304</note>\
+      <note type="binding" subtype="edition">HAMLET</note>\
+      <note type="binding" subtype="issue" facs="#z-L4">SECOND ISSUE</note></body></text></TEI>
+      """
+    let page = try XCTUnwrap(TEIRenderer.pages(in: document).first)
+    XCTAssertEqual(page.lines.map(\.text), ["HAMLET", "SECOND ISSUE"])
+    let zones = TEIRenderer.elementZones(of: page)
+    XCTAssertEqual(zones.count, 2)
+    XCTAssertEqual(zones[0].zone, TEIZone(id: "z-L1", ulx: 100, uly: 120, lrx: 400, lry: 160))
+    XCTAssertEqual(zones[1].zone, TEIZone(id: "z-L2", ulx: 150, uly: 200, lrx: 550, lry: 300))
   }
 
   /// A page's surface given its text block where the document keeps none:

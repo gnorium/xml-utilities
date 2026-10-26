@@ -238,7 +238,7 @@ public enum TEIRendition {
       let declared = id == frameID ? frame(in: definitions).map(frameDeclarations) ?? "" : css(from: definitions[id] ?? "")
       return "<rendition xml:id=\"\(XMLFormatter.escapingAttribute(id))\" scheme=\"css\"\(selector)>\(XMLFormatter.escapingAttribute(declared))</rendition>"
     }.joined()
-    return "<teiHeader><encodingDesc><tagsDecl>" + entries + "</tagsDecl></encodingDesc></teiHeader>"
+    return XMLFormatter.prettified("<teiHeader><encodingDesc><tagsDecl>" + entries + "</tagsDecl></encodingDesc></teiHeader>")
   }
 
   /// The work frame's declarations as its rendition writes them.
@@ -352,7 +352,9 @@ public enum TEIRendition {
   /// `document` with `renditions` as its header's `<tagsDecl>`, in place of
   /// any it had: in its `<encodingDesc>`, one made after its `<fileDesc>`
   /// (or a header made) where it has none (gnorium-python
-  /// `type_scale.with_renditions`, for a document). No renditions, none.
+  /// `type_scale.with_renditions`, for a document), one element per line,
+  /// indented with the header it stands in (user, 2026-10-26). No renditions,
+  /// none.
   public static func declaring(_ renditions: String, in document: String) -> String {
     var text = document.replacingOccurrences(
       of: #"\s*<tagsDecl\b[^>]*?(?:/>|>[\s\S]*?</tagsDecl>)"#, with: "", options: .regularExpression)
@@ -360,16 +362,34 @@ public enum TEIRendition {
       text.removeSubrange(empty)
     }
     guard !renditions.isEmpty else { return text }
+    func lineIndent(at index: String.Index) -> String? {
+      let start = text[..<index].lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
+      let lead = text[start..<index]
+      return lead.allSatisfy({ $0 == " " }) ? String(lead) : nil
+    }
+    func formatted(_ markup: String, indent: String) -> String {
+      XMLFormatter.prettified(markup).replacingOccurrences(of: "\n", with: "\n" + indent)
+    }
+    let headerIndent =
+      text.range(of: #"<teiHeader\b[^>]*>"#, options: .regularExpression).flatMap { lineIndent(at: $0.lowerBound) } ?? ""
     let tags = "<tagsDecl>" + renditions + "</tagsDecl>"
-    if let empty = text.range(of: #"<teiHeader\b[^>]*/>"#, options: .regularExpression) {
-      // An empty header (which gnorium-python never writes) holds them.
-      text.replaceSubrange(empty, with: "<teiHeader><encodingDesc>" + tags + "</encodingDesc></teiHeader>")
+    if let empty = text.range(of: #"<teiHeader\b[^>]*?(?:/>|>\s*</teiHeader>)"#, options: .regularExpression) {
+      let indent = lineIndent(at: empty.lowerBound) ?? ""
+      text.replaceSubrange(
+        empty, with: formatted("<teiHeader><encodingDesc>" + tags + "</encodingDesc></teiHeader>", indent: indent))
     } else if let encoding = text.range(of: #"<encodingDesc\b[^>]*>"#, options: .regularExpression) {
-      text.insert(contentsOf: tags, at: encoding.upperBound)
+      let indent = (lineIndent(at: encoding.lowerBound) ?? headerIndent + "  ") + "  "
+      text.insert(contentsOf: "\n" + indent + formatted(tags, indent: indent), at: encoding.upperBound)
     } else if let anchor = text.range(of: "</fileDesc>") ?? text.range(of: #"<teiHeader\b[^>]*>"#, options: .regularExpression) {
-      text.insert(contentsOf: "<encodingDesc>" + tags + "</encodingDesc>", at: anchor.upperBound)
+      let indent = headerIndent + "  "
+      text.insert(
+        contentsOf: "\n" + indent + formatted("<encodingDesc>" + tags + "</encodingDesc>", indent: indent),
+        at: anchor.upperBound)
     } else if let opening = text.range(of: #"<TEI\b[^>]*>"#, options: .regularExpression) {
-      text.insert(contentsOf: "<teiHeader><encodingDesc>" + tags + "</encodingDesc></teiHeader>", at: opening.upperBound)
+      let prefix = text[opening.upperBound...].hasPrefix("\n") ? "\n" : ""
+      text.insert(
+        contentsOf: prefix + formatted("<teiHeader><encodingDesc>" + tags + "</encodingDesc></teiHeader>", indent: ""),
+        at: opening.upperBound)
     }
     return text
   }
@@ -521,7 +541,7 @@ public enum TEIRendition {
   public static func headedPage(_ fragment: String, renditions: String) -> String {
     let body = "<text><body>\n" + fragment + "\n</body></text>\n</TEI>"
     let open = "<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">\n"
-    let declared = joined([renditions])
+    let declared = joined([renditions]) + kept([renditions])
     guard !declared.isEmpty else { return open + body }
     let lines = renditionElements(in: declared).joined(separator: "\n")
     return open + "<teiHeader><encodingDesc><tagsDecl>\n" + lines + "\n</tagsDecl></encodingDesc></teiHeader>\n" + body
@@ -530,9 +550,31 @@ public enum TEIRendition {
   /// The body's leading, in rem (gnorium-python `type_scale`: the leading
   /// of the size step that holds the body type, 1rem): the `leading-N` of
   /// the `size-N` nearest 1rem in proportion (type is cut in proportional
-  /// steps), from a document's declarations (`declarations(in:)`); nil
-  /// where its scale declares no such pair.
-  public static func bodyLeading(in declarations: [String: String]) -> Double? {
+  /// steps), from a document's declarations (`declarations(in:)`)—or, where
+  /// a page's steps were reconciled into a multi-page document (`markup`),
+  /// the `#leading-*` paired on the same element with the `#size-*` nearest
+  /// 1rem; nil where its scale declares no such pair.
+  public static func bodyLeading(in declarations: [String: String], markup: String = "") -> Double? {
+    if !markup.isEmpty {
+      let pattern = try! NSRegularExpression(pattern: #"\brendition\s*=\s*"([^"]*)""#)
+      var best: (leading: Double, distance: Double)?
+      for match in pattern.matches(in: markup, range: NSRange(markup.startIndex..., in: markup)) {
+        guard let range = Range(match.range(at: 1), in: markup) else { continue }
+        let ids = markup[range].split(whereSeparator: \.isWhitespace).compactMap {
+          $0.hasPrefix("#") ? String($0.dropFirst()) : nil
+        }
+        guard let sizeID = ids.first(where: { $0.hasPrefix("size-") }),
+          let leadingID = ids.first(where: { $0.hasPrefix("leading-") }),
+          let sizeTokens = declarations[sizeID],
+          let size = Setting(sizeTokens).length("font-size"), size.unit == "rem", size.value > 0,
+          let leadingTokens = declarations[leadingID],
+          let leading = Setting(leadingTokens).length("line-height"), leading.unit == "rem", leading.value > 0
+        else { continue }
+        let distance = abs(log(size.value))
+        if best.map({ distance < $0.distance }) ?? true { best = (leading.value, distance) }
+      }
+      if let best { return best.leading }
+    }
     var nearest: (number: Substring, distance: Double)?
     for (id, tokens) in declarations where id.hasPrefix("size-") {
       guard let size = Setting(tokens).length("font-size"), size.unit == "rem", size.value > 0 else { continue }

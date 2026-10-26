@@ -289,7 +289,7 @@
       "facsimile", "surface", "surfaceGrp", "zone", "standOff",
       // The header.
       "teiHeader", "fileDesc", "titleStmt", "editionStmt", "publicationStmt", "seriesStmt", "notesStmt",
-      "sourceDesc", "encodingDesc", "profileDesc", "revisionDesc", "respStmt", "langUsage", "textClass",
+      "sourceDesc", "encodingDesc", "tagsDecl", "profileDesc", "revisionDesc", "respStmt", "langUsage", "textClass",
       "biblStruct", "analytic", "monogr", "imprint", "listChange",
     ]
     /// Elements kept whole whatever they hold: a formula reads as its
@@ -526,7 +526,7 @@
     /// read since the last line; `parent` the local name of the element it
     /// stands in ("root" at the top, as `TEIMarkup` names it).
     func lay(
-      at depth: Int, in parent: String, firstOfSpeech: Bool = false, into items: inout [PrettyItem],
+      at depth: Int, in parent: String, firstOfSpeech: Bool = false, unread: Bool = false, into items: inout [PrettyItem],
       pending: inout String
     ) {
       func add(
@@ -541,33 +541,33 @@
       case .cdata: add(raw, depth, reading: (.text, .text), projection: (.text, .text))
       case .other: add(raw, depth, reading: (.silent, .silent), projection: (.silent, .silent))
       case .element:
-        let block = isBlock(in: parent)
         let name = localName
+        let unread = unread || ["teiHeader", "facsimile", "standOff", "tagsDecl", "rendition"].contains(name)
+        let block = unread || isBlock(in: parent)
         let figure = name == "figure"
-        let unprojected = PrettyNode.unprojected.contains(name)
         if isWhole {
           let prints = printsText
           let reading: PrettyItem.Reading = block ? .block : (prints ? .text : .silent)
-          var projection = edges
+          var projection = unread ? (.separator, .separator) : edges
           if firstOfSpeech { projection.1 = .separator }
           add(printedLines(at: depth, in: parent), depth, reading: (reading, reading), projection: projection)
           return
         }
         let reading: PrettyItem.Reading = block ? .block : .silent
         if !raw.isEmpty {
-          let edge: PrettyItem.Projection = figure ? .separator : .silent
+          let edge: PrettyItem.Projection = figure || unread ? .separator : .silent
           add(raw, depth, reading: (reading, reading), projection: (edge, edge))
         }
         // A speech's first child ends a line too (`TEIProjection`).
         let first = name == "sp" ? children.firstIndex { $0.kind == .element } : nil
         for (index, child) in children.enumerated() {
           child.lay(
-            at: depth + 1, in: name.isEmpty ? "root" : name, firstOfSpeech: index == first, into: &items,
+            at: depth + 1, in: name.isEmpty ? "root" : name, firstOfSpeech: index == first, unread: unread, into: &items,
             pending: &pending)
         }
         if let close {
           let edge: PrettyItem.Projection =
-            figure || firstOfSpeech || PrettyNode.lineStarts.contains(name) ? .separator : .silent
+            figure || unread || firstOfSpeech || PrettyNode.lineStarts.contains(name) ? .separator : .silent
           add(close, depth, reading: (reading, reading), projection: (edge, edge))
         }
       }

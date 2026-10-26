@@ -473,7 +473,7 @@
           of: #"<teiHeader\b[^>]*?(?:/>|>[\s\S]*?</teiHeader>)"#, options: .regularExpression)
       else { return nil }
       let header = String(document[range])
-      return TEIRendition.declarations(of: header).isEmpty ? nil : header
+      return TEIRendition.declarations(of: header).isEmpty ? nil : XMLFormatter.prettified(header)
     }
 
     /// Split the body at the page breaks that carry a facsimile.
@@ -837,6 +837,75 @@
       }
     }
 
+    /// Whether `element` is copy evidence—an owner's or library's mark
+    /// (`<note type="provenance">`) or a copy's own binding lettering
+    /// (`<note type="binding" subtype="copy">`)—which stands on the
+    /// copy's scan (`elementZones(of:)`) and opens its gloss there,
+    /// never in the reading pane.
+    static func isCopyEvidence(_ element: TEIMarkup.Element) -> Bool {
+      guard element.name == "note" else { return false }
+      let type = element.attribute("type")
+      return type == "provenance" || (type == "binding" && element.attribute("subtype") == "copy")
+    }
+
+    /// Each copy-evidence element (`isCopyEvidence`) on `page` with its
+    /// index in `elements(of:)` and its bounding zone in the surface's
+    /// 0–1000 space, resolved from its own `@facs`, its descendants'
+    /// `@facs`, or the `<lb facs="#…"/>` immediately preceding it.
+    public static func elementZones(of page: TEIPage) -> [(element: Int, zone: TEIZone)] {
+      let root = TEIMarkup.document(TEIProjection.normalized(page.markup))
+      let all = elements(of: root)
+      func pointers(in facs: String) -> [String] {
+        facs.split(whereSeparator: \.isWhitespace).compactMap {
+          $0.hasPrefix("#") ? String($0.dropFirst()) : nil
+        }
+      }
+      var precedingLB: [ObjectIdentifier: TEIMarkup.Element] = [:]
+      func recordPreceding(_ parent: TEIMarkup.Element) {
+        let children = parent.elements
+        for index in children.indices {
+          if index > 0, children[index - 1].name == "lb" {
+            precedingLB[ObjectIdentifier(children[index])] = children[index - 1]
+          }
+          recordPreceding(children[index])
+        }
+      }
+      recordPreceding(root)
+      var layoutByID: [String: TEIZone] = [:]
+      for zone in TEIFacsimile.layout(of: page) where !zone.id.isEmpty && zone.fractions.count >= 2 {
+        let xs = stride(from: 0, to: zone.fractions.count, by: 2).map { zone.fractions[$0] * 1000 }
+        let ys = stride(from: 1, to: zone.fractions.count, by: 2).map { zone.fractions[$0] * 1000 }
+        if let ulx = xs.min(), let uly = ys.min(), let lrx = xs.max(), let lry = ys.max(), lrx > ulx, lry > uly {
+          layoutByID[zone.id] = TEIZone(id: zone.id, ulx: ulx, uly: uly, lrx: lrx, lry: lry)
+        }
+      }
+      func resolveZone(_ id: String) -> TEIZone? {
+        if let zone = page.zones[id] {
+          let box = zone.percent
+          return TEIZone(
+            id: id, ulx: box.x * 10, uly: box.y * 10, lrx: (box.x + box.width) * 10, lry: (box.y + box.height) * 10)
+        }
+        return layoutByID[id]
+      }
+      return all.enumerated().compactMap { index, entry -> (element: Int, zone: TEIZone)? in
+        let element = entry.element
+        guard isCopyEvidence(element) else { return nil }
+        let own = pointers(in: element.attribute("facs"))
+        // Without its own, its descendants' (`elements(of:)` holds them
+        // alone, never the element itself), else the line it begins on.
+        let descendants = own.isEmpty ? elements(of: element).flatMap { pointers(in: $0.element.attribute("facs")) } : []
+        let ids = !own.isEmpty
+          ? own : !descendants.isEmpty
+            ? descendants : precedingLB[ObjectIdentifier(element)].map { pointers(in: $0.attribute("facs")) } ?? []
+        let resolved = ids.compactMap(resolveZone)
+        guard let first = resolved.first,
+          let ulx = resolved.map(\.ulx).min(), let uly = resolved.map(\.uly).min(),
+          let lrx = resolved.map(\.lrx).max(), let lry = resolved.map(\.lry).max()
+        else { return nil }
+        return (index, TEIZone(id: first.id, ulx: ulx, uly: uly, lrx: lrx, lry: lry))
+      }
+    }
+
     /// A page's words by where they are in its projection: which word a
     /// point of the text is of.
     struct Words {
@@ -1144,6 +1213,7 @@
                 alternative: alternative, gloss: glossing(element))
             case "note":
               flush()
+              if isCopyEvidence(element) { continue }
               let setting = blockRend()
               blockPending = true
               // A note is set apart from the text it annotates by a
@@ -1241,7 +1311,7 @@
                 element, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative,
                 zone: initialZone, gloss: glossing(element))
             case "p", "lg", "l", "head", "div", "speaker", "stage", "fw", "item", "docTitle", "titlePart",
-              "docImprint", "byline", "docAuthor", "docDate", "docEdition", "epigraph", "argument", "imprimatur":
+              "docImprint", "byline", "docAuthor", "docDate", "docEdition", "epigraph", "argument", "imprimatur", "entry":
               flush()
               let setting = blockRend()
               let entry = lines.count
@@ -1275,7 +1345,7 @@
                 inlineRend: inlineRend, gloss: glossing(element), opened: entry)
               flush()
               if !frames { close(from: entry, setting) }
-              if element.name == "p" {
+              if element.name == "p" || element.name == "entry" {
                 // Its own part, with the parts a column break gave its
                 // lines: a paragraph run on from the page before is final
                 // in its last column only, one run on to the next initial
@@ -1348,25 +1418,33 @@
               }
               flush()
               blockPending = true
-            case "ab" where TEIRendition.frames(TEIRenderer.blockSetting(of: ownRend)):
-              // A run of lines on a ground of its own (a shaded box, a tinted
-              // panel, user, 2026-10-25: `background-color`, gnorium-python
-              // `base_tei.fills`) or in a printed rule: its frame draws the
-              // ground as encoded, in every theme, and its inset; its lines
-              // are set inside it, as a framed note's are. Its ink and its
-              // type's size are its words' own.
+            case "ab":
+              // An anonymous block (gnorium-python `base_tei`: a run of
+              // lines set alike, or one on a ground of its own—a shaded box,
+              // a tinted panel, user, 2026-10-25: `background-color`,
+              // `base_tei.fills`—or in a printed rule): a block of its own;
+              // framed, its frame draws the ground as encoded, in every
+              // theme, and its inset, and its lines are set inside it. Its
+              // ink and its type's size are its words' own.
               flush()
+              let entry = lines.count
+              blockPending = true
+              lineBroken = true
               let setting = TEIRendition.cascade(
                 rend, TEIRenderer.blockSetting(of: ownRend), .block(first: lines.count == opened && runs.isEmpty))
               let type = TEIRenderer.typeSetting(of: ownRend)
+              let framed = TEIRendition.frames(setting)
               let outerFrame = currentFrame
-              currentFrame = framing(setting)
+              if framed { currentFrame = framing(setting) }
               walk(
-                element, kind: kind, rend: TEIRendition.inside(frame: setting),
+                element, kind: kind, rend: framed ? TEIRendition.inside(frame: setting) : setting,
                 inlineRend: type.isEmpty ? inlineRend : joined(type), alternative: alternative, zone: initialZone,
-                gloss: glossing(element), opened: lines.count)
+                gloss: glossing(element), opened: entry)
               flush()
-              currentFrame = outerFrame
+              if !framed { close(from: entry, setting) }
+              blockPending = true
+              lineBroken = true
+              if framed { currentFrame = outerFrame }
             default:
               // Words, punctuation, sentences, glyphs, names, dates, numbers,
               // quotes and references add nothing to the reading but
