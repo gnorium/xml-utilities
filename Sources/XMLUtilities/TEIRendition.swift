@@ -103,7 +103,7 @@ public enum TEIRendition {
     "margin-inline-end", "text-align", "font-weight", "font-style", "font-variant-caps", "font-variant-numeric",
     "column-gap",
     "inline-size", "block-size", "border-style", "padding", "padding-block", "padding-inline", "padding-block-start",
-    "padding-block-end", "padding-inline-start", "padding-inline-end", "background-color", "color", "font-family",
+    "padding-block-end", "padding-inline-start", "padding-inline-end", "background-color", "font-family",
   ]
 
   /// A typeface's family as the frame quotes it (gnorium-python
@@ -123,7 +123,7 @@ public enum TEIRendition {
   /// overrides its parent's, and where it has none it takes its parent's.
   static let inherited: Set<String> = [
     "font-size", "line-height", "letter-spacing", "word-spacing", "text-indent", "text-align", "font-weight",
-    "font-style", "font-variant-caps", "font-variant-numeric", "color",
+    "font-style", "font-variant-caps", "font-variant-numeric",
   ]
   /// A block's inline margins: its box's, which the boxes inside it stand
   /// within.
@@ -160,10 +160,6 @@ public enum TEIRendition {
     // A region's own ground (user, 2026-10-25: gnorium-python
     // `base_tei.fills`), drawn as encoded in every theme: "#rrggbb" only.
     if property == "background-color" { return isHexColor(value) }
-    // A line's ink as sampled on the scan (user, 2026-10-28: the color the
-    // scan holds, never a name's centroid; gnorium-python `base_tei.inks`),
-    // drawn as encoded in every theme: "#rrggbb" only.
-    if property == "color" { return isHexColor(value) }
     // The witness's own typeface (user, 2026-10-28): one quoted family name.
     if property == "font-family" { return isFamilyName(value) }
     guard properties.contains(property), let length = Length(value) else { return false }

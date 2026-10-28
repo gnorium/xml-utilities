@@ -148,11 +148,19 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertEqual(filled[1].frame, filled[0].frame)
     XCTAssertEqual(filled[2].frame, "")
     XCTAssertEqual(filled[3].frame, "")
-    // The page's own pair on its <pb> (its ground, its default ink) is the
-    // theme's: no frame and no color on any line.
+    // The page's own pair on its <pb> (its ground, its default ink's
+    // class) is the theme's: no frame and no color on any line.
     let cover = TEIRenderer.lines(
-      in: ##"<TEI><teiHeader><encodingDesc><tagsDecl><rendition xml:id="ground-1c2230" scheme="css">background-color:#1c2230</rendition><rendition xml:id="ink-cfb784" scheme="css">color:#cfb784</rendition></tagsDecl></encodingDesc></teiHeader><text><body><pb n="Front cover" rendition="#ground-1c2230 #ink-cfb784"/><lb/>HAMLET</body></text></TEI>"##)
+      in: ##"<TEI><teiHeader><encodingDesc><tagsDecl><rendition xml:id="ground-1c2230" scheme="css">background-color:#1c2230</rendition></tagsDecl></encodingDesc></teiHeader><text><body><pb n="Front cover" rendition="#ground-1c2230" rend="color(yellow)"/><lb/>HAMLET</body></text></TEI>"##)
     XCTAssertTrue(cover.allSatisfy { $0.frame.isEmpty && !$0.rend.contains("color") })
+    // An ink is its class (`color(NAME)`, user, 2026-10-29), never a
+    // sampled shade: a rendition's `color` is no part of the grammar, and
+    // a line it points to is drawn in the page's ink.
+    let sampled = TEIRenderer.lines(
+      in: ##"<TEI><teiHeader><encodingDesc><tagsDecl><rendition xml:id="ink-b03a2e" scheme="css">color:#b03a2e</rendition></tagsDecl></encodingDesc></teiHeader><text><body><p rendition="#ink-b03a2e">RUBRIC</p><p rend="color(red)">RUBRIC</p></body></text></TEI>"##)
+    XCTAssertFalse(sampled[0].rend.contains("color"))
+    XCTAssertEqual(sampled[1].rend, "color(red)")
+    XCTAssertFalse(TEIRendition.valid(property: "color", value: "#b03a2e"))
     XCTAssertTrue(TEIRendition.frames("css:background-color=#d7e4f3"))
     XCTAssertFalse(TEIRendition.valid(property: "background-color", value: "#d7e4f"))
     let leader = TEIRenderer.lines(in: #"<p style="letter-spacing:0.05em">Title <pc style="word-spacing:2.5em">. . .</pc></p>"#)
