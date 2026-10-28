@@ -81,7 +81,9 @@ final class TEIRenditionTests: XCTestCase {
   /// its 1.8rem leading and 0.6rem indent counted in its own font.
   func testScaleStepsInRemAreTheBodyTypeWhereverTheyStand() throws {
     XCTAssertTrue(TEIRendition.valid(property: "line-height", value: "1.8rem"))
-    XCTAssertFalse(TEIRendition.valid(property: "line-height", value: "13rem"))
+    // A relative line-height's bounds at the font-size bounds (three times six).
+    XCTAssertTrue(TEIRendition.valid(property: "line-height", value: "13rem"))
+    XCTAssertFalse(TEIRendition.valid(property: "line-height", value: "19rem"))
     let header = ##"<teiHeader><encodingDesc><tagsDecl><rendition xml:id="size-1" scheme="css">font-size:1.2rem</rendition><rendition xml:id="leading-1" scheme="css">line-height:1.8rem</rendition><rendition xml:id="indent-1" scheme="css">text-indent:0.6rem</rendition></tagsDecl></encodingDesc></teiHeader>"##
     let xml = ##"<TEI>"## + header + ##"<text><body><pb n="1" facs="https://example.org/page/full/max/0/default.jpg"/><div style="font-size:0.8em"><p rendition="#size-1 #leading-1 #indent-1">Step<lb/></p></div><p rendition="#size-1">Top<lb/></p></body></text></TEI>"##
     let page = try XCTUnwrap(TEIRenderer.pages(in: xml).first)

@@ -1083,7 +1083,7 @@ final class TEIRendererTests: XCTestCase {
   /// scan has them, user 2026-10-28), which a framed page draws it at.
   func testAFigureKeepsItsSizeAndPlace() {
     let lines = TEIRenderer.lines(
-      in: #"<figure facs="#z-fig-1" style="inline-size:18.9em;block-size:21.5em;margin-inline-start:8.9em"/><p>A</p>"#)
+      in: ##"<figure facs="#z-fig-1" style="inline-size:18.9em;block-size:21.5em;margin-inline-start:8.9em"/><p>A</p>"##)
     let figure = lines.first { line in
       if case .figure = line.kind { return true }
       return false

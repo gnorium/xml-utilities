@@ -1352,9 +1352,12 @@
             case "gap":
               flush()
               let reason = element.attribute("reason")
+              // The setting it stands in (a running head that is all gap is set where the head is: Hamlet
+              // Q1's worn heads, user 2026-10-28, drawn at the measure's left).
               append(
                 .init(
-                  kind: .gap(reason: reason), text: reason.isEmpty ? "gap" : reason, element: words?.index(of: element)))
+                  kind: .gap(reason: reason), text: reason.isEmpty ? "gap" : reason, rend: rend,
+                  element: words?.index(of: element)))
             case "milestone" where element.attribute("unit") == "document":
               flush()
               append(.init(kind: .documentBoundary, text: ""))
