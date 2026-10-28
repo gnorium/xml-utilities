@@ -134,7 +134,14 @@
       /// A figure is not a line of the text. Its `<figDesc>` describes the
       /// object—"gold-tooled dark leather binding"—and setting that in the
       /// reading says the cover bears those words, which it does not.
-      case figure(type: String, zone: TEIZone?)
+      ///
+      /// `graphic` is its drawing: the URL of a `<graphic>` child whose
+      /// `mimeType` is `image/svg+xml`, the figure's ink traced as vectors
+      /// when its page was calibrated (gnorium-python
+      /// `calibration.figure_trace`), which the reader shows in the text
+      /// pane in the page's ink instead of a crop of the facsimile; nil
+      /// where it has none.
+      case figure(type: String, zone: TEIZone?, graphic: String?)
       /// Rows and cells must survive parsing; their order alone cannot recover
       /// the relationship between a heading and a value after flattening.
       case table(TEITable)
@@ -1446,9 +1453,14 @@
                 rendering(from: $0, inheritedPreservation: preserving.contains(ObjectIdentifier($0)), renditions: renditions)
               }.map(\.text)
                 .joined(separator: " ")
+              let drawing = element.elements.first {
+                $0.name == "graphic" && $0.attribute("mimeType") == TEIRenderer.drawingMIMEType
+              }
               append(
                 .init(
-                  kind: .figure(type: element.attribute("type"), zone: zone(of: element)),
+                  kind: .figure(
+                    type: element.attribute("type"), zone: zone(of: element),
+                    graphic: drawing.map { $0.attribute("url") }.flatMap { $0.isEmpty ? nil : $0 }),
                   text: description, element: words?.index(of: element)))
               // Captions, tables, and diagram labels remain readable even when
               // the graphic has no usable crop. figDesc is descriptive metadata.
@@ -1695,6 +1707,10 @@
     /// rendered on the server at all.
     ///
     /// Nil where the facsimile is not an image service.
+    /// The media type of a figure's drawing (`TEILine.Kind.figure`'s
+    /// `graphic`): SVG, the figure's inks traced as vectors.
+    public static let drawingMIMEType = "image/svg+xml"
+
     public static func regionURL(ofFacsimile url: String, zone: TEIZone, fitting: Int = 600) -> String? {
       let service = serviceID(ofFacsimile: url)
       guard !service.isEmpty else { return nil }

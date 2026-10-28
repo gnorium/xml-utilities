@@ -197,9 +197,26 @@ final class TEIRendererTests: XCTestCase {
         + "<figure facs=\"#z1\"><figDesc>Device</figDesc><head>Original caption</head><table><row><cell>OXOX</cell></row></table></figure>"
     )
     XCTAssertEqual(lines.map(\.text), ["Device", "Original caption", "OXOX"])
-    guard case .figure(_, let zone) = lines[0].kind else { return XCTFail("Missing crop") }
+    guard case .figure(_, let zone, let graphic) = lines[0].kind else { return XCTFail("Missing crop") }
     XCTAssertEqual(zone?.corners, "10 20 40 60")
+    XCTAssertNil(graphic)
     guard case .table = lines[2].kind else { return XCTFail("Missing figure table") }
+  }
+
+  /// A figure's drawing is its SVG graphic (its inks traced when its page was
+  /// calibrated); a graphic of another type, a photograph, is not one.
+  func testFigureCarriesItsSVGGraphicAsItsDrawing() {
+    let lines = TEIRenderer.lines(
+      in: Self.facsimile
+        + "<figure facs=\"#z1\"><graphic url=\"/calibration-figures/z1.svg?image=x\" mimeType=\"image/svg+xml\"/>"
+        + "<figDesc>Device</figDesc></figure>"
+        + "<figure facs=\"#z2\"><graphic url=\"/photo.jpg\" mimeType=\"image/jpeg\"/></figure>"
+    )
+    guard case .figure(_, _, let drawing) = lines[0].kind else { return XCTFail("Missing figure") }
+    XCTAssertEqual(drawing, "/calibration-figures/z1.svg?image=x")
+    XCTAssertEqual(lines[0].text, "Device")
+    guard case .figure(_, _, let photograph) = lines[1].kind else { return XCTFail("Missing figure") }
+    XCTAssertNil(photograph)
   }
 
   /// A decorated initial is the first letter of its word, never a figure:
