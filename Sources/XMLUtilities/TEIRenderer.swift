@@ -74,14 +74,14 @@
       guard let work = TEIRendition.frame(in: renditions) ?? textBlock?.frame else { return nil }
       var page: (width: Double, height: Double)?
       if let workPage, let textBlock, textBlock.imageWidth > 0, textBlock.imageHeight > 0,
-        textBlock.paperWidth - workPage.width > work.margin * work.body
-          || textBlock.paperHeight - workPage.height > work.margin * work.body
+        textBlock.paperWidth - workPage.width > work.leastMargin * work.body
+          || textBlock.paperHeight - workPage.height > work.leastMargin * work.body
       {
         page = (textBlock.paperWidth / work.body, textBlock.paperHeight / work.body)
       }
       return TEIPageFrame(
-        measure: work.measure, height: work.height, margin: work.margin, pageWidth: page?.width ?? 0,
-        pageHeight: page?.height ?? 0)
+        measure: work.measure, height: work.height, head: work.head, foot: work.foot, inner: work.inner,
+        outer: work.outer, recto: textBlock?.recto ?? true, pageWidth: page?.width ?? 0, pageHeight: page?.height ?? 0)
     }
 
     /// A page's lines, read once, by whichever thread asks first.

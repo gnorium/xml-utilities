@@ -144,15 +144,60 @@
     }
 
     /// The page as its own work frame, in its own type's em (`body`): its
-    /// main text block's measure and height, and its side margin (half its
-    /// leaf's width less the measure: the white the typesetter left beside
-    /// the text, never the photograph's beyond the leaf, user, 2026-10-26).
-    /// Nil where its size or its type is not given.
+    /// main text block's measure and height, and its leaf's margins
+    /// (`margins`: its head and foot, of its sides the narrower its inner,
+    /// user, 2026-10-28); where it keeps no leaf, its side margin on every
+    /// side (half the scan's width less the measure). Nil where its size or
+    /// its type is not given.
     public var frame: TEIWorkFrame? {
       guard body > 0, let size else { return nil }
+      if let margins {
+        return TEIWorkFrame(
+          body: body, measure: size.measure / body, height: size.height / body, head: margins.head / body,
+          foot: margins.foot / body, inner: min(margins.left, margins.right) / body,
+          outer: max(margins.left, margins.right) / body, width: imageWidth / body)
+      }
+      let side = max(0, (paperWidth - size.measure) / 2 / body)
       return TEIWorkFrame(
-        body: body, measure: size.measure / body, height: size.height / body,
-        margin: max(0, (paperWidth - size.measure) / 2 / body), width: imageWidth / body)
+        body: body, measure: size.measure / body, height: size.height / body, head: side, foot: side, inner: side,
+        outer: side, width: imageWidth / body)
+    }
+
+    /// The white between its leaf's edges and its main text block on the
+    /// scan, in its pixels (gnorium-python `type_scale.leaf_margins`): its
+    /// head, foot, left and right margins, each at least 0. Nil where it
+    /// keeps no leaf or the scan's size is not given.
+    public var margins: (head: Double, foot: Double, left: Double, right: Double)? {
+      guard imageWidth > 0, imageHeight > 0, points.count == 8, let leaf = leafBox else { return nil }
+      let corners = fractions
+      let xs = stride(from: 0, to: 8, by: 2).map { corners[$0] * imageWidth }
+      let ys = stride(from: 1, to: 8, by: 2).map { corners[$0] * imageHeight }
+      guard let left = xs.min(), let right = xs.max(), let top = ys.min(), let bottom = ys.max() else { return nil }
+      return (max(0, top - leaf.top), max(0, leaf.bottom - bottom), max(0, left - leaf.left), max(0, leaf.right - right))
+    }
+
+    /// Whether the page is a recto: its leaf's left margin, the fold's, the
+    /// narrower of its sides (a book's inner margin is its narrower). A
+    /// page whose leaf is not kept is set as one.
+    public var recto: Bool {
+      guard let margins else { return true }
+      return margins.left <= margins.right
+    }
+
+    /// The leaf's box on the scan in its pixels (its zone, `type="leaf"`):
+    /// left, top, right, bottom; nil where it keeps none.
+    var leafBox: (left: Double, top: Double, right: Double, bottom: Double)? {
+      guard let range = layout.range(of: #"<zone\b[^>]*\btype="leaf"[^>]*/>"#, options: .regularExpression),
+        surfaceLRX > surfaceULX, surfaceLRY > surfaceULY
+      else { return nil }
+      let points = XMLFormatter.attribute("points", in: String(layout[range])).split(whereSeparator: \.isWhitespace)
+        .map { $0.split(separator: ",").compactMap { Double($0) } }.filter { $0.count == 2 }
+      guard let left = points.map({ $0[0] }).min(), let right = points.map({ $0[0] }).max(),
+        let top = points.map({ $0[1] }).min(), let bottom = points.map({ $0[1] }).max(), right > left, bottom > top
+      else { return nil }
+      func x(_ value: Double) -> Double { (value - surfaceULX) / (surfaceLRX - surfaceULX) * imageWidth }
+      func y(_ value: Double) -> Double { (value - surfaceULY) / (surfaceLRY - surfaceULY) * imageHeight }
+      return (x(left), y(top), x(right), y(bottom))
     }
 
     /// The leaf's width on the scan, in its pixels: its zone (`type="leaf"`,
@@ -425,9 +470,24 @@
         weightedMedian(pages.map { (value($0), $0.measure * $0.height) })
       }
       let body = median { $0.block.body }
+      // The leaf's four margins (user, 2026-10-28; gnorium-python
+      // `type_scale.frame`): its head and foot, of its sides the narrower
+      // its inner, the wider its outer, each in its own page's em; where no
+      // page keeps its leaf, the side margin on every side.
+      let leaved = pages.compactMap { page in page.block.margins.map { (page, $0) } }
+      guard !leaved.isEmpty else {
+        let side = median { max(0, ($0.block.paperWidth - $0.measure) / 2) } / body
+        return TEIWorkFrame(
+          body: body, measure: median { $0.measure } / body, height: median { $0.height } / body, head: side, foot: side,
+          inner: side, outer: side, width: median { $0.block.imageWidth } / body)
+      }
+      func margin(_ pick: ((head: Double, foot: Double, left: Double, right: Double)) -> Double) -> Double {
+        weightedMedian(leaved.map { (pick($0.1) / $0.0.block.body, $0.0.measure * $0.0.height) })
+      }
       return TEIWorkFrame(
         body: body, measure: median { $0.measure } / body, height: median { $0.height } / body,
-        margin: median { max(0, ($0.block.paperWidth - $0.measure) / 2) } / body, width: median { $0.block.imageWidth } / body)
+        head: margin { $0.head }, foot: margin { $0.foot }, inner: margin { min($0.left, $0.right) },
+        outer: margin { max($0.left, $0.right) }, width: median { $0.block.imageWidth } / body)
     }
 
     /// The size of a work's leaves on their scans in pixels: the median

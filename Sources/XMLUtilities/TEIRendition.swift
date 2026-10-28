@@ -3,45 +3,86 @@ import Foundation
 
 /// The frame a work's pages are set in (`TEIRendition.frameRendition`): its
 /// body type on its scans, in their pixels per em, and in that em the main
-/// text block's measure and height and the margin around a page's content.
+/// text block's measure and height and the leaf's four margins around a
+/// page's content (user, 2026-10-28: its head and foot, its inner margin at
+/// the fold and its outer at the fore-edge; gnorium-python `WorkFrame`).
 public struct TEIWorkFrame: Sendable, Equatable {
   public let body: Double
   public let measure: Double
   public let height: Double
-  public let margin: Double
+  public let head: Double
+  public let foot: Double
+  public let inner: Double
+  public let outer: Double
   /// The width of the work's scans in its em (`max-inline-size`; gnorium-python
   /// `WorkFrame.width`, user, 2026-10-18): the book is set in one type, so a
   /// scan of it, at any resolution, has its em as its width over this. 0
   /// where the frame does not declare it.
   public let width: Double
 
-  public init(body: Double, measure: Double, height: Double, margin: Double, width: Double = 0) {
+  public init(
+    body: Double, measure: Double, height: Double, head: Double, foot: Double, inner: Double, outer: Double,
+    width: Double = 0
+  ) {
     self.body = body
     self.measure = measure
     self.height = height
-    self.margin = margin
+    self.head = head
+    self.foot = foot
+    self.inner = inner
+    self.outer = outer
     self.width = width
+  }
+
+  /// The smallest of its margins: by how much more a leaf must be larger
+  /// to be a page of its own size (`TEIPage.frame`).
+  public var leastMargin: Double { min(head, foot, inner, outer) }
+
+  /// Its margins as CSS's `margin` in em, a recto's (head, right: its
+  /// outer, foot, left: its inner; gnorium-python
+  /// `facsimile.margin_shorthand`), one length where the four are one.
+  func marginShorthand(_ text: (Double) -> String) -> String {
+    let sides = [head, outer, foot, inner].map(text)
+    return Set(sides).count == 1 ? sides[0] : sides.joined(separator: " ")
   }
 }
 
 /// The frame one page is set in (`TEIPage.frame`), in em of its work's body
-/// type: the main text block's measure and height, and the equal margin
-/// around the page's content; and, for a page genuinely larger than its
-/// work's (a plate, a foldout), its own size (0 for any other page).
+/// type: the main text block's measure and height, and the leaf's margins
+/// around the page's content, its inner one at the fold—a recto's left, a
+/// verso's right (`recto`: its own leaf's narrower side, user,
+/// 2026-10-28); and, for a page genuinely larger than its work's (a plate,
+/// a foldout), its own size (0 for any other page).
 public struct TEIPageFrame: Sendable, Equatable {
   public let measure: Double
   public let height: Double
-  public let margin: Double
+  public let head: Double
+  public let foot: Double
+  public let inner: Double
+  public let outer: Double
+  public let recto: Bool
   public let pageWidth: Double
   public let pageHeight: Double
 
-  public init(measure: Double, height: Double, margin: Double, pageWidth: Double = 0, pageHeight: Double = 0) {
+  public init(
+    measure: Double, height: Double, head: Double, foot: Double, inner: Double, outer: Double, recto: Bool = true,
+    pageWidth: Double = 0, pageHeight: Double = 0
+  ) {
     self.measure = measure
     self.height = height
-    self.margin = margin
+    self.head = head
+    self.foot = foot
+    self.inner = inner
+    self.outer = outer
+    self.recto = recto
     self.pageWidth = pageWidth
     self.pageHeight = pageHeight
   }
+
+  /// Its left margin: a recto's inner, a verso's outer.
+  public var left: Double { recto ? inner : outer }
+  /// Its right margin: a recto's outer, a verso's inner.
+  public var right: Double { recto ? outer : inner }
 }
 
 /// A bounded subset of standard TEI CSS rendition, describing source layout.
@@ -197,7 +238,7 @@ public enum TEIRendition {
   public static func frameRendition(_ frame: TEIWorkFrame) -> String {
     "<rendition xml:id=\"\(frameID)\" scheme=\"css\" selector=\"text\">"
       + "font-size:\(Length(value: frame.body, unit: "px").text);inline-size:\(Length(value: frame.measure, unit: "em").text);"
-      + "block-size:\(Length(value: frame.height, unit: "em").text);margin:\(Length(value: frame.margin, unit: "em").text)"
+      + "block-size:\(Length(value: frame.height, unit: "em").text);margin:\(frame.marginShorthand { Length(value: $0, unit: "em").text })"
       + (frame.width > 0 ? ";max-inline-size:\(Length(value: frame.width, unit: "em").text)" : "") + "</rendition>"
   }
 
@@ -209,12 +250,30 @@ public enum TEIRendition {
     guard let body = setting.length("font-size"), body.unit == "px", body.value > 0,
       let measure = setting.length("inline-size"), measure.unit == "em", measure.value > 0,
       let height = setting.length("block-size"), height.unit == "em", height.value > 0,
-      let margin = setting.length("margin"), margin.unit == "em", margin.value >= 0
+      let margins = marginSides(setting.value("margin") ?? "")
     else { return nil }
     let width = setting.length("max-inline-size")
     return TEIWorkFrame(
-      body: body.value, measure: measure.value, height: height.value, margin: margin.value,
-      width: width?.unit == "em" ? width?.value ?? 0 : 0)
+      body: body.value, measure: measure.value, height: height.value, head: margins.top, foot: margins.bottom,
+      inner: margins.left, outer: margins.right, width: width?.unit == "em" ? width?.value ?? 0 : 0)
+  }
+
+  /// CSS's `margin` shorthand in em (one to four lengths: every side; head
+  /// and foot, sides; head, sides, foot; head, right, foot, left) as its
+  /// four sides (gnorium-python `type_scale.margin_sides`); nil where it is
+  /// no such. A frame's is a recto's: its left its inner, its right its
+  /// outer.
+  static func marginSides(_ value: String) -> (top: Double, right: Double, bottom: Double, left: Double)? {
+    // Its lengths apart by white, or by commas in a rend token (`frameTokens`), which white would part.
+    let parts = value.split { $0.isWhitespace || $0 == "," }.map { Length(String($0).lowercased()) }
+    guard (1...4).contains(parts.count), parts.allSatisfy({ $0?.unit == "em" && ($0?.value ?? -1) >= 0 }) else { return nil }
+    let values = parts.compactMap { $0?.value }
+    switch values.count {
+    case 1: return (values[0], values[0], values[0], values[0])
+    case 2: return (values[0], values[1], values[0], values[1])
+    case 3: return (values[0], values[1], values[2], values[1])
+    default: return (values[0], values[1], values[2], values[3])
+    }
   }
 
   /// The work frame's declarations as tokens: its four lengths, each in its
@@ -226,7 +285,9 @@ public enum TEIRendition {
       guard pair.count == 2 else { return nil }
       let name = pair[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
       let value = pair[1].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-      guard let unit = units[name], let length = Length(value), length.unit == unit, length.value >= 0 else { return nil }
+      guard let unit = units[name] else { return nil }
+      if name == "margin" { return marginSides(value) == nil ? nil : "css:\(name)=\(value.replacingOccurrences(of: " ", with: ","))" }
+      guard let length = Length(value), length.unit == unit, length.value >= 0 else { return nil }
       return "css:\(name)=\(value)"
     }.joined(separator: " ")
   }
@@ -303,7 +364,7 @@ public enum TEIRendition {
     let header = frame.map { frame in
       "<rendition xml:id=\"\(frameID)\" scheme=\"css\" selector=\"text\">"
         + "font-size:\(String(format: "%.2f", frame.body))px;inline-size:\(String(format: "%.2f", frame.measure))em;"
-        + "block-size:\(String(format: "%.2f", frame.height))em;margin:\(String(format: "%.2f", frame.margin))em"
+        + "block-size:\(String(format: "%.2f", frame.height))em;margin:\(frame.marginShorthand { String(format: "%.2f", $0) + "em" })"
         + (frame.width > 0 ? ";max-inline-size:\(String(format: "%.2f", frame.width))em" : "") + "</rendition>"
     } ?? ""
     return header
@@ -337,10 +398,11 @@ public enum TEIRendition {
       }
       if id == frameID {
         if let body = length(css["font-size"], "px"), body > 0, let measure = length(css["inline-size"], "em"),
-          let height = length(css["block-size"], "em"), let margin = length(css["margin"], "em")
+          let height = length(css["block-size"], "em"), let margins = marginSides(css["margin"] ?? "")
         {
           frame = TEIWorkFrame(
-            body: body, measure: measure, height: height, margin: margin, width: length(css["max-inline-size"], "em") ?? 0)
+            body: body, measure: measure, height: height, head: margins.top, foot: margins.bottom, inner: margins.left,
+            outer: margins.right, width: length(css["max-inline-size"], "em") ?? 0)
         }
         continue
       }

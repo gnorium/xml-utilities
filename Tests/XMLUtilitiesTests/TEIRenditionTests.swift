@@ -33,7 +33,7 @@ final class TEIRenditionTests: XCTestCase {
   /// The work frame's rendition keeps its body type in the scans' pixels
   /// and its lengths in that em, whatever a page's text may write.
   func testTheWorkFrameKeepsItsBodyTypeAndMargin() {
-    let frame = TEIWorkFrame(body: 44.78, measure: 54.8, height: 64.86, margin: 4.07)
+    let frame = TEIWorkFrame(body: 44.78, measure: 54.8, height: 64.86, head: 4.07, foot: 4.07, inner: 4.07, outer: 4.07)
     let rendition = TEIRendition.frameRendition(frame)
     XCTAssertEqual(
       rendition,
@@ -44,8 +44,18 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertEqual(TEIRendition.frame(in: read), frame)
     XCTAssertTrue(TEIRendition.header(read).contains(">font-size:44.78px;inline-size:54.8em;block-size:64.86em;margin:4.07em<"))
     // The scans' width in that em, where it is declared (the book's one em).
-    let wide = TEIWorkFrame(body: 44.78, measure: 54.8, height: 64.86, margin: 4.07, width: 61.45)
+    let wide = TEIWorkFrame(body: 44.78, measure: 54.8, height: 64.86, head: 4.07, foot: 4.07, inner: 4.07, outer: 4.07, width: 61.45)
     XCTAssertTrue(TEIRendition.frameRendition(wide).hasSuffix("margin:4.07em;max-inline-size:61.45em</rendition>"))
+    // The leaf's four margins (user, 2026-10-28), a recto's: head, right (its
+    // outer), foot, left (its inner), as gnorium-python declares them, read back.
+    let leaf = TEIWorkFrame(body: 44.78, measure: 54.8, height: 64.86, head: 7.3, foot: 11.5, inner: 10.4, outer: 12.7)
+    let declared = TEIRendition.frameRendition(leaf)
+    XCTAssertTrue(declared.contains("margin:7.3em 12.7em 11.5em 10.4em<"))
+    let fourSided = "<TEI><teiHeader><encodingDesc><tagsDecl>" + declared
+      + "</tagsDecl></encodingDesc></teiHeader><text><body><pb n=\"1\" facs=\"https://example.org/a.jpg\"/><p>A</p></body></text></TEI>"
+    let leafRead = try! XCTUnwrap(TEIRenderer.pages(in: fourSided).first).renditions
+    XCTAssertEqual(TEIRendition.frame(in: leafRead), leaf)
+    XCTAssertTrue(TEIRendition.header(leafRead).contains(";margin:7.3em 12.7em 11.5em 10.4em<"))
     let wideDocument = "<TEI><teiHeader><encodingDesc><tagsDecl>" + TEIRendition.frameRendition(wide)
       + "</tagsDecl></encodingDesc></teiHeader><text><body><pb n=\"1\" facs=\"https://example.org/a.jpg\"/><p>A</p></body></text></TEI>"
     let wideRead = try! XCTUnwrap(TEIRenderer.pages(in: wideDocument).first).renditions

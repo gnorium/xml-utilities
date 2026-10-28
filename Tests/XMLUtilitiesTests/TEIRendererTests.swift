@@ -297,8 +297,23 @@ final class TEIRendererTests: XCTestCase {
     // The text 880px wide on a leaf 1000px wide, a scan 2000px wide.
     let leafed = try XCTUnwrap(page(#"<zone type="leaf" points="250,0 750,0 750,1000 250,1000"/>"#)?.frame)
     XCTAssertEqual(leafed.measure, 44, accuracy: 0.001)
-    XCTAssertEqual(leafed.margin, 3, accuracy: 0.001)
-    XCTAssertEqual(try XCTUnwrap(page("")?.frame).margin, 28, accuracy: 0.001)
+    // Its four margins (user, 2026-10-28): the head 78px, the foot 104px,
+    // either side 60px, in 20px ems.
+    for (margin, expected) in zip([leafed.head, leafed.foot, leafed.inner, leafed.outer], [3.9, 5.2, 3, 3]) {
+      XCTAssertEqual(margin, expected, accuracy: 0.001)
+    }
+    let unleafed = try XCTUnwrap(page("")?.frame)
+    for margin in [unleafed.head, unleafed.foot, unleafed.inner, unleafed.outer] { XCTAssertEqual(margin, 28, accuracy: 0.001) }
+    // A leaf narrower at its left is a recto, its inner margin its left; at
+    // its right, a verso, mirrored.
+    let recto = try XCTUnwrap(page(#"<zone type="leaf" points="270,0 760,0 760,1000 270,1000"/>"#))
+    XCTAssertEqual(try XCTUnwrap(recto.frame).recto, true)
+    XCTAssertEqual(try XCTUnwrap(recto.frame).left, 1, accuracy: 0.001)
+    XCTAssertEqual(try XCTUnwrap(recto.frame).right, 4, accuracy: 0.001)
+    let verso = try XCTUnwrap(page(#"<zone type="leaf" points="240,0 730,0 730,1000 240,1000"/>"#))
+    XCTAssertEqual(try XCTUnwrap(verso.frame).recto, false)
+    XCTAssertEqual(try XCTUnwrap(verso.frame).left, 4, accuracy: 0.001)
+    XCTAssertEqual(try XCTUnwrap(verso.frame).right, 1, accuracy: 0.001)
   }
 
   /// Every page is set in the work's frame, its body pages' main text
@@ -324,7 +339,7 @@ final class TEIRendererTests: XCTestCase {
     let body = try XCTUnwrap(pages[0].frame)
     XCTAssertEqual(body.measure, 44, accuracy: 0.001)
     XCTAssertEqual(body.height, 55.9, accuracy: 0.001)
-    XCTAssertEqual(body.margin, 3, accuracy: 0.001)
+    for margin in [body.head, body.foot, body.inner, body.outer] { XCTAssertEqual(margin, 3, accuracy: 0.001) }
     XCTAssertEqual(try XCTUnwrap(pages[1].frame).measure, 10, accuracy: 0.001)
     XCTAssertEqual(pages[0].textBlock?.fractions, [0.06, 0.06, 0.94, 0.06, 0.94, 0.92, 0.06, 0.92])
     XCTAssertEqual(pages[0].textBlock?.body, 20)
@@ -334,7 +349,7 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertTrue(framed.contains(
       #"<encodingDesc><p>Joined.</p><tagsDecl><rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em;max-inline-size:50em</rendition></tagsDecl></encodingDesc>"#))
     for page in TEIRenderer.pages(in: framed) {
-      XCTAssertEqual(page.frame, TEIPageFrame(measure: 44, height: 55.9, margin: 3))
+      XCTAssertEqual(page.frame, TEIPageFrame(measure: 44, height: 55.9, head: 3, foot: 3, inner: 3, outer: 3))
     }
     XCTAssertEqual(TEIFacsimile.framing(framed), framed)
     // A page drawn alone is handed the frame and its own text block.
@@ -357,7 +372,7 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertTrue(laid.contains(
       #"<surface n="2" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\#(b)" width="1000px" height="1300px"/><zone xml:id="p2-textblock" type="textblock" points="50,50 950,50 950,950 50,950" style="font-size:20px"/></surface>"#))
     XCTAssertEqual(TEIFacsimile.textBlocks(in: laid).map(\.id), ["p1-textblock", "p2-textblock"])
-    XCTAssertEqual(TEIRenderer.pages(in: laid).first?.frame, TEIPageFrame(measure: 44, height: 55.9, margin: 3))
+    XCTAssertEqual(TEIRenderer.pages(in: laid).first?.frame, TEIPageFrame(measure: 44, height: 55.9, head: 3, foot: 3, inner: 3, outer: 3))
     XCTAssertEqual(laid.components(separatedBy: #"xml:id="text-block""#).count, 2)
     // Only a document declaring none is framed by its text blocks: two body
     // pages now.
@@ -368,7 +383,7 @@ final class TEIRendererTests: XCTestCase {
     let reframed = try XCTUnwrap(TEIRenderer.pages(in: TEIFacsimile.framing(undeclared)).first?.frame)
     XCTAssertEqual(reframed.measure, 45, accuracy: 0.001)
     XCTAssertEqual(reframed.height, 58.5, accuracy: 0.001)
-    XCTAssertEqual(reframed.margin, 2.5, accuracy: 0.001)
+    for margin in [reframed.head, reframed.foot, reframed.inner, reframed.outer] { XCTAssertEqual(margin, 2.5, accuracy: 0.001) }
   }
 
   /// A note's place in a margin is an area around the frame: a side, or a
@@ -402,8 +417,8 @@ final class TEIRendererTests: XCTestCase {
       <text><body><pb n="1" facs="\(a)"/><p>Body.</p><pb n="2" facs="\(b)"/><p>Plate.</p></body></text></TEI>
       """
     let pages = TEIRenderer.pages(in: document)
-    XCTAssertEqual(pages[0].frame, TEIPageFrame(measure: 44, height: 55.9, margin: 3))
-    XCTAssertEqual(pages[1].frame, TEIPageFrame(measure: 44, height: 55.9, margin: 3, pageWidth: 120, pageHeight: 65))
+    XCTAssertEqual(pages[0].frame, TEIPageFrame(measure: 44, height: 55.9, head: 3, foot: 3, inner: 3, outer: 3))
+    XCTAssertEqual(pages[1].frame, TEIPageFrame(measure: 44, height: 55.9, head: 3, foot: 3, inner: 3, outer: 3, pageWidth: 120, pageHeight: 65))
   }
 
   /// A page read again is laid into the document with its zones: its body
