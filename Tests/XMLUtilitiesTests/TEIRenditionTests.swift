@@ -306,4 +306,27 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertEqual(declared["indent-2"], "css:text-indent=1.5456rem")
     XCTAssertEqual(declared["size-2"], "css:font-size=1rem")
   }
+
+  /// The witness's own typeface (user, 2026-10-28): the frame declares its
+  /// family, one quoted name, which reads back as the frame's and is written
+  /// again; a stack, a generic, a URL or a bare name is no rendition.
+  func testTheFrameDeclaresTheWitnessTypefaceFamilyAlone() throws {
+    XCTAssertTrue(TEIRendition.valid(property: "font-family", value: "\"Hamlet Q1 1603\""))
+    XCTAssertTrue(TEIRendition.valid(property: "font-family", value: "\"A-Book\""))
+    XCTAssertFalse(TEIRendition.valid(property: "font-family", value: "Hamlet Q1 1603"))
+    XCTAssertFalse(TEIRendition.valid(property: "font-family", value: "\"Hamlet\", serif"))
+    XCTAssertFalse(TEIRendition.valid(property: "font-family", value: "serif"))
+    XCTAssertFalse(TEIRendition.valid(property: "font-family", value: "\"url(x)\""))
+    let frame = TEIWorkFrame(body: 44.78, measure: 54.8, height: 64.86, head: 4.07, foot: 4.07, inner: 4.07, outer: 4.07, family: "Hamlet Q1 1603")
+    let rendition = TEIRendition.frameRendition(frame)
+    XCTAssertTrue(rendition.hasSuffix(#"margin:4.07em;font-family:"Hamlet Q1 1603"</rendition>"#), rendition)
+    let read = TEIRendition.declarations(of: "<teiHeader><encodingDesc><tagsDecl>" + rendition + "</tagsDecl></encodingDesc></teiHeader>")
+    XCTAssertEqual(TEIRendition.frame(in: read), frame)
+    // Written again from the frame read, its quotes escaped as an element's text is.
+    XCTAssertTrue(TEIRendition.header(read).contains(";font-family:&quot;Hamlet Q1 1603&quot;<"), TEIRendition.header(read))
+    // A frame without one declares none, and reads back with none.
+    let plain = TEIWorkFrame(body: 44.78, measure: 54.8, height: 64.86, head: 4.07, foot: 4.07, inner: 4.07, outer: 4.07)
+    XCTAssertFalse(TEIRendition.frameRendition(plain).contains("font-family"))
+    XCTAssertEqual(TEIRendition.frame(in: TEIRendition.declarations(of: TEIRendition.frameRendition(plain)))?.family, "")
+  }
 }

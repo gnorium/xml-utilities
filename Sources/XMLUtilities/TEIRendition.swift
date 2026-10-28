@@ -19,10 +19,16 @@ public struct TEIWorkFrame: Sendable, Equatable {
   /// scan of it, at any resolution, has its em as its width over this. 0
   /// where the frame does not declare it.
   public let width: Double
+  /// The family of the witness's own typeface (`font-family`; user,
+  /// 2026-10-28: gnorium-python `calibration.typeface`, the sorts
+  /// reconstructed from its scans), which the reader loads the face for
+  /// (web-components `TEIView`); "" where the text is set in the edition
+  /// face alone.
+  public let family: String
 
   public init(
     body: Double, measure: Double, height: Double, head: Double, foot: Double, inner: Double, outer: Double,
-    width: Double = 0
+    width: Double = 0, family: String = ""
   ) {
     self.body = body
     self.measure = measure
@@ -32,6 +38,7 @@ public struct TEIWorkFrame: Sendable, Equatable {
     self.inner = inner
     self.outer = outer
     self.width = width
+    self.family = family
   }
 
   /// The smallest of its margins: by how much more a leaf must be larger
@@ -86,7 +93,9 @@ public struct TEIPageFrame: Sendable, Equatable {
 }
 
 /// A bounded subset of standard TEI CSS rendition, describing source layout.
-/// No positioning, text coordinates, URLs, arbitrary selectors or fonts.
+/// No positioning, text coordinates, URLs, arbitrary selectors or fonts—but
+/// for the one family of the witness's own typeface (`font-family`, a quoted
+/// name alone, never a stack, a generic or a URL: `TEIWorkFrame.family`).
 public enum TEIRendition {
   public static let properties = [
     "font-size", "line-height", "letter-spacing", "word-spacing", "text-indent", "margin-top", "margin-bottom",
@@ -94,8 +103,21 @@ public enum TEIRendition {
     "margin-inline-end", "text-align", "font-weight", "font-style", "font-variant-caps", "font-variant-numeric",
     "column-gap",
     "inline-size", "block-size", "border-style", "padding", "padding-block", "padding-inline", "padding-block-start",
-    "padding-block-end", "padding-inline-start", "padding-inline-end", "background-color", "color",
+    "padding-block-end", "padding-inline-start", "padding-inline-end", "background-color", "color", "font-family",
   ]
+
+  /// A typeface's family as the frame quotes it (gnorium-python
+  /// `calibration.typeface.family_name`): letters, digits, spaces and
+  /// hyphens between double quotes, at most 63 of them.
+  public static func isFamilyName(_ value: String) -> Bool {
+    value.range(of: #"^"[A-Za-z0-9][A-Za-z0-9 \-]{0,62}"$"#, options: .regularExpression) != nil
+  }
+
+  /// The family a quoted `font-family` names, unquoted; "" where it is none.
+  static func family(of value: String?) -> String {
+    guard let value, isFamilyName(value) else { return "" }
+    return String(value.dropFirst().dropLast())
+  }
 
   /// The properties CSS inherits: a child's own declaration of one
   /// overrides its parent's, and where it has none it takes its parent's.
@@ -142,6 +164,8 @@ public enum TEIRendition {
     // scan holds, never a name's centroid; gnorium-python `base_tei.inks`),
     // drawn as encoded in every theme: "#rrggbb" only.
     if property == "color" { return isHexColor(value) }
+    // The witness's own typeface (user, 2026-10-28): one quoted family name.
+    if property == "font-family" { return isFamilyName(value) }
     guard properties.contains(property), let length = Length(value) else { return false }
     let (number, unit) = (length.value, length.unit)
     switch property {
@@ -243,7 +267,8 @@ public enum TEIRendition {
     "<rendition xml:id=\"\(frameID)\" scheme=\"css\" selector=\"text\">"
       + "font-size:\(Length(value: frame.body, unit: "px").text);inline-size:\(Length(value: frame.measure, unit: "em").text);"
       + "block-size:\(Length(value: frame.height, unit: "em").text);margin:\(frame.marginShorthand { Length(value: $0, unit: "em").text })"
-      + (frame.width > 0 ? ";max-inline-size:\(Length(value: frame.width, unit: "em").text)" : "") + "</rendition>"
+      + (frame.width > 0 ? ";max-inline-size:\(Length(value: frame.width, unit: "em").text)" : "")
+      + (frame.family.isEmpty ? "" : ";font-family:\"\(frame.family)\"") + "</rendition>"
   }
 
   /// The work frame the renditions declare (`frameID`); nil where they
@@ -257,9 +282,11 @@ public enum TEIRendition {
       let margins = marginSides(setting.value("margin") ?? "")
     else { return nil }
     let width = setting.length("max-inline-size")
+    // Its family's spaces stand as commas in its token (`frameTokens`), as the margin's do.
+    let family = self.family(of: setting.value("font-family")?.replacingOccurrences(of: ",", with: " "))
     return TEIWorkFrame(
       body: body.value, measure: measure.value, height: height.value, head: margins.top, foot: margins.bottom,
-      inner: margins.left, outer: margins.right, width: width?.unit == "em" ? width?.value ?? 0 : 0)
+      inner: margins.left, outer: margins.right, width: width?.unit == "em" ? width?.value ?? 0 : 0, family: family)
   }
 
   /// CSS's `margin` shorthand in em (one to four lengths: every side; head
@@ -281,13 +308,19 @@ public enum TEIRendition {
   }
 
   /// The work frame's declarations as tokens: its four lengths, each in its
-  /// unit (`frame(in:)`), never a property a page's text takes.
+  /// unit, and its typeface's family (`frame(in:)`), never a property a
+  /// page's text takes. A token holds no space: the margin's lengths and the
+  /// family's words stand apart by commas.
   static func frameTokens(_ css: String) -> String {
     let units = ["font-size": "px", "inline-size": "em", "block-size": "em", "margin": "em", "max-inline-size": "em"]
     return css.split(separator: ";").compactMap { declaration -> String? in
       let pair = declaration.split(separator: ":", maxSplits: 1)
       guard pair.count == 2 else { return nil }
       let name = pair[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      if name == "font-family" {
+        let quoted = pair[1].trimmingCharacters(in: .whitespacesAndNewlines)
+        return isFamilyName(quoted) ? "css:\(name)=\(quoted.replacingOccurrences(of: " ", with: ","))" : nil
+      }
       let value = pair[1].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
       guard let unit = units[name] else { return nil }
       if name == "margin" { return marginSides(value) == nil ? nil : "css:\(name)=\(value.replacingOccurrences(of: " ", with: ","))" }
@@ -406,7 +439,7 @@ public enum TEIRendition {
         {
           frame = TEIWorkFrame(
             body: body, measure: measure, height: height, head: margins.top, foot: margins.bottom, inner: margins.left,
-            outer: margins.right, width: length(css["max-inline-size"], "em") ?? 0)
+            outer: margins.right, width: length(css["max-inline-size"], "em") ?? 0, family: family(of: css["font-family"]))
         }
         continue
       }

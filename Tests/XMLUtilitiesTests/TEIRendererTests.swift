@@ -247,7 +247,7 @@ final class TEIRendererTests: XCTestCase {
   func testFigureWithoutDescriptionStillCarriesItsCrop() throws {
     let lines = TEIRenderer.lines(in: Self.facsimile + "<figure facs=\"#z1\"/>")
     XCTAssertEqual(lines.count, 1)
-    guard case .figure(_, let zone) = lines.first?.kind else { return XCTFail("Missing figure") }
+    guard case .figure(_, let zone, _) = lines.first?.kind else { return XCTFail("Missing figure") }
     let found = try XCTUnwrap(zone)
     XCTAssertEqual(
       TEIRenderer.regionURL(ofFacsimile: "https://example.org/iiif/a/full/1300,/0/default.jpg", zone: found),
@@ -271,7 +271,7 @@ final class TEIRendererTests: XCTestCase {
       """
     let pages = TEIRenderer.pages(in: document)
     XCTAssertEqual(pages.count, 2)
-    guard case .figure(_, let zone) = pages[0].lines[0].kind else { return XCTFail("Missing figure") }
+    guard case .figure(_, let zone, _) = pages[0].lines[0].kind else { return XCTFail("Missing figure") }
     XCTAssertEqual(
       TEIRenderer.regionURL(ofFacsimile: pages[0].facsimileURL, zone: try XCTUnwrap(zone)),
       "https://example.org/iiif/a/pct:10,20,30,40/!600,600/0/default.jpg")
@@ -461,10 +461,10 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(Set(TEIFacsimile.zones(in: TEIFacsimile.blocks(in: laid)).keys), ["p1-z1", "p2-z1", "p2-z2"])
     XCTAssertFalse(laid.contains(#"ulx="5""#))
     let pages = TEIRenderer.pages(in: laid)
-    guard case .figure(_, let zone) = pages[1].lines[0].kind else { return XCTFail("Missing figure") }
+    guard case .figure(_, let zone, _) = pages[1].lines[0].kind else { return XCTFail("Missing figure") }
     XCTAssertEqual(zone?.corners, "100 100 300 300")
     XCTAssertEqual(pages[1].lines[1].runs[0].zone?.corners, "10 10 20 30")
-    guard case .figure(_, let first) = pages[0].lines[0].kind else { return XCTFail("Missing figure") }
+    guard case .figure(_, let first, _) = pages[0].lines[0].kind else { return XCTFail("Missing figure") }
     XCTAssertEqual(first?.corners, "1 1 2 2")
     XCTAssertTrue(laid.contains(#"<graphic url="https://example.org/iiif/b/full/1300,/0/default.jpg"/><zone xml:id="p2-z1""#))
   }
