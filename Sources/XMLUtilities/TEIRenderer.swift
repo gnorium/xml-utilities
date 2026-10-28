@@ -1456,12 +1456,14 @@
               let drawing = element.elements.first {
                 $0.name == "graphic" && $0.attribute("mimeType") == TEIRenderer.drawingMIMEType
               }
+              // Its own setting (gnorium-python `base_tei._figure`: its size and its place across, in
+              // the body's em, as the scan has them), which a framed page draws it at.
               append(
                 .init(
                   kind: .figure(
                     type: element.attribute("type"), zone: zone(of: element),
                     graphic: drawing.map { $0.attribute("url") }.flatMap { $0.isEmpty ? nil : $0 }),
-                  text: description, element: words?.index(of: element)))
+                  text: description, rend: blockRend(), element: words?.index(of: element)))
               // Captions, tables, and diagram labels remain readable even when
               // the graphic has no usable crop. figDesc is descriptive metadata.
               // Its caption's text that is no word opens the figure's gloss.
