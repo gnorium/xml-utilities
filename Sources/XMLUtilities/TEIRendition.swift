@@ -204,7 +204,7 @@ public enum TEIRendition {
   /// cascade computes it (`cascade`), so a size written inside a smaller
   /// one is held to the same bounds (user, 2026-10-14). gnorium-python's
   /// `tei_encoding.FONT_SIZES`.
-  public static let fontSizes: ClosedRange<Double> = 0.5...4
+  public static let fontSizes: ClosedRange<Double> = 0.5...6
 
   /// A font-size in em of the body type: em and rem as written (the
   /// page's font is the root's, the body type), % of it, px of its 16, pt

@@ -844,11 +844,19 @@
       func visit(_ element: TEIMarkup.Element) -> Bool {
         if element.name == "space" {
           let source = element.attribute("quantity")
-          // A positive decimal, whichever way it runs.
-          guard let quantity = source.isEmpty ? 1 : Double(source), quantity > 0, quantity.isFinite else {
+          // A decimal, whichever way it runs: positive, but for a vertical
+          // length, which may be negative (lines set closer than their
+          // leading: a tuned "no gap" a hair below zero, user 2026-10-28),
+          // never a reading rejected for it.
+          let measure = spaceMeasure(of: element)
+          var negativeAllowed = false
+          if case .length(_, true) = measure { negativeAllowed = true }
+          guard let quantity = source.isEmpty ? 1 : Double(source), quantity.isFinite,
+            quantity > 0 || (negativeAllowed && quantity < 0)
+          else {
             return false
           }
-          switch spaceMeasure(of: element) {
+          switch measure {
           case .lines:
             guard quantity <= 128, quantity <= linesLeft else { return false }
             linesLeft -= quantity.rounded(.up)
@@ -858,7 +866,7 @@
           case .length(let unit, let vertical):
             // A CSS length's bound (gnorium-python's validator holds it
             // the same); a vertical one is a line of the page.
-            guard quantity <= TEIRendition.lengthBound(unit: unit), !vertical || linesLeft >= 1 else {
+            guard abs(quantity) <= TEIRendition.lengthBound(unit: unit), !vertical || linesLeft >= 1 else {
               return false
             }
             if vertical { linesLeft -= 1 }

@@ -95,10 +95,12 @@ final class TEIRenditionTests: XCTestCase {
   /// only of each written value: 0.5em inside 0.7em is 0.35em of the page,
   /// below its 0.5em, and is no size (the paragraph keeps the division's).
   func testComputedFontSizeIsBounded() {
-    XCTAssertEqual(TEIRendition.fontSizes, 0.5...4)
+    // Up to six times the body: a title page's display type (Hamlet Q1's "HAMLET", 4.05).
+    XCTAssertEqual(TEIRendition.fontSizes, 0.5...6)
     XCTAssertEqual(TEIRendition.cascade("css:font-size=0.7em", "css:font-size=0.5em"), "css:font-size=0.7em")
     XCTAssertEqual(TEIRendition.cascade("css:font-size=0.7em", "css:font-size=0.8em"), "css:font-size=0.56em")
-    XCTAssertEqual(TEIRendition.cascade("css:font-size=3em", "css:font-size=150%"), "css:font-size=3em")
+    XCTAssertEqual(TEIRendition.cascade("css:font-size=3em", "css:font-size=250%"), "css:font-size=3em")
+    XCTAssertEqual(TEIRendition.cascade("css:font-size=3em", "css:font-size=150%"), "css:font-size=4.5em")
     XCTAssertEqual(TEIRendition.cascade("css:font-size=10px", "css:font-size=0.8em"), "css:font-size=8px")
     XCTAssertEqual(TEIRendition.cascade("css:font-size=10px", "css:font-size=0.7em"), "css:font-size=10px")
     XCTAssertEqual(TEIRendition.fontSize(of: "css:font-size=12px"), 0.75)

@@ -1064,4 +1064,33 @@ final class TEIRendererTests: XCTestCase {
       TEIRenderer.declaredHeader(
         of: "<TEI><teiHeader><fileDesc><titleStmt><title>A</title></titleStmt></fileDesc></teiHeader><text/></TEI>"))
   }
+
+  /// A negative vertical space is lines set closer than their leading (user, 2026-10-28: a tuned "no gap" a
+  /// hair below zero blanked Hamlet Q1's pages): the reading keeps it, never rejected; a negative space
+  /// across a line is no reading still.
+  func testANegativeVerticalSpaceIsKeptAndANegativeSpaceInALineIsNot() {
+    let closer = TEIRenderer.lines(
+      in: #"<p>A<lb/><space dim="vertical" quantity="-0.25" unit="em"/>B<lb/></p>"#)
+    XCTAssertTrue(closer.contains { line in
+      if case .space(let quantity, let unit) = line.kind { return quantity == -0.25 && unit == "em" }
+      return false
+    })
+    XCTAssertTrue(closer.contains { $0.text.contains("B") })
+    XCTAssertTrue(TEIRenderer.lines(in: #"<p>A<space quantity="-2" unit="chars"/>B<lb/></p>"#).isEmpty)
+  }
+
+  /// A figure keeps its own setting (gnorium-python `base_tei._figure`: its size and its place across as the
+  /// scan has them, user 2026-10-28), which a framed page draws it at.
+  func testAFigureKeepsItsSizeAndPlace() {
+    let lines = TEIRenderer.lines(
+      in: #"<figure facs="#z-fig-1" style="inline-size:18.9em;block-size:21.5em;margin-inline-start:8.9em"/><p>A</p>"#)
+    let figure = lines.first { line in
+      if case .figure = line.kind { return true }
+      return false
+    }
+    XCTAssertNotNil(figure)
+    for token in ["css:inline-size=18.9em", "css:block-size=21.5em", "css:margin-inline-start=8.9em"] {
+      XCTAssertTrue(figure?.rend.contains(token) ?? false, figure?.rend ?? "")
+    }
+  }
 }
