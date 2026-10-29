@@ -1223,6 +1223,19 @@
                 element, kind: kind, rend: rend, inlineRend: joined(ownRend),
                 alternative: alternative, zone: initial ? zone(of: element) : initialZone, gloss: glossing(element),
                 opened: opened)
+            case "seg" where !element.attribute("facs").isEmpty:
+              // A line the print sets on another's row, naming its own zone
+              // (gnorium-python `base_tei._rows`: a turnover beside the line
+              // it stands on, Hamlet Q1 p. 58's "(ſir."): a line of its own
+              // that shares the row of the line before it (`sharesLine`), set
+              // at its own place across by its own setting alone (its type
+              // is its block's, which it stands in).
+              flush()
+              lineBroken = false
+              walk(
+                element, kind: kind, rend: ownRend, inlineRend: inlineRend, alternative: alternative,
+                zone: initialZone, gloss: glossing(element), opened: opened)
+              flush()
             case "pc" where !ownRend.isEmpty, "seg" where !ownRend.isEmpty:
               // A phrase's own setting is its words', as a <hi>'s is: a
               // contents leader's dots set at their printed pitch

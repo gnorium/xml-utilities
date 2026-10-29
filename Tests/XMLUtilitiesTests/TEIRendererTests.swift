@@ -697,6 +697,23 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(lines[5].rend, "align(right)")
   }
 
+  /// A measured line the print sets on another's row names its own zone and
+  /// opens no `<lb/>` (gnorium-python `base_tei._rows`): a catchword on the
+  /// signature's row, a turnover on the row of the line beside it, each its
+  /// own line sharing that row, set at its own place.
+  func testALineSetOnAnothersRowSharesItsRowAtItsOwnPlace() {
+    let lines = TEIRenderer.lines(
+      in: #"""
+        <ab><lb facs="#z-L21"/>But who must lie in it?<seg facs="#z-L22" rend="align(left)" style="margin-inline-start:24.25rem">(sir.</seg><lb facs="#z-L23"/>If I should say</ab>
+        <lb facs="#z-L38"/><fw type="sig" rend="align(left)" style="margin-inline-start:18rem">C</fw><fw type="catch" facs="#z-L39" rend="align(left)" style="margin-inline-start:23.75rem">Ham.</fw>
+        """#)
+    XCTAssertEqual(lines.map(\.text), ["But who must lie in it?", "(sir.", "If I should say", "C", "Ham."])
+    XCTAssertEqual(lines.map(\.sharesLine), [false, true, false, false, true])
+    XCTAssertEqual(lines[1].rend, "align(left) css:margin-inline-start=24.25rem")
+    XCTAssertFalse(lines[1].opensBlock)
+    XCTAssertTrue(lines[4].rend.contains("css:margin-inline-start=23.75em"))
+  }
+
   /// A title page's parts are blocks, as TEI has them: each starts a line.
   /// A `docAuthor` in a byline is a phrase of it.
   func testATitlePagesPartsStartTheirOwnLines() {
