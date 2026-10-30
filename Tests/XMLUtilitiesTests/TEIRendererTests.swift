@@ -197,39 +197,26 @@ final class TEIRendererTests: XCTestCase {
         + "<figure facs=\"#z1\"><figDesc>Device</figDesc><head>Original caption</head><table><row><cell>OXOX</cell></row></table></figure>"
     )
     XCTAssertEqual(lines.map(\.text), ["Device", "Original caption", "OXOX"])
-    guard case .figure(_, let zone, let drawing, let cutout) = lines[0].kind else { return XCTFail("Missing crop") }
+    guard case .figure(_, let zone, let graphic) = lines[0].kind else { return XCTFail("Missing crop") }
     XCTAssertEqual(zone?.corners, "10 20 40 60")
-    XCTAssertNil(drawing)
-    XCTAssertNil(cutout)
+    XCTAssertNil(graphic)
     guard case .table = lines[2].kind else { return XCTFail("Missing figure table") }
   }
 
   /// A figure's drawing is its SVG graphic (its inks traced when its page was
-  /// calibrated) and a relief's cutout its PNG graphic (the scan's pixels of
-  /// a tooled stamp, its ground transparent; user, 2026-10-30); a graphic of
-  /// another type, a photograph, is neither.
-  func testFigureCarriesItsSVGGraphicAsItsDrawingAndItsPNGGraphicAsItsCutout() {
+  /// calibrated); a graphic of another type, a photograph, is not one.
+  func testFigureCarriesItsSVGGraphicAsItsDrawing() {
     let lines = TEIRenderer.lines(
       in: Self.facsimile
         + "<figure facs=\"#z1\"><graphic url=\"/calibration-figures/z1.svg?image=x\" mimeType=\"image/svg+xml\"/>"
         + "<figDesc>Device</figDesc></figure>"
         + "<figure facs=\"#z2\"><graphic url=\"/photo.jpg\" mimeType=\"image/jpeg\"/></figure>"
-        + "<figure facs=\"#z1\"><graphic url=\"/calibration-figures/z3.png?image=x\" mimeType=\"image/png\"/>"
-        + "<figDesc>Crest</figDesc></figure>"
     )
-    guard case .figure(_, _, let drawing, let notCutout) = lines[0].kind else { return XCTFail("Missing figure") }
+    guard case .figure(_, _, let drawing) = lines[0].kind else { return XCTFail("Missing figure") }
     XCTAssertEqual(drawing, "/calibration-figures/z1.svg?image=x")
-    XCTAssertNil(notCutout)
     XCTAssertEqual(lines[0].text, "Device")
-    guard case .figure(_, _, let photograph, let photographCutout) = lines[1].kind else {
-      return XCTFail("Missing figure")
-    }
+    guard case .figure(_, _, let photograph) = lines[1].kind else { return XCTFail("Missing figure") }
     XCTAssertNil(photograph)
-    XCTAssertNil(photographCutout)
-    guard case .figure(_, _, let notDrawing, let cutout) = lines[2].kind else { return XCTFail("Missing figure") }
-    XCTAssertNil(notDrawing)
-    XCTAssertEqual(cutout, "/calibration-figures/z3.png?image=x")
-    XCTAssertEqual(lines[2].text, "Crest")
   }
 
   /// A decorated initial is the first letter of its word, never a figure:
@@ -260,7 +247,7 @@ final class TEIRendererTests: XCTestCase {
   func testFigureWithoutDescriptionStillCarriesItsCrop() throws {
     let lines = TEIRenderer.lines(in: Self.facsimile + "<figure facs=\"#z1\"/>")
     XCTAssertEqual(lines.count, 1)
-    guard case .figure(_, let zone, _, _) = lines.first?.kind else { return XCTFail("Missing figure") }
+    guard case .figure(_, let zone, _) = lines.first?.kind else { return XCTFail("Missing figure") }
     let found = try XCTUnwrap(zone)
     XCTAssertEqual(
       TEIRenderer.regionURL(ofFacsimile: "https://example.org/iiif/a/full/1300,/0/default.jpg", zone: found),
@@ -284,7 +271,7 @@ final class TEIRendererTests: XCTestCase {
       """
     let pages = TEIRenderer.pages(in: document)
     XCTAssertEqual(pages.count, 2)
-    guard case .figure(_, let zone, _, _) = pages[0].lines[0].kind else { return XCTFail("Missing figure") }
+    guard case .figure(_, let zone, _) = pages[0].lines[0].kind else { return XCTFail("Missing figure") }
     XCTAssertEqual(
       TEIRenderer.regionURL(ofFacsimile: pages[0].facsimileURL, zone: try XCTUnwrap(zone)),
       "https://example.org/iiif/a/pct:10,20,30,40/!600,600/0/default.jpg")
@@ -554,10 +541,10 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(Set(TEIFacsimile.zones(in: TEIFacsimile.blocks(in: laid)).keys), ["p1-z1", "p2-z1", "p2-z2"])
     XCTAssertFalse(laid.contains(#"ulx="5""#))
     let pages = TEIRenderer.pages(in: laid)
-    guard case .figure(_, let zone, _, _) = pages[1].lines[0].kind else { return XCTFail("Missing figure") }
+    guard case .figure(_, let zone, _) = pages[1].lines[0].kind else { return XCTFail("Missing figure") }
     XCTAssertEqual(zone?.corners, "100 100 300 300")
     XCTAssertEqual(pages[1].lines[1].runs[0].zone?.corners, "10 10 20 30")
-    guard case .figure(_, let first, _, _) = pages[0].lines[0].kind else { return XCTFail("Missing figure") }
+    guard case .figure(_, let first, _) = pages[0].lines[0].kind else { return XCTFail("Missing figure") }
     XCTAssertEqual(first?.corners, "1 1 2 2")
     XCTAssertTrue(laid.contains(#"<graphic url="https://example.org/iiif/b/full/1300,/0/default.jpg"/><zone xml:id="p2-z1""#))
   }
