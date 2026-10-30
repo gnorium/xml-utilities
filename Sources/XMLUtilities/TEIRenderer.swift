@@ -70,7 +70,11 @@
     /// never photographs: a photograph of an opening, a ruler beside it, is
     /// no larger page, and every leaf of a size is one box, its blank's
     /// mark where every other blank's is (user, 2026-10-26).
-    public var frame: TEIPageFrame? {
+    public var frame: TEIPageFrame? { Self.frame(renditions: renditions, textBlock: textBlock, workPage: workPage) }
+
+    static func frame(
+      renditions: [String: String], textBlock: TEITextBlock?, workPage: (width: Double, height: Double)?
+    ) -> TEIPageFrame? {
       guard let work = TEIRendition.frame(in: renditions) ?? textBlock?.frame else { return nil }
       var page: (width: Double, height: Double)?
       if let workPage, let textBlock, textBlock.imageWidth > 0, textBlock.imageHeight > 0,
@@ -82,6 +86,60 @@
       return TEIPageFrame(
         measure: work.measure, height: work.height, head: work.head, foot: work.foot, inner: work.inner,
         outer: work.outer, recto: textBlock?.recto ?? true, pageWidth: page?.width ?? 0, pageHeight: page?.height ?? 0)
+    }
+
+    /// A figure's setting (gnorium-python `base_tei._figure`): its size and
+    /// its place across and down, in the body's em, as the scan has them.
+    public static let figureSetting: Set<String> = [
+      "inline-size", "block-size", "margin-inline-start", "margin-block-start",
+    ]
+
+    /// `lines` with each figure that has no setting of its own set by its
+    /// zone (user, 2026-10-30). `base_tei._figure` writes a figure's
+    /// setting where its page has its em; a page with no body type has
+    /// none—a binding's board lettered in gilt (Hamlet Q1's front cover),
+    /// whose lettering is copy evidence the reading pane never shows—and
+    /// its crest was drawn at the head of the pane, at its drawing's own
+    /// pixels. Framed, such a page is its leaf laid at the frame's scale
+    /// (`TEIPageFrame`: the leaf's width is the frame's measure and its
+    /// side margins, or a larger page's own), so the figure is set as the
+    /// zone has it on the leaf: its size, its place across from the text
+    /// block's left, and its place down from the text block's top, or from
+    /// the figure so placed before it. A page with no frame, or whose
+    /// leaf is not kept, leaves its figures as they are.
+    static func placedByZone(_ lines: [TEILine], frame: TEIPageFrame?, textBlock: TEITextBlock?) -> [TEILine] {
+      guard let frame, let block = textBlock, block.imageWidth > 0, block.imageHeight > 0, let leaf = block.leafBox,
+        leaf.right > leaf.left
+      else { return lines }
+      let leafWidth = frame.pageWidth > 0 ? frame.pageWidth : frame.left + frame.measure + frame.right
+      let scale = leafWidth / (leaf.right - leaf.left)
+      var bottom: Double?
+      return lines.map { line in
+        guard case .figure(_, let zone?, _) = line.kind,
+          TEIRendition.css(from: line.rend, only: figureSetting).isEmpty
+        else { return line }
+        let box = zone.percent
+        let left = box.x / 100 * block.imageWidth
+        let top = box.y / 100 * block.imageHeight
+        let width = box.width / 100 * block.imageWidth
+        let height = box.height / 100 * block.imageHeight
+        let down = bottom.map { (top - $0) * scale } ?? ((top - leaf.top) * scale - frame.head)
+        bottom = top + height
+        func em(_ value: Double) -> String { TEIRendition.Length(value: value, unit: "em").text }
+        let setting =
+          "inline-size:\(em(width * scale));block-size:\(em(height * scale));"
+          + "margin-inline-start:\(em((left - leaf.left) * scale - frame.left));margin-block-start:\(em(down))"
+        var placed = TEILine(
+          kind: line.kind, text: line.text,
+          rend: [line.rend, TEIRendition.tokens(setting)].filter { !$0.isEmpty }.joined(separator: " "),
+          runs: line.runs, opensBlock: line.opensBlock, opensParagraph: line.opensParagraph,
+          sharesLine: line.sharesLine, joinsPrevious: line.joinsPrevious, element: line.element)
+        placed.frame = line.frame
+        placed.column = line.column
+        placed.columnRend = line.columnRend
+        placed.part = line.part
+        return placed
+      }
     }
 
     /// A page's lines, read once, by whichever thread asks first.
@@ -568,15 +626,19 @@
       return pageSpans(in: xml).map { open, range in
         let markup = String(xml[range])
         let marked = highlights[serviceID(ofFacsimile: open.facsimileURL)] ?? []
+        let textBlock = TEIFacsimile.textBlock(of: open.facsimileURL, label: open.label, in: textBlocks)
+        let frame = TEIPage.frame(renditions: renditions, textBlock: textBlock, workPage: workPage)
         return TEIPage(
           label: open.label,
           facsimileURL: open.facsimileURL,
           markup: markup.trimmingCharacters(in: .whitespacesAndNewlines),
           zones: zones, zoneIDs: zoneIDs, renditions: renditions,
-          textBlock: TEIFacsimile.textBlock(of: open.facsimileURL, label: open.label, in: textBlocks),
+          textBlock: textBlock,
           workPage: workPage
         ) {
-          lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones, renditions: renditions)
+          TEIPage.placedByZone(
+            lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones, renditions: renditions),
+            frame: frame, textBlock: textBlock)
         }
       }
     }

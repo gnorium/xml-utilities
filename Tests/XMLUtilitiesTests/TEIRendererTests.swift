@@ -403,6 +403,45 @@ final class TEIRendererTests: XCTestCase {
     for margin in [reframed.head, reframed.foot, reframed.inner, reframed.outer] { XCTAssertEqual(margin, 2.5, accuracy: 0.001) }
   }
 
+  /// A figure with no setting of its own on a framed page (user, 2026-10-30:
+  /// Hamlet Q1's front cover, a board lettered in gilt, with no body type
+  /// for `base_tei._figure` to write one in) is set by its zone on the
+  /// page's leaf, at the frame's scale: its size, its place across from the
+  /// text block's left, its place down from the text block's top or from
+  /// the figure before it; a figure set already, and a page with no frame,
+  /// are left as they are.
+  func testAFigureWithNoSettingOnAFramedPageIsSetByItsZoneOnTheLeaf() throws {
+    let a = "https://example.org/iiif/a/full/1300,/0/default.jpg"
+    let header = "<teiHeader><encodingDesc><tagsDecl>"
+      + #"<rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em</rendition>"#
+      + "</tagsDecl></encodingDesc></teiHeader>"
+    // The leaf 800 px wide (100 to 900 of a 1000 px scan), the frame 50 em: an em is 16 px of the scan.
+    let facsimile = #"<facsimile><surface n="1" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\#(a)" width="1000px" height="1300px"/>"#
+      + #"<zone xml:id="textblock" type="textblock" points="420,240 620,240 620,440 420,440"/>"#
+      + #"<zone type="leaf" points="100,80 900,80 900,920 100,920"/>"#
+      + #"<zone xml:id="z1" ulx="500" uly="300" lrx="580" lry="400"/><zone xml:id="z2" ulx="100" uly="500" lrx="200" lry="600"/>"#
+      + #"<zone xml:id="z3" ulx="100" uly="700" lrx="200" lry="800"/></surface></facsimile>"#
+    let body = ##"<text><body><pb n="1" facs="\##(a)"/><figure facs="#z1"/><figure facs="#z2"/>"##
+      + ##"<figure facs="#z3" style="inline-size:2em;block-size:2em;margin-inline-start:1em"/></body></text>"##
+    let pages = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + body + "</TEI>")
+    let settings = pages[0].lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.figureSetting) }
+    // z1: 80 by 100 scan px at 390 px down, 500 across: 5 by 8.125 em, 22 em from the text block's left
+    // (400 px from the leaf's less the 3 em margin), 14.875 em from its top (286 px less the 3 em head).
+    // z2: 130 px under z1's bottom (520 px), 8.125 em down from it. z3 keeps its own setting.
+    XCTAssertEqual(
+      settings,
+      [
+        "inline-size:5em;block-size:8.125em;margin-inline-start:22em;margin-block-start:14.875em;",
+        "inline-size:6.25em;block-size:8.125em;margin-inline-start:-3em;margin-block-start:8.125em;",
+        "inline-size:2em;block-size:2em;margin-inline-start:1em;",
+      ])
+    // Unframed (no header frame, no body type): as they are.
+    let unframed = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + facsimile + body + "</TEI>")
+    XCTAssertEqual(
+      unframed[0].lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.figureSetting) },
+      ["", "", "inline-size:2em;block-size:2em;margin-inline-start:1em;"])
+  }
+
   /// A note's place in a margin is an area around the frame: a side, or a
   /// corner as two; "margin", its side unknown, and any other place none.
   func testANotesMarginalPlaceIsAnAreaAroundTheFrame() {
