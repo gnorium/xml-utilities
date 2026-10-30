@@ -458,7 +458,7 @@ final class TEIRendererTests: XCTestCase {
       + #"<zone type="leaf" points="100,80 900,80 900,920 100,920"/>"#
       + #"<zone xml:id="z-L1" ulx="400" uly="200" lrx="600" lry="220"/>"#
       + #"<zone xml:id="z1" ulx="500" uly="300" lrx="580" lry="400"/></surface></facsimile>"#
-    let cover = ##"<text><body><pb n="1" facs="\##(a)" rendition="#ground-black" rend="color(yellow)"/>"##
+    let cover = ##"<text><body><pb n="1" facs="\##(a)" rend="color(yellow)"/>"##
       + ##"<lb facs="#z-L1"/><note type="binding" subtype="copy">HAMLET</note><figure facs="#z1"/></body></text>"##
     let page = try XCTUnwrap(
       TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + cover + "</TEI>").first)
@@ -474,26 +474,13 @@ final class TEIRendererTests: XCTestCase {
         "inline-size:5em;block-size:8.125em;margin-inline-start:22em;margin-block-start:6.5em;",
       ])
     XCTAssertFalse(page.lines[0].opensParagraph, "a placed line stands at its measured white")
-    // Its ground is the class its <pb> names: black, drawn as the theme's.
-    XCTAssertEqual(page.ground, "black")
+    // Its gilt is the page's ink; its board is never the edition's (user, 2026-10-30: no ground is drawn).
     XCTAssertEqual(page.ink, "yellow")
     // With main text the lines keep their own settings.
     let text = ##"<text><body><pb n="1" facs="\##(a)"/><lb facs="#z-L1"/><p>Words.</p></body></text>"##
     let body = try XCTUnwrap(
       TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + text + "</TEI>").first)
     XCTAssertEqual(body.lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.lineSetting) }, [""])
-    XCTAssertNil(body.ground)
-  }
-
-  /// A page's ground is the class its <pb>'s ground rendition names: white is
-  /// the theme's background, and a measured color's rendition (the copy's
-  /// surface's) names none.
-  func testAPagesGroundIsTheClassItsBreakNames() {
-    XCTAssertEqual(TEIPage.ground(ofBreak: ##"<pb n="1" rendition="#ground-black"/>"##), "black")
-    XCTAssertEqual(TEIPage.ground(ofBreak: ##"<pb n="1" rendition="#ground-blue #x"/>"##), "blue")
-    XCTAssertNil(TEIPage.ground(ofBreak: ##"<pb n="1" rendition="#ground-white"/>"##))
-    XCTAssertNil(TEIPage.ground(ofBreak: ##"<pb n="1" rendition="#ground-333635"/>"##))
-    XCTAssertNil(TEIPage.ground(ofBreak: ##"<pb n="1"/>"##))
   }
 
   /// A note's place in a margin is an area around the frame: a side, or a

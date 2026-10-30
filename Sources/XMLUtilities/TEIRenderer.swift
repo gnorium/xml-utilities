@@ -37,30 +37,22 @@
     /// or white, the theme's (black on white in light mode, the inverse in
     /// dark; user, 2026-10-30), and where the page names none.
     public let ink: String?
-    /// The page's own ground where the reader draws one (`ground(ofBreak:)`):
-    /// the class its `<pb>`'s ground rendition names (gnorium-python
-    /// `base_tei.page_pair`, `#ground-black`), a board's or a colored
-    /// paper's. Black is drawn as the theme's black, inverted in dark mode
-    /// as black ink is (user, 2026-10-30: Hamlet Q1's dark leather cover);
-    /// every other class in its palette color. Nil for white, the theme's
-    /// background, and where the page names none (plain paper).
-    public let ground: String?
 
     public init(
       label: String, facsimileURL: String, lines: [TEILine], markup: String, zones: [String: TEIZone] = [:],
       zoneIDs: Set<String>? = nil, renditions: [String: String] = [:], textBlock: TEITextBlock? = nil,
-      workPage: (width: Double, height: Double)? = nil, ink: String? = nil, ground: String? = nil
+      workPage: (width: Double, height: Double)? = nil, ink: String? = nil
     ) {
       self.init(
         label: label, facsimileURL: facsimileURL, markup: markup, zones: zones, zoneIDs: zoneIDs,
-        renditions: renditions, textBlock: textBlock, workPage: workPage, ink: ink, ground: ground
+        renditions: renditions, textBlock: textBlock, workPage: workPage, ink: ink
       ) { lines }
     }
 
     init(
       label: String, facsimileURL: String, markup: String, zones: [String: TEIZone], zoneIDs: Set<String>? = nil,
       renditions: [String: String] = [:], textBlock: TEITextBlock? = nil,
-      workPage: (width: Double, height: Double)? = nil, ink: String? = nil, ground: String? = nil,
+      workPage: (width: Double, height: Double)? = nil, ink: String? = nil,
       read: @escaping @Sendable () -> [TEILine]
     ) {
       self.label = label
@@ -73,7 +65,6 @@
       self.textBlock = textBlock
       self.workPage = workPage
       self.ink = ink
-      self.ground = ground
     }
 
     /// The ink a page break (`<pb …>`, its tag) names for its page: its
@@ -87,23 +78,6 @@
         return TEIRenderer.inks.contains(name) ? name : nil
       }.last
       guard let named, named != "black", named != "white" else { return nil }
-      return named
-    }
-
-    /// The ground a page break (`<pb …>`, its tag) names for its page: the
-    /// class of its ground rendition (`rendition="#ground-NAME"`,
-    /// gnorium-python `base_tei.page_pair`), NAME one of the inks
-    /// (`TEIRenderer.inks`), unless it is white, the theme's background. A
-    /// ground rendition of a measured color (`#ground-333635`) is the copy's
-    /// surface's, never the edition's, and names none.
-    public static func ground(ofBreak tag: String) -> String? {
-      let named = XMLFormatter.attribute("rendition", in: tag).split(whereSeparator: \.isWhitespace).compactMap {
-        token -> String? in
-        guard token.hasPrefix("#ground-") else { return nil }
-        let name = String(token.dropFirst(8))
-        return TEIRenderer.inks.contains(name) ? name : nil
-      }.last
-      guard let named, named != "white" else { return nil }
       return named
     }
 
@@ -719,8 +693,7 @@
           zones: zones, zoneIDs: zoneIDs, renditions: renditions,
           textBlock: textBlock,
           workPage: workPage,
-          ink: TEIPage.ink(ofBreak: String(xml[open.tag])),
-          ground: TEIPage.ground(ofBreak: String(xml[open.tag]))
+          ink: TEIPage.ink(ofBreak: String(xml[open.tag]))
         ) {
           TEIPage.placedByZone(
             lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones, renditions: renditions),
