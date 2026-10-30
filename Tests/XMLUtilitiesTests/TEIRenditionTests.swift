@@ -30,6 +30,39 @@ final class TEIRenditionTests: XCTestCase {
       "font-variant-numeric:oldstyle-nums;")
   }
 
+  /// A tracked box is set past its end by its letter-spacing, the space
+  /// CSS leaves after its last letter, so a centered or right-set tracked
+  /// line stands on its ink (Hamlet Q1 p. 3's "HAMLET", user, 2026-10-30);
+  /// a declared end margin is kept beside it.
+  func testATrackedBoxIsSetPastItsEndByItsLetterSpacing() throws {
+    XCTAssertEqual(
+      TEIRendition.css(from: TEIRendition.tokens("font-size:2em;letter-spacing:0.576em")),
+      "font-size:2em;letter-spacing:0.576em;margin-inline-end:-0.576em;")
+    XCTAssertEqual(
+      TEIRendition.css(from: TEIRendition.tokens("letter-spacing:0.5em;margin-inline-end:2em")),
+      "letter-spacing:0.5em;margin-inline-end:1.5em;")
+    XCTAssertEqual(
+      TEIRendition.css(from: TEIRendition.tokens("letter-spacing:2px;margin-inline-end:1em")),
+      "letter-spacing:2px;margin-inline-end:calc(1em - 2px);")
+    // Condensed type ends short of its box the other way.
+    XCTAssertEqual(
+      TEIRendition.css(from: TEIRendition.tokens("letter-spacing:-0.02em")),
+      "letter-spacing:-0.02em;margin-inline-end:0.02em;")
+    // None, or none drawn: nothing to make good.
+    XCTAssertEqual(TEIRendition.css(from: TEIRendition.tokens("letter-spacing:0em")), "letter-spacing:0em;")
+    XCTAssertEqual(
+      TEIRendition.css(from: TEIRendition.tokens("letter-spacing:0.5em"), excluding: ["margin-inline-end"]),
+      "letter-spacing:0.5em;")
+    XCTAssertEqual(
+      TEIRendition.css(from: TEIRendition.tokens("letter-spacing:0.5em;font-size:2em"), only: ["font-size"]),
+      "font-size:2em;")
+    // A rendered line: its block's tracking made good once, on the box
+    // it is drawn in.
+    let xml = ##"<TEI><teiHeader><encodingDesc><tagsDecl><rendition xml:id="tracking-1" scheme="css">letter-spacing:0.576em</rendition></tagsDecl></encodingDesc></teiHeader><text><body><pb n="1" facs="https://example.org/page/full/max/0/default.jpg"/><ab rendition="#tracking-1" rend="align(center)">HAMLET<lb/></ab></body></text></TEI>"##
+    let line = try XCTUnwrap(TEIRenderer.pages(in: xml).first?.lines.first)
+    XCTAssertTrue(TEIRendition.css(from: line.rend).hasSuffix("letter-spacing:0.576em;margin-inline-end:-0.576em;"))
+  }
+
   /// The work frame's rendition keeps its body type in the scans' pixels
   /// and its lengths in that em, whatever a page's text may write.
   func testTheWorkFrameKeepsItsBodyTypeAndMargin() {

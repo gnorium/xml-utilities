@@ -1040,7 +1040,7 @@ final class TEIRendererTests: XCTestCase {
   /// Copy evidence (`<note type="provenance">` and `<note type="binding" subtype="copy">`)
   /// is omitted from the reading pane and gives its bounding zones on the scan,
   /// while edition and issue binding notes render in the reading pane.
-  func testCopyEvidenceIsOmittedFromTheReadingPaneAndGivesItsZones() throws {
+  func testAnOwnersMarkIsOmittedFromTheReadingPaneAndCopyEvidenceGivesItsZones() throws {
     let url = "https://example.org/iiif/cover/full/max/0/default.jpg"
     let document = """
       <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader/>
@@ -1056,11 +1056,38 @@ final class TEIRendererTests: XCTestCase {
       <note type="binding" subtype="issue" facs="#z-L4">SECOND ISSUE</note></body></text></TEI>
       """
     let page = try XCTUnwrap(TEIRenderer.pages(in: document).first)
-    XCTAssertEqual(page.lines.map(\.text), ["HAMLET", "SECOND ISSUE"])
+    // The copy's binding lettering is its binder's, set in the reading as
+    // well (user, 2026-10-30); the owner's mark is the scan's alone.
+    XCTAssertEqual(page.lines.map(\.text), ["BOUND BY MACDONALD", "HAMLET", "SECOND ISSUE"])
+    XCTAssertNil(page.ink, "a page that names no ink is in the theme's")
     let zones = TEIRenderer.elementZones(of: page)
     XCTAssertEqual(zones.count, 2)
     XCTAssertEqual(zones[0].zone, TEIZone(id: "z-L1", ulx: 100, uly: 120, lrx: 400, lry: 160))
     XCTAssertEqual(zones[1].zone, TEIZone(id: "z-L2", ulx: 150, uly: 200, lrx: 550, lry: 300))
+  }
+
+  /// A page's own ink, its <pb>'s color(NAME), is drawn as encoded (a
+  /// cover's gilt lettering, yellow) unless it is black or white, the
+  /// theme's (user, 2026-10-30); its lines carry none of it.
+  func testAPagesOwnInkIsItsBreaksUnlessATheme() throws {
+    func page(_ rend: String) throws -> TEIPage {
+      try XCTUnwrap(
+        TEIRenderer.pages(
+          in: """
+            <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader/><text><body>\
+            <pb n="Front cover" facs="https://example.org/iiif/cover/full/max/0/default.jpg" rend="\(rend)"/>\
+            <lb/><note type="binding" subtype="copy">HAMLET</note></body></text></TEI>
+            """
+        ).first)
+    }
+    let gilt = try page("color(yellow)")
+    XCTAssertEqual(gilt.ink, "yellow")
+    XCTAssertEqual(gilt.lines.map(\.text), ["HAMLET"])
+    XCTAssertFalse(gilt.lines.contains { $0.rend.contains("color(") || $0.runs.contains { $0.rend.contains("color(") } })
+    XCTAssertNil(try page("color(black)").ink)
+    XCTAssertNil(try page("color(white)").ink)
+    XCTAssertNil(try page("color(gold)").ink, "no ink the rend grammar names")
+    XCTAssertEqual(try page("color(gray)").ink, "gray")
   }
 
   /// A page's surface given its text block where the document keeps none:

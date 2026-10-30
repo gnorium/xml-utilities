@@ -211,15 +211,45 @@ public enum TEIRendition {
 
   /// The CSS a rend's `css:` tokens declare; with `only`, just those
   /// properties, with `excluding`, all but those.
+  ///
+  /// A box set with a letter-spacing ends that much before its box's end:
+  /// CSS spaces after every letter, its last one too, where the print
+  /// spaces only between them. So it is set that much past its end
+  /// (`margin-inline-end` less its letter-spacing, the margin it declares
+  /// kept beside it), and a tracked line centered or set right stands on
+  /// its ink as the print's does, never half a gap (or a whole one) toward
+  /// its start (Hamlet Q1 p. 3's "HAMLET", 0.576em: user, 2026-10-30).
+  /// Every box the renderer styles from a rend is one box, its rend the
+  /// cascade's (`cascade`), so a letter-spacing is made good once, by the
+  /// box it is drawn in; the ink measures (artifact-core `InkExtent`,
+  /// gnorium-python `layout_preview`) read glyphs, never the space after.
   public static func css(from rend: String, only: Set<String>? = nil, excluding: Set<String> = []) -> String {
-    rend.split(whereSeparator: \.isWhitespace).compactMap { token -> String? in
-      guard token.hasPrefix("css:") else { return nil }
+    var declarations: [(name: String, value: String)] = []
+    for token in rend.split(whereSeparator: \.isWhitespace) {
+      guard token.hasPrefix("css:") else { continue }
       let pair = token.dropFirst(4).split(separator: "=", maxSplits: 1)
-      guard pair.count == 2, valid(property: String(pair[0]), value: String(pair[1])) else { return nil }
+      guard pair.count == 2, valid(property: String(pair[0]), value: String(pair[1])) else { continue }
       let name = String(pair[0])
-      guard only?.contains(name) ?? true, !excluding.contains(name) else { return nil }
-      return "\(pair[0]):\(pair[1]);"
-    }.joined()
+      guard only?.contains(name) ?? true, !excluding.contains(name) else { continue }
+      declarations.append((name, String(pair[1])))
+    }
+    let end = "margin-inline-end"
+    if only?.contains(end) ?? true, !excluding.contains(end),
+      let spacing = declarations.last(where: { $0.name == "letter-spacing" }).flatMap({ Length($0.value) }),
+      spacing.value != 0
+    {
+      let made: String
+      if let declared = declarations.last(where: { $0.name == end }) {
+        made =
+          Length(declared.value).flatMap { Length.combine($0, spacing, -) }?.text
+          ?? "calc(\(declared.value) - \(spacing.text))"
+        declarations.removeAll { $0.name == end }
+      } else {
+        made = Length(value: -spacing.value, unit: spacing.unit).text
+      }
+      declarations.append((end, made))
+    }
+    return declarations.map { "\($0.name):\($0.value);" }.joined()
   }
 
   /// The work frame's rendition (gnorium-python `facsimile.frame_rendition`,

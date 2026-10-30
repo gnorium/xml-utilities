@@ -31,22 +31,29 @@
     /// (`TEIFacsimile.workPage`): what tells a page genuinely larger (a
     /// plate, a foldout). Nil where it is not known.
     public let workPage: (width: Double, height: Double)?
+    /// The page's own ink where it is no theme color (`ink(ofBreak:)`): the
+    /// `color(NAME)` of its `<pb>`, the default ink of all it prints, which
+    /// the reader draws as encoded (a cover's gilt, yellow); nil for black
+    /// or white, the theme's (black on white in light mode, the inverse in
+    /// dark; user, 2026-10-30), and where the page names none.
+    public let ink: String?
 
     public init(
       label: String, facsimileURL: String, lines: [TEILine], markup: String, zones: [String: TEIZone] = [:],
       zoneIDs: Set<String>? = nil, renditions: [String: String] = [:], textBlock: TEITextBlock? = nil,
-      workPage: (width: Double, height: Double)? = nil
+      workPage: (width: Double, height: Double)? = nil, ink: String? = nil
     ) {
       self.init(
         label: label, facsimileURL: facsimileURL, markup: markup, zones: zones, zoneIDs: zoneIDs,
-        renditions: renditions, textBlock: textBlock, workPage: workPage
+        renditions: renditions, textBlock: textBlock, workPage: workPage, ink: ink
       ) { lines }
     }
 
     init(
       label: String, facsimileURL: String, markup: String, zones: [String: TEIZone], zoneIDs: Set<String>? = nil,
       renditions: [String: String] = [:], textBlock: TEITextBlock? = nil,
-      workPage: (width: Double, height: Double)? = nil, read: @escaping @Sendable () -> [TEILine]
+      workPage: (width: Double, height: Double)? = nil, ink: String? = nil,
+      read: @escaping @Sendable () -> [TEILine]
     ) {
       self.label = label
       self.facsimileURL = facsimileURL
@@ -57,6 +64,21 @@
       self.renditions = renditions
       self.textBlock = textBlock
       self.workPage = workPage
+      self.ink = ink
+    }
+
+    /// The ink a page break (`<pb …>`, its tag) names for its page: its
+    /// rend's `color(NAME)` (gnorium-python `base_tei.page_pair`), unless
+    /// NAME is black or white, which are the theme's.
+    static func ink(ofBreak tag: String) -> String? {
+      let named = XMLFormatter.attribute("rend", in: tag).split(whereSeparator: \.isWhitespace).compactMap {
+        token -> String? in
+        guard token.hasPrefix("color("), token.hasSuffix(")") else { return nil }
+        let name = String(token.dropFirst(6).dropLast())
+        return TEIRenderer.inks.contains(name) ? name : nil
+      }.last
+      guard let named, named != "black", named != "white" else { return nil }
+      return named
     }
 
     /// The frame the page is set in (user, 2026-10-14): the work's
@@ -98,7 +120,8 @@
     /// zone (user, 2026-10-30). `base_tei._figure` writes a figure's
     /// setting where its page has its em; a page with no body type has
     /// none—a binding's board lettered in gilt (Hamlet Q1's front cover),
-    /// whose lettering is copy evidence the reading pane never shows—and
+    /// whose lettering is copy evidence, set without a setting of its
+    /// own—and
     /// its crest was drawn at the head of the pane, at its drawing's own
     /// pixels. Framed, such a page is its leaf laid at the frame's scale
     /// (`TEIPageFrame`: the leaf's width is the frame's measure and its
@@ -634,7 +657,8 @@
           markup: markup.trimmingCharacters(in: .whitespacesAndNewlines),
           zones: zones, zoneIDs: zoneIDs, renditions: renditions,
           textBlock: textBlock,
-          workPage: workPage
+          workPage: workPage,
+          ink: TEIPage.ink(ofBreak: String(xml[open.tag]))
         ) {
           TEIPage.placedByZone(
             lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones, renditions: renditions),
@@ -961,12 +985,21 @@
     /// Whether `element` is copy evidence—an owner's or library's mark
     /// (`<note type="provenance">`) or a copy's own binding lettering
     /// (`<note type="binding" subtype="copy">`)—which stands on the
-    /// copy's scan (`elementZones(of:)`) and opens its gloss there,
-    /// never in the reading pane.
+    /// copy's scan (`elementZones(of:)`) and opens its gloss there. The
+    /// lettering is set in the reading pane too, in its ink (user,
+    /// 2026-10-30): the binder made it, as the printer made the text; an
+    /// owner's mark sits on the page and never is (`isOwnersMark`).
     static func isCopyEvidence(_ element: TEIMarkup.Element) -> Bool {
       guard element.name == "note" else { return false }
       let type = element.attribute("type")
       return type == "provenance" || (type == "binding" && element.attribute("subtype") == "copy")
+    }
+
+    /// Whether `element` is a mark an owner or a library added to the copy
+    /// (`<note type="provenance">`): a stamp, a bookplate, a shelfmark,
+    /// shown on the scan with its gloss and never set in the reading pane.
+    static func isOwnersMark(_ element: TEIMarkup.Element) -> Bool {
+      element.name == "note" && element.attribute("type") == "provenance"
     }
 
     /// Each copy-evidence element (`isCopyEvidence`) on `page` with its
@@ -1347,7 +1380,10 @@
                 alternative: alternative, gloss: glossing(element))
             case "note":
               flush()
-              if isCopyEvidence(element) { continue }
+              // An owner's mark stands on the scan alone; a copy's binding
+              // lettering is its binder's work, set in the reading as well
+              // (`isOwnersMark`).
+              if isOwnersMark(element) { continue }
               let setting = blockRend()
               blockPending = true
               // A note is set apart from the text it annotates by a
@@ -1415,9 +1451,10 @@
             case "pb":
               // Its page-level renditions (gnorium-python `base_tei.page_pair`:
               // the page's ground and its default ink as the print has them)
-              // are never drawn: the reader maps that pair alone to its theme
-              // (user, 2026-10-25); every other ink and fill is drawn as
-              // encoded.
+              // are never a line's: the reader maps that pair to its theme
+              // (user, 2026-10-25), save an ink that is no theme color, the
+              // page's own (`TEIPage.ink`, user, 2026-10-30); every other ink
+              // and fill is drawn as encoded.
               flush()
               currentColumn = 0
               currentColumnRend = ""
