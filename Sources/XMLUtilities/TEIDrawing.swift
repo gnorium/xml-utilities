@@ -2,16 +2,19 @@
   import Foundation
 
   /// A figure's drawing (`TEILine.Kind.figure`'s `graphic`), read from the
-  /// SVG it is served as (gnorium-python `calibration.figure_trace`: an
-  /// `<svg>` of `<path>`s, one per ink, each filled `currentColor`), so a
-  /// server can draw it into the page itself and the figure paints in its
-  /// ink from the first frame (user, 2026-10-31: an `<img>` of it paints
-  /// `currentColor` black until the client inlines it).
+  /// SVG it is filed as (gnorium-python `calibration.figure_trace`: an
+  /// `<svg>` of `<path>`s, one per ink, each filled `currentColor`) and
+  /// served as the reader references it (`referenced`): the reader draws
+  /// it with `<use href="…#figure">`, so it paints in the page's ink from
+  /// the first frame, stays one cached request, and keeps the page small
+  /// (user, 2026-10-31: an `<img>` of it painted `currentColor` black until
+  /// the client inlined it, and inlining it put a cover's 600 KB of paths
+  /// in every load).
   ///
   /// Only what a drawing is is read: the SVG's size and view box, and each
   /// path's outline, fill, fill rule and ink class. Anything else the text
   /// holds (another element, a script, a handler) is never carried over,
-  /// and the drawing is rebuilt from these values, escaped as any
+  /// and the drawing is written again from these values, escaped as any
   /// attribute is.
   public struct TEIDrawing: Sendable, Equatable {
     public struct Path: Sendable, Equatable {
@@ -33,6 +36,34 @@
     public let height: String
     public let viewBox: String
     public let paths: [Path]
+
+    /// The id of the drawing in the file it is served as (`referenced`),
+    /// which the reader's `<use>` names.
+    public static let fragment = "figure"
+
+    /// The custom property a reader sets an ink's color in (`--tei-ink-red`
+    /// for `ink-red`): a page's style never reaches into a drawing used
+    /// from another file, but an inherited property does.
+    public static func inkProperty(_ ink: String) -> String { "--tei-\(ink)" }
+
+    /// The file the reader references it in: a `<symbol>` (`fragment`) of
+    /// its paths at its view box, stretched to the box it is used in as the
+    /// figure's image filled its setting, used once so the file shows alone
+    /// too. Its print is `currentColor`, the reader's `<use>`'s; another
+    /// ink its class and its reader's property (`inkProperty`), else the
+    /// print's color.
+    public var referenced: String {
+      func attribute(_ name: String, _ value: String) -> String {
+        value.isEmpty ? "" : " \(name)=\"\(XMLFormatter.escapingAttribute(value))\""
+      }
+      let paths = paths.map { path in
+        let ink = path.ink.isEmpty ? "" : attribute("class", path.ink) + attribute("style", "fill:var(\(Self.inkProperty(path.ink)),currentColor)")
+        return "<path" + ink + attribute("fill", path.fill) + attribute("fill-rule", path.fillRule) + attribute("d", path.d) + "/>"
+      }.joined()
+      return "<svg xmlns=\"http://www.w3.org/2000/svg\"" + attribute("width", width) + attribute("height", height)
+        + attribute("viewBox", viewBox) + "><symbol id=\"\(Self.fragment)\"" + attribute("viewBox", viewBox)
+        + " preserveAspectRatio=\"none\">" + paths + "</symbol><use href=\"#\(Self.fragment)\" width=\"100%\" height=\"100%\"/></svg>"
+    }
 
     /// The drawing `svg` is; nil where it is no `<svg>` or draws no path.
     public init?(svg: String) {

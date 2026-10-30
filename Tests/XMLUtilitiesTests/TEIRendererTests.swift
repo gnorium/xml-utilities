@@ -220,7 +220,8 @@ final class TEIRendererTests: XCTestCase {
   }
 
   /// A drawing read from its SVG keeps its size and each path's outline,
-  /// fill and ink, and nothing else: no other element, no handler.
+  /// fill and ink, and nothing else: no other element, no handler; it is
+  /// served written again from those alone.
   func testDrawingReadsItsPathsAndNothingElse() throws {
     let drawing = try XCTUnwrap(
       TEIDrawing(
@@ -236,6 +237,15 @@ final class TEIRendererTests: XCTestCase {
         .init(ink: "", fill: "currentColor", fillRule: "evenodd", d: "M1,2L3,4Z"),
         .init(ink: "ink-red", fill: "currentColor", fillRule: "", d: "M5,6Z"),
       ])
+    // Served as the reader references it: its paths in a symbol its `<use>` names, another ink's
+    // color its reader's property.
+    XCTAssertEqual(
+      drawing.referenced,
+      #"<svg xmlns="http://www.w3.org/2000/svg" width="258" height="332" viewBox="0 0 258 332">"#
+        + #"<symbol id="figure" viewBox="0 0 258 332" preserveAspectRatio="none">"#
+        + #"<path fill="currentColor" fill-rule="evenodd" d="M1,2L3,4Z"/>"#
+        + #"<path class="ink-red" style="fill:var(--tei-ink-red,currentColor)" fill="currentColor" d="M5,6Z"/>"#
+        + ##"</symbol><use href="#figure" width="100%" height="100%"/></svg>"##)
     XCTAssertNil(TEIDrawing(svg: "<svg/>"))
     XCTAssertNil(TEIDrawing(svg: "not a drawing"))
   }
