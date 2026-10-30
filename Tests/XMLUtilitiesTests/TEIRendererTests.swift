@@ -219,6 +219,27 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertNil(photograph)
   }
 
+  /// A drawing read from its SVG keeps its size and each path's outline,
+  /// fill and ink, and nothing else: no other element, no handler.
+  func testDrawingReadsItsPathsAndNothingElse() throws {
+    let drawing = try XCTUnwrap(
+      TEIDrawing(
+        svg: #"<svg xmlns="http://www.w3.org/2000/svg" width="258" height="332" viewBox="0 0 258 332" onload="x()">"#
+          + #"<path fill="currentColor" fill-rule="evenodd" d="M1,2L3,4Z"/>"#
+          + #"<script>alert(1)</script><path class="ink-red" fill="currentColor" d="M5,6Z" onclick="y()"/></svg>"#))
+    XCTAssertEqual(drawing.width, "258")
+    XCTAssertEqual(drawing.height, "332")
+    XCTAssertEqual(drawing.viewBox, "0 0 258 332")
+    XCTAssertEqual(
+      drawing.paths,
+      [
+        .init(ink: "", fill: "currentColor", fillRule: "evenodd", d: "M1,2L3,4Z"),
+        .init(ink: "ink-red", fill: "currentColor", fillRule: "", d: "M5,6Z"),
+      ])
+    XCTAssertNil(TEIDrawing(svg: "<svg/>"))
+    XCTAssertNil(TEIDrawing(svg: "not a drawing"))
+  }
+
   /// A decorated initial is the first letter of its word, never a figure:
   /// its zone rides on the letter's run, and the letter reads with its word.
   func testADecoratedInitialIsTheFirstLetterOfItsWord() throws {
