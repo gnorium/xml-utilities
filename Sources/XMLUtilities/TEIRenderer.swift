@@ -161,7 +161,7 @@
       return lines.map { line in
         let zone: TEIZone
         let isLine: Bool
-        if case .figure(_, let figureZone?, _) = line.kind {
+        if case .figure(_, let figureZone?, _, _) = line.kind {
           guard TEIRendition.css(from: line.rend, only: figureSetting).isEmpty else { return line }
           (zone, isLine) = (figureZone, false)
         } else if placesLines, let lineZone = line.zone, TEIRendition.css(from: line.rend, only: lineSetting).isEmpty {
@@ -247,13 +247,19 @@
       /// object—"gold-tooled dark leather binding"—and setting that in the
       /// reading says the cover bears those words, which it does not.
       ///
-      /// `graphic` is its drawing: the URL of a `<graphic>` child whose
+      /// `drawing` is its drawing: the URL of a `<graphic>` child whose
       /// `mimeType` is `image/svg+xml`, the figure's ink traced as vectors
       /// when its page was calibrated (gnorium-python
       /// `calibration.figure_trace`), which the reader shows in the text
       /// pane in the page's ink instead of a crop of the facsimile; nil
       /// where it has none.
-      case figure(type: String, zone: TEIZone?, graphic: String?)
+      /// `cutout` is a relief's cutout (user, 2026-10-30: a tooled or gilt
+      /// stamp on a binding): the URL of a `<graphic>` child whose `mimeType`
+      /// is `image/png`, the scan's own pixels of the decoration with its
+      /// ground transparent (`calibration.figure_trace.cutout`), shown as an
+      /// image at its zone, never recolored. A graphic of any other type (a
+      /// photograph) is neither: the figure is a crop of the facsimile.
+      case figure(type: String, zone: TEIZone?, drawing: String?, cutout: String?)
       /// Rows and cells must survive parsing; their order alone cannot recover
       /// the relationship between a heading and a value after flattening.
       case table(TEITable)
@@ -1619,13 +1625,17 @@
               let drawing = element.elements.first {
                 $0.name == "graphic" && $0.attribute("mimeType") == TEIRenderer.drawingMIMEType
               }
+              let cutout = element.elements.first {
+                $0.name == "graphic" && $0.attribute("mimeType") == TEIRenderer.cutoutMIMEType
+              }
               // Its own setting (gnorium-python `base_tei._figure`: its size and its place across, in
               // the body's em, as the scan has them), which a framed page draws it at.
               append(
                 .init(
                   kind: .figure(
                     type: element.attribute("type"), zone: zone(of: element),
-                    graphic: drawing.map { $0.attribute("url") }.flatMap { $0.isEmpty ? nil : $0 }),
+                    drawing: drawing.map { $0.attribute("url") }.flatMap { $0.isEmpty ? nil : $0 },
+                    cutout: cutout.map { $0.attribute("url") }.flatMap { $0.isEmpty ? nil : $0 }),
                   text: description, rend: blockRend(), element: words?.index(of: element)))
               // Captions, tables, and diagram labels remain readable even when
               // the graphic has no usable crop. figDesc is descriptive metadata.
@@ -1873,8 +1883,11 @@
     ///
     /// Nil where the facsimile is not an image service.
     /// The media type of a figure's drawing (`TEILine.Kind.figure`'s
-    /// `graphic`): SVG, the figure's inks traced as vectors.
+    /// `drawing`): SVG, the figure's inks traced as vectors.
     public static let drawingMIMEType = "image/svg+xml"
+    /// The media type of a relief's cutout (`TEILine.Kind.figure`'s
+    /// `cutout`): PNG with alpha, the scan's pixels of the decoration alone.
+    public static let cutoutMIMEType = "image/png"
 
     public static func regionURL(ofFacsimile url: String, zone: TEIZone, fitting: Int = 600) -> String? {
       let service = serviceID(ofFacsimile: url)
