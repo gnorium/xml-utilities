@@ -72,6 +72,21 @@ final class TEIQuoteTests: XCTestCase {
     XCTAssertEqual(second.first?.lemma, "")
   }
 
+  /// A `<space>` within a line parts the words on either side of it, a
+  /// vertical one nothing (Hamlet Q1's title page; gnorium-python
+  /// `test_a_space_within_a_line_parts_its_words_and_a_vertical_one_adds_nothing`).
+  func testASpaceWithinALinePartsItsWords() {
+    let page =
+      #"<TEI><text><body><pb n="1" facs="https://example.org/iiif/h0/full/1300,/0/default.jpg"/>"#
+      + ##"<ab>Tragicall<space quantity="1" unit="chars"/>Hi<g ref="#slong">ſ</g>torie"##
+      + #"<space quantity="1" unit="chars"/>of<space dim="vertical" quantity="0.05" unit="em"/>"#
+      + #"<lb/>HAMLET<space quantity="2" unit="lines"/></ab></body></text></TEI>"#
+    let words = TEIRenderer.words(of: TEIRenderer.pages(in: page)[0])
+    XCTAssertEqual(
+      words.map { "\($0.place.line).\($0.place.word) \($0.surface)" },
+      ["1.1 Tragicall", "1.2 Hiſtorie", "1.3 of", "2.1 HAMLET"])
+  }
+
   /// Read word by word, each run says which word it is of, as an anchor
   /// counts the page: a word broken over a line is one word on both lines,
   /// what an editor supplies inside a word is of that word, and the space

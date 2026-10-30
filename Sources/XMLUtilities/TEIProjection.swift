@@ -22,7 +22,7 @@
     }
   }
 
-  /// A page's text as the quotes service counts it (`diplomatic-codepoints-v7`,
+  /// A page's text as the quotes service counts it (`diplomatic-codepoints-v8`,
   /// gnorium-python `quotes/text.py` `diplomatic_text`), so that an
   /// quote's anchor, which counts in it, can be found in the page's
   /// markup: Unicode scalars, not normalized; a `<choice>` reads its orig,
@@ -30,7 +30,9 @@
   /// surface (supplied, reg, expan, corr, ex), the encoder's descriptions
   /// (figDesc, desc: gnorium-python `DESCRIPTIONS`) and the header, facsimile
   /// and standoff are left out; `<lb/>` and `<pb/>` are a line end unless
-  /// `break="no"`; a gap is one U+FFFC; a line-starting element (l, p, head,
+  /// `break="no"`; a gap is one U+FFFC; a `<space>` within a line (any but
+  /// a vertical one, `TEIRenderer.spaceMeasure`) one space, so the words it
+  /// parts are two (Hamlet Q1's title, "Tragicall<space/>Hiſtorie"); a line-starting element (l, p, head,
   /// item, note, fw, cell, ab) and a speech's first child end with a line end
   /// if they have none; a figure has one before and after it (it is set
   /// apart: a line starts at it and after it); a `<formula>` is its
@@ -154,7 +156,7 @@
     /// `Projection.symbols`).
     private(set) var symbols: [Word] = []
     /// Where each line after the first starts, in document order
-    /// (`tei-line-word-v4`, gnorium-python `ANCHOR_VERSION`): after each
+    /// (`tei-line-word-v5`, gnorium-python `ANCHOR_VERSION`): after each
     /// `<lb/>` (`break="no"` too) and at the start of each verse line, block
     /// and first child of an `<sp>`, once text has been read since the last
     /// start, so an `<lb/>` at a block's start is the same line.
@@ -231,6 +233,9 @@
       switch element.name {
       case "gap":
         append("\u{FFFC}")
+        element.projectedSynthetic = start..<size
+      case "space" where element.attribute("dim") != "vertical" && element.attribute("unit") != "lines":
+        append(" ")
         element.projectedSynthetic = start..<size
       case "semantics" where inMath && Self.isMathGap(element):
         separate()
@@ -451,7 +456,7 @@
     }
   }
 
-  /// A word of a page as a quote's anchor names it (`tei-line-word-v4`):
+  /// A word of a page as a quote's anchor names it (`tei-line-word-v5`):
   /// its line (`TEIProjection.breaks`), its place among the words
   /// starting on that line, and its surface as written, which must still read
   /// there.
@@ -468,7 +473,7 @@
   }
 
   /// Where a word stands on its page, as a quote's anchor counts it
-  /// (`tei-line-word-v4`): its line and its place among the words starting
+  /// (`tei-line-word-v5`): its line and its place among the words starting
   /// on that line. What a reader's word is found by.
   public struct TEIWordPlace: Sendable, Hashable {
     public let line: Int
@@ -520,7 +525,7 @@
 
   extension TEIRenderer {
     /// A page's words as a quote's anchor counts them
-    /// (`tei-line-word-v4`), in reading order: each its place, its surface
+    /// (`tei-line-word-v5`), in reading order: each its place, its surface
     /// as written on this page and what its `<w>` says of it. A word broken
     /// over the page break is its part on this page; the part a page begins
     /// with belongs to the previous page's word.
