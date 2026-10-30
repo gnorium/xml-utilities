@@ -94,10 +94,14 @@
     /// mark where every other blank's is (user, 2026-10-26).
     /// A page with no type of its own and no main text, but something its
     /// zones place on its kept leaf (Hamlet Q1's front cover), is its leaf
-    /// (`leafFrame`).
+    /// (`leafFrame`), whatever frame its work declares: framed by the
+    /// work's under the integrated header (user, 2026-10-31), the cover's
+    /// text block was the work's measure, which the reader's overlay and
+    /// the structure check lay its scan's text block on, its gilt drawn
+    /// off its lettering; as filed, before Integration, it is its leaf.
     public var frame: TEIPageFrame? {
-      Self.frame(renditions: renditions, textBlock: textBlock, workPage: workPage)
-        ?? Self.leafFrame(of: textBlock, lines: lines)
+      Self.leafFrame(of: textBlock, lines: lines)
+        ?? Self.frame(renditions: renditions, textBlock: textBlock, workPage: workPage)
     }
 
     /// The width in em a page with no type of its own lays its leaf at
@@ -754,7 +758,7 @@
         ) {
           let read = lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones, renditions: renditions)
           return TEIPage.placedByZone(
-            read, frame: frame ?? TEIPage.leafFrame(of: textBlock, lines: read), textBlock: textBlock)
+            read, frame: TEIPage.leafFrame(of: textBlock, lines: read) ?? frame, textBlock: textBlock)
         }
       }
     }

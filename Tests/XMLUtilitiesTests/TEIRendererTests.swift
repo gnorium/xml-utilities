@@ -421,10 +421,13 @@ final class TEIRendererTests: XCTestCase {
       + #"<zone type="leaf" points="100,80 900,80 900,920 100,920"/>"#
       + #"<zone xml:id="z1" ulx="500" uly="300" lrx="580" lry="400"/><zone xml:id="z2" ulx="100" uly="500" lrx="200" lry="600"/>"#
       + #"<zone xml:id="z3" ulx="100" uly="700" lrx="200" lry="800"/></surface></facsimile>"#
-    let body = ##"<text><body><pb n="1" facs="\##(a)"/><figure facs="#z1"/><figure facs="#z2"/>"##
-      + ##"<figure facs="#z3" style="inline-size:2em;block-size:2em;margin-inline-start:1em"/></body></text>"##
-    let pages = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + body + "</TEI>")
-    let settings = pages[0].lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.figureSetting) }
+    let figures = ##"<pb n="1" facs="\##(a)"/><figure facs="#z1"/><figure facs="#z2"/>"##
+      + ##"<figure facs="#z3" style="inline-size:2em;block-size:2em;margin-inline-start:1em"/>"##
+    let body = "<text><body>" + figures + "</body></text>"
+    // Framed by the work, its main text after them.
+    let framed = "<text><body>" + figures + "<p>Words.</p></body></text>"
+    let pages = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + framed + "</TEI>")
+    let settings = pages[0].lines.dropLast().map { TEIRendition.css(from: $0.rend, only: TEIPage.figureSetting) }
     // z1: 80 by 100 scan px at 390 px down, 500 across: 5 by 8.125 em, 22 em from the text block's left
     // (400 px from the leaf's less the 3 em margin), 14.875 em from its top (286 px less the 3 em head).
     // z2: 130 px under z1's bottom (520 px), 8.125 em down from it. z3 keeps its own setting.
@@ -435,16 +438,20 @@ final class TEIRendererTests: XCTestCase {
         "inline-size:6.25em;block-size:8.125em;margin-inline-start:-3em;margin-block-start:8.125em;",
         "inline-size:2em;block-size:2em;margin-inline-start:1em;",
       ])
-    // No header frame, no body type, no main text: framed by its leaf, 38 em wide (`TEIPage.leafFrame`), an
+    // No main text, no body type: framed by its leaf, 38 em wide (`TEIPage.leafFrame`), an
     // em 800/38 px of the scan; z1 3.8 by 6.175 em, 19 em from the leaf's left, 13.585 em from its top.
-    let leafed = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + facsimile + body + "</TEI>")
-    XCTAssertEqual(
-      leafed[0].lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.figureSetting) },
-      [
-        "inline-size:3.8em;block-size:6.175em;margin-inline-start:19em;margin-block-start:13.585em;",
-        "inline-size:4.75em;block-size:6.175em;margin-inline-start:0em;margin-block-start:6.175em;",
-        "inline-size:2em;block-size:2em;margin-inline-start:1em;",
-      ])
+    // With its work's frame in the header too (user, 2026-10-31: Hamlet Q1's cover under the integrated header):
+    // a page with no type of its own is its leaf whatever its work's frame, as filed before Integration.
+    let leaf = [
+      "inline-size:3.8em;block-size:6.175em;margin-inline-start:19em;margin-block-start:13.585em;",
+      "inline-size:4.75em;block-size:6.175em;margin-inline-start:0em;margin-block-start:6.175em;",
+      "inline-size:2em;block-size:2em;margin-inline-start:1em;",
+    ]
+    for header in ["", header] {
+      let leafed = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + body + "</TEI>")
+      XCTAssertEqual(leafed[0].frame?.measure, TEIPage.leafMeasure)
+      XCTAssertEqual(leafed[0].lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.figureSetting) }, leaf)
+    }
     // With main text and no frame: as they are.
     let text = ##"<text><body><pb n="1" facs="\##(a)"/><figure facs="#z1"/><p>Words.</p></body></text>"##
     let unframed = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + facsimile + text + "</TEI>")
@@ -462,7 +469,8 @@ final class TEIRendererTests: XCTestCase {
     let header = "<teiHeader><encodingDesc><tagsDecl>"
       + #"<rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em</rendition>"#
       + "</tagsDecl></encodingDesc></teiHeader>"
-    // As the figure test's leaf: an em is 16 px of the scan, the text block's top-left 3 em into the leaf.
+    // As the figure test's leaf, framed by it whatever the work's frame (`TEIPage.leafFrame`): 38 em across its
+    // 800 px, an em 800/38 px of the scan, from the leaf's top-left.
     let facsimile = #"<facsimile><surface n="1" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\#(a)" width="1000px" height="1300px"/>"#
       + #"<zone xml:id="textblock" type="textblock" points="420,240 620,240 620,440 420,440"/>"#
       + #"<zone type="leaf" points="100,80 900,80 900,920 100,920"/>"#
@@ -474,15 +482,16 @@ final class TEIRendererTests: XCTestCase {
       TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + cover + "</TEI>").first)
     XCTAssertEqual(page.lines.map(\.text), ["HAMLET", ""])
     XCTAssertEqual(page.lines[0].zone?.id, "z-L1")
-    // HAMLET: 200 by 26 scan px at 260 px down, 400 across: 12.5 by 1.625 em, 15.75 em from the text block's
-    // left (300 px from the leaf's, less 3 em), 6.75 em from its top (156 px, less the 3 em head); the crest
-    // 104 px under its bottom (286 px), 6.5 em down from it. HAMLET is capitals, set at its ink's size: its
-    // cap height its box's 1.625 em, 2.2759 em, its box and place in that em.
+    // HAMLET: 200 by 26 scan px at 260 px down, 400 across: 9.5 by 1.235 em, 14.25 em from the leaf's left
+    // (300 px), 7.41 em from its top (156 px); the crest 104 px under its bottom (286 px), 4.94 em down from it.
+    // HAMLET is capitals, set at its ink's size: its cap height its box's 1.235 em, 1.7297 em, its box and place
+    // in that em.
+    XCTAssertEqual(page.frame?.measure, TEIPage.leafMeasure)
     XCTAssertEqual(
       page.lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.lineSetting.union(["text-align", "font-size"])) },
       [
-        "text-align:center;font-size:2.2759em;inline-size:5.4923em;block-size:0.714em;margin-inline-start:6.9203em;margin-block-start:2.9658em;",
-        "inline-size:5em;block-size:8.125em;margin-inline-start:22em;margin-block-start:6.5em;",
+        "text-align:center;font-size:1.7297em;inline-size:5.4923em;block-size:0.714em;margin-inline-start:8.2385em;margin-block-start:4.284em;",
+        "inline-size:3.8em;block-size:6.175em;margin-inline-start:19em;margin-block-start:4.94em;",
       ])
     XCTAssertFalse(page.lines[0].opensParagraph, "a placed line stands at its measured white")
     // Its gilt is the page's ink; its board is never the edition's (user, 2026-10-30: no ground is drawn).
