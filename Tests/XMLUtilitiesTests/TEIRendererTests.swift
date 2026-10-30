@@ -408,8 +408,8 @@ final class TEIRendererTests: XCTestCase {
   /// for `base_tei._figure` to write one in) is set by its zone on the
   /// page's leaf, at the frame's scale: its size, its place across from the
   /// text block's left, its place down from the text block's top or from
-  /// the figure before it; a figure set already, and a page with no frame,
-  /// are left as they are.
+  /// the figure before it; a figure set already is left as it is, as is
+  /// every figure of a page with main text and no frame.
   func testAFigureWithNoSettingOnAFramedPageIsSetByItsZoneOnTheLeaf() throws {
     let a = "https://example.org/iiif/a/full/1300,/0/default.jpg"
     let header = "<teiHeader><encodingDesc><tagsDecl>"
@@ -435,11 +435,21 @@ final class TEIRendererTests: XCTestCase {
         "inline-size:6.25em;block-size:8.125em;margin-inline-start:-3em;margin-block-start:8.125em;",
         "inline-size:2em;block-size:2em;margin-inline-start:1em;",
       ])
-    // Unframed (no header frame, no body type): as they are.
-    let unframed = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + facsimile + body + "</TEI>")
+    // No header frame, no body type, no main text: framed by its leaf, 38 em wide (`TEIPage.leafFrame`), an
+    // em 800/38 px of the scan; z1 3.8 by 6.175 em, 19 em from the leaf's left, 13.585 em from its top.
+    let leafed = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + facsimile + body + "</TEI>")
     XCTAssertEqual(
-      unframed[0].lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.figureSetting) },
-      ["", "", "inline-size:2em;block-size:2em;margin-inline-start:1em;"])
+      leafed[0].lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.figureSetting) },
+      [
+        "inline-size:3.8em;block-size:6.175em;margin-inline-start:19em;margin-block-start:13.585em;",
+        "inline-size:4.75em;block-size:6.175em;margin-inline-start:0em;margin-block-start:6.175em;",
+        "inline-size:2em;block-size:2em;margin-inline-start:1em;",
+      ])
+    // With main text and no frame: as they are.
+    let text = ##"<text><body><pb n="1" facs="\##(a)"/><figure facs="#z1"/><p>Words.</p></body></text>"##
+    let unframed = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + facsimile + text + "</TEI>")
+    XCTAssertNil(unframed[0].frame)
+    XCTAssertEqual(unframed[0].lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.figureSetting) }, ["", ""])
   }
 
   /// A page with no main text (user, 2026-10-30: Hamlet Q1's front cover,
@@ -466,11 +476,12 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(page.lines[0].zone?.id, "z-L1")
     // HAMLET: 200 by 26 scan px at 260 px down, 400 across: 12.5 by 1.625 em, 15.75 em from the text block's
     // left (300 px from the leaf's, less 3 em), 6.75 em from its top (156 px, less the 3 em head); the crest
-    // 104 px under its bottom (286 px), 6.5 em down from it.
+    // 104 px under its bottom (286 px), 6.5 em down from it. HAMLET is capitals, set at its ink's size: its
+    // cap height its box's 1.625 em, 2.2759 em, its box and place in that em.
     XCTAssertEqual(
-      page.lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.lineSetting.union(["text-align"])) },
+      page.lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.lineSetting.union(["text-align", "font-size"])) },
       [
-        "text-align:center;inline-size:12.5em;block-size:1.625em;margin-inline-start:15.75em;margin-block-start:6.75em;",
+        "text-align:center;font-size:2.2759em;inline-size:5.4923em;block-size:0.714em;margin-inline-start:6.9203em;margin-block-start:2.9658em;",
         "inline-size:5em;block-size:8.125em;margin-inline-start:22em;margin-block-start:6.5em;",
       ])
     XCTAssertFalse(page.lines[0].opensParagraph, "a placed line stands at its measured white")
@@ -481,6 +492,58 @@ final class TEIRendererTests: XCTestCase {
     let body = try XCTUnwrap(
       TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + text + "</TEI>").first)
     XCTAssertEqual(body.lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.lineSetting) }, [""])
+  }
+
+  /// Hamlet Q1's front cover as filed (dev, 2026-10-30, calibration_pages
+  /// for p15150coll3:1360): a board lettered in gilt around a traced crest,
+  /// no main text, no body type measured (its text block has no
+  /// `font-size`) and no work frame in its header. It is framed by its
+  /// leaf (`TEIPage.leafFrame`), so its lettering and its crest stand at
+  /// their zones, centered on the board as the scan has them; unframed,
+  /// nothing on it was placed: its lettering ran at the top left at the
+  /// reader's size, its crest at its drawing's own pixels.
+  func testACoverWithNoTypeOfItsOwnIsSetOnItsLeafByItsZones() throws {
+    let image = "https://cdm16003.contentdm.oclc.org/iiif/2/p15150coll3:1360"
+    let tei = ##"<TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><encodingDesc><tagsDecl><rendition xml:id="ground-333635" scheme="css">background-color:#333635</rendition></tagsDecl></encodingDesc></teiHeader>"##
+      + ##"<facsimile><surface rendition="#ground-333635" n="Front cover" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\##(image)/full/max/0/default.jpg" width="6120px" height="6630px"/>"##
+      + ##"<zone xml:id="textblock" type="textblock" points="422.53,239.73 623.51,238 625.51,435.87 424.53,437.6"/>"##
+      + ##"<zone type="block" subtype="main" points="422.53,239.73 623.51,238 624.31,317.33 423.33,319.06"/>"##
+      + ##"<zone type="line" points="422.53,239.73 623.51,238 623.7,257.01 422.72,258.73"><path type="baseline" points="422.54,241.04 623.52,239.32"/></zone>"##
+      + ##"<zone type="leaf" points="144.93,54 891.01,54 891.01,946 144.93,946"/>"##
+      + ##"<zone xml:id="z-L2" ulx="422" uly="238" lrx="624" lry="259"/><zone xml:id="z-L3" ulx="435" uly="303" lrx="610" lry="319"/>"##
+      + ##"<zone xml:id="z-L6" ulx="478" uly="427" lrx="585" lry="438"/><zone xml:id="z-fig-1" type="figure" ulx="515" uly="348" lrx="548" lry="395"/></surface></facsimile>"##
+      + ##"<text><body><pb n="Front cover" facs="\##(image)" rend="color(yellow)"/><lb facs="#z-L2"/><note type="binding" subtype="copy">HAMLET</note>"##
+      + ##"<lb facs="#z-L3"/><note type="binding" subtype="copy">SHAKESPEARE</note>"##
+      + ##"<figure facs="#z-fig-1"><graphic url="/mission-control/calibration-figures/z-fig-1.svg" mimeType="image/svg+xml"/></figure>"##
+      + ##"<lb facs="#z-L6"/><note type="binding" subtype="copy">LONDON 1603</note></body></text></TEI>"##
+    let page = try XCTUnwrap(TEIRenderer.pages(in: tei).first)
+    let frame = try XCTUnwrap(page.frame, "a cover with no type of its own is framed by its leaf")
+    XCTAssertEqual(frame.measure, TEIPage.leafMeasure)
+    XCTAssertEqual(frame.left, 0)
+    XCTAssertEqual(frame.head, 0)
+    func value(_ line: TEILine, _ property: String) -> Double {
+      let css = TEIRendition.css(from: line.rend, only: [property])
+      return Double(css.dropFirst(property.count + 1).prefix { $0 != "e" && $0 != "r" && $0 != ";" }) ?? .nan
+    }
+    XCTAssertEqual(page.lines.map(\.text), ["HAMLET", "SHAKESPEARE", "", "LONDON 1603"])
+    // The leaf is 746.08 of the surface's 1000 across, 38 em: each box's middle at its zone's, in em of the
+    // page, the board's middle at 19 em.
+    let leafWidth = (891.01 - 144.93) * 6120 / 1000
+    let scale = TEIPage.leafMeasure / leafWidth
+    for (line, zone) in zip(page.lines, [(422.0, 624.0), (435, 610), (515, 548), (478, 585)]) {
+      let font = line.text.isEmpty ? 1 : value(line, "font-size")
+      let start = value(line, "margin-inline-start") * font
+      let width = value(line, "inline-size") * font
+      XCTAssertEqual(start, (zone.0 - 144.93) * 6.12 * scale, accuracy: 0.001, line.text)
+      XCTAssertEqual(width, (zone.1 - zone.0) * 6.12 * scale, accuracy: 0.001, line.text)
+      XCTAssertEqual(start + width / 2, TEIPage.leafMeasure / 2, accuracy: 1.2, "\(line.text) stands centered")
+    }
+    // The crest at its zone's size, 1.68 by 2.6 em, never its drawing's pixels; the lettering at its ink's,
+    // HAMLET's cap height its box's 139 scan px.
+    XCTAssertEqual(value(page.lines[2], "inline-size"), 33 * 6.12 * scale, accuracy: 0.001)
+    XCTAssertEqual(value(page.lines[2], "block-size"), 47 * 6.63 * scale, accuracy: 0.001)
+    XCTAssertEqual(value(page.lines[0], "font-size") * TEIPage.capHeight, 21 * 6.63 * scale, accuracy: 0.001)
+    XCTAssertEqual(value(page.lines[0], "line-height"), 21 * 6.63 * scale, accuracy: 0.0001, "its line its box")
   }
 
   /// A note's place in a margin is an area around the frame: a side, or a

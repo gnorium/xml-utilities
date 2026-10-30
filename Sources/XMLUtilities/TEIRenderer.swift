@@ -92,7 +92,47 @@
     /// never photographs: a photograph of an opening, a ruler beside it, is
     /// no larger page, and every leaf of a size is one box, its blank's
     /// mark where every other blank's is (user, 2026-10-26).
-    public var frame: TEIPageFrame? { Self.frame(renditions: renditions, textBlock: textBlock, workPage: workPage) }
+    /// A page with no type of its own and no main text, but something its
+    /// zones place on its kept leaf (Hamlet Q1's front cover), is its leaf
+    /// (`leafFrame`).
+    public var frame: TEIPageFrame? {
+      Self.frame(renditions: renditions, textBlock: textBlock, workPage: workPage)
+        ?? Self.leafFrame(of: textBlock, lines: lines)
+    }
+
+    /// The width in em a page with no type of its own lays its leaf at
+    /// (`leafFrame`): the canonical render's page (TEIView's, 640 px less
+    /// its 16 px gutters, at its 16 px em).
+    public static let leafMeasure = 38.0
+
+    /// The edition face's cap height in its em (gnorium-python
+    /// `edition_face.edition().cap_height`, Noto Serif's): the height of a
+    /// line of capitals' ink, which a line placed by its zone is sized by
+    /// (`placedByZone`).
+    public static let capHeight = 0.714
+
+    /// The frame of a page with no frame of its own (no work frame, no body
+    /// type measured on its scan: a board lettered in gilt, Hamlet Q1's
+    /// front cover, 2026-10-30) that sets no main text (`isMainText`) but
+    /// a line or a figure its zone places: its leaf, `leafMeasure` em wide,
+    /// at its own proportions, no margin around it, each line and figure
+    /// set on it at its zone (`placedByZone`). Without it such a page was
+    /// unframed and nothing on it placed: its lettering ran at the top left
+    /// at the reader's size, its crest at its drawing's own pixels. Nil
+    /// where the page keeps no leaf or its scan's size is not given.
+    static func leafFrame(of textBlock: TEITextBlock?, lines: [TEILine]) -> TEIPageFrame? {
+      guard !lines.contains(where: isMainText),
+        lines.contains(where: { line in
+          if case .figure(_, _?, _) = line.kind { return true }
+          if case _? = line.zone { return true }
+          return false
+        }),
+        let block = textBlock, block.imageWidth > 0, block.imageHeight > 0, let leaf = block.leafBox
+      else { return nil }
+      return TEIPageFrame(
+        measure: leafMeasure, height: leafMeasure * (leaf.bottom - leaf.top) / (leaf.right - leaf.left), head: 0,
+        foot: 0, inner: 0, outer: 0)
+    }
 
     static func frame(
       renditions: [String: String], textBlock: TEITextBlock?, workPage: (width: Double, height: Double)?
@@ -147,7 +187,9 @@
     /// across from the text block's left, and its place down from the text
     /// block's top, or from the line or figure so placed before it; a
     /// line's text centered in its box, so its middle stands at its ink's
-    /// whatever the face sets it at. A line with a box or a place down of
+    /// whatever the face sets it at, a line of capitals at its ink's size.
+    /// A page with no frame of its own and no main text is framed by its
+    /// leaf (`leafFrame`). A line with a box or a place down of
     /// its own (`lineSetting`) keeps it. A page with no frame, or whose
     /// leaf is not kept, leaves its lines as they are.
     static func placedByZone(_ lines: [TEILine], frame: TEIPageFrame?, textBlock: TEITextBlock?) -> [TEILine] {
@@ -176,9 +218,24 @@
         let height = box.height / 100 * block.imageHeight
         let down = bottom.map { (top - $0) * scale } ?? ((top - leaf.top) * scale - frame.head)
         bottom = top + height
-        func em(_ value: Double) -> String { TEIRendition.Length(value: value, unit: "em").text }
+        // A line of capitals (gilt lettering) is set at its ink's size: its
+        // cap height its box's height (`capHeight`), its box and place then
+        // in that size's em, its line its box's height (in rem, the page's
+        // em: the face's ascent and descent then leave its capitals' top
+        // within 0.04 em of the box's); any other line, or one whose size
+        // is past the type sizes a page may set, at the page's size.
+        let size =
+          isLine && TEIRendition.css(from: line.rend, only: ["font-size"]).isEmpty
+            && line.text.contains(where: \.isLetter) && !line.text.contains(where: \.isLowercase)
+            && TEIRendition.fontSizes.contains(height * scale / Self.capHeight)
+          ? height * scale / Self.capHeight : nil
+        func length(_ value: Double) -> String { TEIRendition.Length(value: value, unit: "em").text }
+        func em(_ value: Double) -> String { length(value / (size ?? 1)) }
         let setting =
-          (isLine ? "text-align:center;" : "") + "inline-size:\(em(width * scale));block-size:\(em(height * scale));"
+          (isLine ? "text-align:center;" : "") + (size.map {
+            "font-size:\(length($0));line-height:\(TEIRendition.Length(value: height * scale, unit: "rem").text);"
+          } ?? "")
+          + "inline-size:\(em(width * scale));block-size:\(em(height * scale));"
           + "margin-inline-start:\(em((left - leaf.left) * scale - frame.left));margin-block-start:\(em(down))"
         var placed = TEILine(
           kind: line.kind, text: line.text,
@@ -695,9 +752,9 @@
           workPage: workPage,
           ink: TEIPage.ink(ofBreak: String(xml[open.tag]))
         ) {
-          TEIPage.placedByZone(
-            lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones, renditions: renditions),
-            frame: frame, textBlock: textBlock)
+          let read = lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones, renditions: renditions)
+          return TEIPage.placedByZone(
+            read, frame: frame ?? TEIPage.leafFrame(of: textBlock, lines: read), textBlock: textBlock)
         }
       }
     }
