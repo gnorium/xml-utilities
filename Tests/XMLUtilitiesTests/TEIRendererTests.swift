@@ -442,6 +442,60 @@ final class TEIRendererTests: XCTestCase {
       ["", "", "inline-size:2em;block-size:2em;margin-inline-start:1em;"])
   }
 
+  /// A page with no main text (user, 2026-10-30: Hamlet Q1's front cover,
+  /// a board lettered in gilt around a crest) sets every line by its line
+  /// break's zone as it sets its figures: its box, its place across and
+  /// down, its text centered in the box; a page with main text sets only
+  /// its figures so, its lines as their settings place them.
+  func testAPageWithNoMainTextSetsEveryLineByItsZoneOnTheLeaf() throws {
+    let a = "https://example.org/iiif/a/full/1300,/0/default.jpg"
+    let header = "<teiHeader><encodingDesc><tagsDecl>"
+      + #"<rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em</rendition>"#
+      + "</tagsDecl></encodingDesc></teiHeader>"
+    // As the figure test's leaf: an em is 16 px of the scan, the text block's top-left 3 em into the leaf.
+    let facsimile = #"<facsimile><surface n="1" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\#(a)" width="1000px" height="1300px"/>"#
+      + #"<zone xml:id="textblock" type="textblock" points="420,240 620,240 620,440 420,440"/>"#
+      + #"<zone type="leaf" points="100,80 900,80 900,920 100,920"/>"#
+      + #"<zone xml:id="z-L1" ulx="400" uly="200" lrx="600" lry="220"/>"#
+      + #"<zone xml:id="z1" ulx="500" uly="300" lrx="580" lry="400"/></surface></facsimile>"#
+    let cover = ##"<text><body><pb n="1" facs="\##(a)" rendition="#ground-black" rend="color(yellow)"/>"##
+      + ##"<lb facs="#z-L1"/><note type="binding" subtype="copy">HAMLET</note><figure facs="#z1"/></body></text>"##
+    let page = try XCTUnwrap(
+      TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + cover + "</TEI>").first)
+    XCTAssertEqual(page.lines.map(\.text), ["HAMLET", ""])
+    XCTAssertEqual(page.lines[0].zone?.id, "z-L1")
+    // HAMLET: 200 by 26 scan px at 260 px down, 400 across: 12.5 by 1.625 em, 15.75 em from the text block's
+    // left (300 px from the leaf's, less 3 em), 6.75 em from its top (156 px, less the 3 em head); the crest
+    // 104 px under its bottom (286 px), 6.5 em down from it.
+    XCTAssertEqual(
+      page.lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.lineSetting.union(["text-align"])) },
+      [
+        "text-align:center;inline-size:12.5em;block-size:1.625em;margin-inline-start:15.75em;margin-block-start:6.75em;",
+        "inline-size:5em;block-size:8.125em;margin-inline-start:22em;margin-block-start:6.5em;",
+      ])
+    XCTAssertFalse(page.lines[0].opensParagraph, "a placed line stands at its measured white")
+    // Its ground is the class its <pb> names: black, drawn as the theme's.
+    XCTAssertEqual(page.ground, "black")
+    XCTAssertEqual(page.ink, "yellow")
+    // With main text the lines keep their own settings.
+    let text = ##"<text><body><pb n="1" facs="\##(a)"/><lb facs="#z-L1"/><p>Words.</p></body></text>"##
+    let body = try XCTUnwrap(
+      TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + text + "</TEI>").first)
+    XCTAssertEqual(body.lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.lineSetting) }, [""])
+    XCTAssertNil(body.ground)
+  }
+
+  /// A page's ground is the class its <pb>'s ground rendition names: white is
+  /// the theme's background, and a measured color's rendition (the copy's
+  /// surface's) names none.
+  func testAPagesGroundIsTheClassItsBreakNames() {
+    XCTAssertEqual(TEIPage.ground(ofBreak: ##"<pb n="1" rendition="#ground-black"/>"##), "black")
+    XCTAssertEqual(TEIPage.ground(ofBreak: ##"<pb n="1" rendition="#ground-blue #x"/>"##), "blue")
+    XCTAssertNil(TEIPage.ground(ofBreak: ##"<pb n="1" rendition="#ground-white"/>"##))
+    XCTAssertNil(TEIPage.ground(ofBreak: ##"<pb n="1" rendition="#ground-333635"/>"##))
+    XCTAssertNil(TEIPage.ground(ofBreak: ##"<pb n="1"/>"##))
+  }
+
   /// A note's place in a margin is an area around the frame: a side, or a
   /// corner as two; "margin", its side unknown, and any other place none.
   func testANotesMarginalPlaceIsAnAreaAroundTheFrame() {

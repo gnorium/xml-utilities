@@ -37,22 +37,30 @@
     /// or white, the theme's (black on white in light mode, the inverse in
     /// dark; user, 2026-10-30), and where the page names none.
     public let ink: String?
+    /// The page's own ground where the reader draws one (`ground(ofBreak:)`):
+    /// the class its `<pb>`'s ground rendition names (gnorium-python
+    /// `base_tei.page_pair`, `#ground-black`), a board's or a colored
+    /// paper's. Black is drawn as the theme's black, inverted in dark mode
+    /// as black ink is (user, 2026-10-30: Hamlet Q1's dark leather cover);
+    /// every other class in its palette color. Nil for white, the theme's
+    /// background, and where the page names none (plain paper).
+    public let ground: String?
 
     public init(
       label: String, facsimileURL: String, lines: [TEILine], markup: String, zones: [String: TEIZone] = [:],
       zoneIDs: Set<String>? = nil, renditions: [String: String] = [:], textBlock: TEITextBlock? = nil,
-      workPage: (width: Double, height: Double)? = nil, ink: String? = nil
+      workPage: (width: Double, height: Double)? = nil, ink: String? = nil, ground: String? = nil
     ) {
       self.init(
         label: label, facsimileURL: facsimileURL, markup: markup, zones: zones, zoneIDs: zoneIDs,
-        renditions: renditions, textBlock: textBlock, workPage: workPage, ink: ink
+        renditions: renditions, textBlock: textBlock, workPage: workPage, ink: ink, ground: ground
       ) { lines }
     }
 
     init(
       label: String, facsimileURL: String, markup: String, zones: [String: TEIZone], zoneIDs: Set<String>? = nil,
       renditions: [String: String] = [:], textBlock: TEITextBlock? = nil,
-      workPage: (width: Double, height: Double)? = nil, ink: String? = nil,
+      workPage: (width: Double, height: Double)? = nil, ink: String? = nil, ground: String? = nil,
       read: @escaping @Sendable () -> [TEILine]
     ) {
       self.label = label
@@ -65,6 +73,7 @@
       self.textBlock = textBlock
       self.workPage = workPage
       self.ink = ink
+      self.ground = ground
     }
 
     /// The ink a page break (`<pb …>`, its tag) names for its page: its
@@ -78,6 +87,23 @@
         return TEIRenderer.inks.contains(name) ? name : nil
       }.last
       guard let named, named != "black", named != "white" else { return nil }
+      return named
+    }
+
+    /// The ground a page break (`<pb …>`, its tag) names for its page: the
+    /// class of its ground rendition (`rendition="#ground-NAME"`,
+    /// gnorium-python `base_tei.page_pair`), NAME one of the inks
+    /// (`TEIRenderer.inks`), unless it is white, the theme's background. A
+    /// ground rendition of a measured color (`#ground-333635`) is the copy's
+    /// surface's, never the edition's, and names none.
+    public static func ground(ofBreak tag: String) -> String? {
+      let named = XMLFormatter.attribute("rendition", in: tag).split(whereSeparator: \.isWhitespace).compactMap {
+        token -> String? in
+        guard token.hasPrefix("#ground-") else { return nil }
+        let name = String(token.dropFirst(8))
+        return TEIRenderer.inks.contains(name) ? name : nil
+      }.last
+      guard let named, named != "white" else { return nil }
       return named
     }
 
@@ -116,31 +142,59 @@
       "inline-size", "block-size", "margin-inline-start", "margin-block-start",
     ]
 
+    /// A line's setting by its zone (`placedByZone`): its box, its place
+    /// across and down, its text centered in it.
+    public static let lineSetting: Set<String> = [
+      "inline-size", "block-size", "margin-inline-start", "margin-block-start",
+    ]
+
+    /// Whether `line` is of the page's main text: its text, a heading, a
+    /// speaker or a stage direction, a table. A note (a binding's lettering,
+    /// a marginal note), furniture, a figure, a rule, a space, a gap is not.
+    static func isMainText(_ line: TEILine) -> Bool {
+      switch line.kind {
+      case .text, .heading, .speaker, .stage, .table: return true
+      default: return false
+      }
+    }
+
     /// `lines` with each figure that has no setting of its own set by its
-    /// zone (user, 2026-10-30). `base_tei._figure` writes a figure's
+    /// zone (user, 2026-10-30), and on a page with no main text
+    /// (`isMainText`) every line too. `base_tei._figure` writes a figure's
     /// setting where its page has its em; a page with no body type has
     /// none—a binding's board lettered in gilt (Hamlet Q1's front cover),
     /// whose lettering is copy evidence, set without a setting of its
-    /// own—and
-    /// its crest was drawn at the head of the pane, at its drawing's own
-    /// pixels. Framed, such a page is its leaf laid at the frame's scale
-    /// (`TEIPageFrame`: the leaf's width is the frame's measure and its
-    /// side margins, or a larger page's own), so the figure is set as the
-    /// zone has it on the leaf: its size, its place across from the text
-    /// block's left, and its place down from the text block's top, or from
-    /// the figure so placed before it. A page with no frame, or whose
-    /// leaf is not kept, leaves its figures as they are.
+    /// own—and its crest was drawn at the head of the pane, at its
+    /// drawing's own pixels, its lettering at the top left. Framed, such a
+    /// page is its leaf laid at the frame's scale (`TEIPageFrame`: the
+    /// leaf's width is the frame's measure and its side margins, or a
+    /// larger page's own), so each is set as its zone has it on the leaf
+    /// (a line's, its line break's: `TEILine.zone`): its size, its place
+    /// across from the text block's left, and its place down from the text
+    /// block's top, or from the line or figure so placed before it; a
+    /// line's text centered in its box, so its middle stands at its ink's
+    /// whatever the face sets it at. A line with a box or a place down of
+    /// its own (`lineSetting`) keeps it. A page with no frame, or whose
+    /// leaf is not kept, leaves its lines as they are.
     static func placedByZone(_ lines: [TEILine], frame: TEIPageFrame?, textBlock: TEITextBlock?) -> [TEILine] {
       guard let frame, let block = textBlock, block.imageWidth > 0, block.imageHeight > 0, let leaf = block.leafBox,
         leaf.right > leaf.left
       else { return lines }
       let leafWidth = frame.pageWidth > 0 ? frame.pageWidth : frame.left + frame.measure + frame.right
       let scale = leafWidth / (leaf.right - leaf.left)
+      let placesLines = !lines.contains(where: isMainText)
       var bottom: Double?
       return lines.map { line in
-        guard case .figure(_, let zone?, _) = line.kind,
-          TEIRendition.css(from: line.rend, only: figureSetting).isEmpty
-        else { return line }
+        let zone: TEIZone
+        let isLine: Bool
+        if case .figure(_, let figureZone?, _) = line.kind {
+          guard TEIRendition.css(from: line.rend, only: figureSetting).isEmpty else { return line }
+          (zone, isLine) = (figureZone, false)
+        } else if placesLines, let lineZone = line.zone, TEIRendition.css(from: line.rend, only: lineSetting).isEmpty {
+          (zone, isLine) = (lineZone, true)
+        } else {
+          return line
+        }
         let box = zone.percent
         let left = box.x / 100 * block.imageWidth
         let top = box.y / 100 * block.imageHeight
@@ -150,17 +204,20 @@
         bottom = top + height
         func em(_ value: Double) -> String { TEIRendition.Length(value: value, unit: "em").text }
         let setting =
-          "inline-size:\(em(width * scale));block-size:\(em(height * scale));"
+          (isLine ? "text-align:center;" : "") + "inline-size:\(em(width * scale));block-size:\(em(height * scale));"
           + "margin-inline-start:\(em((left - leaf.left) * scale - frame.left));margin-block-start:\(em(down))"
         var placed = TEILine(
           kind: line.kind, text: line.text,
           rend: [line.rend, TEIRendition.tokens(setting)].filter { !$0.isEmpty }.joined(separator: " "),
-          runs: line.runs, opensBlock: line.opensBlock, opensParagraph: line.opensParagraph,
+          runs: line.runs, opensBlock: line.opensBlock,
+          // A line so placed stands at its measured white, no paragraph's space added to it.
+          opensParagraph: isLine ? false : line.opensParagraph,
           sharesLine: line.sharesLine, joinsPrevious: line.joinsPrevious, element: line.element)
         placed.frame = line.frame
         placed.column = line.column
         placed.columnRend = line.columnRend
         placed.part = line.part
+        placed.zone = line.zone
         return placed
       }
     }
@@ -314,6 +371,10 @@
     /// the page's elements in document order (`TEIRenderer.encoding(of:element:)`).
     /// Nil for every other line.
     public let element: Int?
+    /// The zone of the line break that opens it (`<lb facs="#…"/>`): where
+    /// the scan has the line, on its surface. Nil where its break names
+    /// none, and for every line not opened by one (a figure, a rule).
+    public internal(set) var zone: TEIZone?
 
     /// A stretch of one line set one way.
     public struct Run: Sendable {
@@ -658,7 +719,8 @@
           zones: zones, zoneIDs: zoneIDs, renditions: renditions,
           textBlock: textBlock,
           workPage: workPage,
-          ink: TEIPage.ink(ofBreak: String(xml[open.tag]))
+          ink: TEIPage.ink(ofBreak: String(xml[open.tag])),
+          ground: TEIPage.ground(ofBreak: String(xml[open.tag]))
         ) {
           TEIPage.placedByZone(
             lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones, renditions: renditions),
@@ -1193,6 +1255,8 @@
       // line was set, and whether it fell inside a word.
       var lineBroken = true
       var breakInWord = false
+      // The zone the last line break named (`TEILine.zone`), until a line takes it.
+      var breakZone: TEIZone?
       // The part the next block's lines stand in when a `<cb/>` broke the
       // block before it: `F`, the block run on from the column before.
       var columnPart = ""
@@ -1214,6 +1278,8 @@
             columnPart = ""
           }
           line.part = blockPart
+          line.zone = breakZone
+          breakZone = nil
           lines.append(line)
           blockPending = false
           paragraphPending = false
@@ -1446,6 +1512,7 @@
               breakInWord = false
             case "lb":
               flush()
+              breakZone = zone(of: element)
               lineBroken = true
               breakInWord = element.name == "lb" && element.attribute("break") == "no"
             case "pb":
