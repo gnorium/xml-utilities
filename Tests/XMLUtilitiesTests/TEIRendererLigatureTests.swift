@@ -22,4 +22,11 @@ final class TEIRendererLigatureTests: XCTestCase {
     XCTAssertFalse(TEIRenderer.ligatures.contains("rrot"))
     XCTAssertTrue(TEIRenderer.ligatures.isSuperset(of: ["ct", "st", "slongt", "fi", "slongslongi"]))
   }
+
+  func testAPresentationFormIsItsLettersToASearch() {
+    XCTAssertEqual(TEIRenderer.unligatured("\u{FB01}re mo\u{FB05} \u{FB00}"), "fire moſt ff")
+    XCTAssertEqual(TEIRenderer.unligatured("fire"), "fire")
+    XCTAssertEqual(TEIRenderer.presentationForms.count, 7)
+    XCTAssertNil(TEIRenderer.presentationForms["ct"])
+  }
 }

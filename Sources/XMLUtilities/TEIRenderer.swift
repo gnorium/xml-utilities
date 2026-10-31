@@ -1853,6 +1853,30 @@
     /// The rend a ligature's run carries.
     public static let ligature = "ligature"
 
+    /// The ligatures Unicode encodes, by their letters (user, 2026-10-31):
+    /// a marked ligature among them is drawn and copied as its presentation
+    /// form (web-components `TEIView`); one Unicode lacks (ct, ſi, ſſ…) as
+    /// its letters. The TEI keeps the letters.
+    public static let presentationForms: [String: String] = [
+      "ff": "\u{FB00}", "fi": "\u{FB01}", "fl": "\u{FB02}", "ffi": "\u{FB03}", "ffl": "\u{FB04}",
+      "ſt": "\u{FB05}", "st": "\u{FB06}",
+    ]
+
+    /// `text` with each ligature presentation form as its letters: what a
+    /// search compares, so a ligature copied from a reader finds the letters
+    /// (ﬁ is fi, ﬅ is ſt).
+    public static func unligatured(_ text: String) -> String {
+      guard text.unicodeScalars.contains(where: { (0xFB00...0xFB06).contains($0.value) }) else { return text }
+      var out = ""
+      for character in text {
+        out += letters[String(character)] ?? String(character)
+      }
+      return out
+    }
+
+    private static let letters: [String: String] = Dictionary(
+      uniqueKeysWithValues: presentationForms.map { ($0.value, $0.key) })
+
     /// The typeface classes a rend may name, never a font's name (user,
     /// 2026-10-11).
     public static let typefaces: Set<String> = ["roman", "italic", "blackletter", "script", "sans-serif", "typewriter"]
