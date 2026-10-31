@@ -1438,6 +1438,13 @@
               walk(
                 element, kind: kind, rend: rend, inlineRend: joined(ownRend), alternative: alternative,
                 zone: initialZone, gloss: glossing(element), opened: opened)
+            case "g" where TEIRenderer.ligatures.contains(String(element.attribute("ref").drop { $0 == "#" })):
+              // A ligature as typeset (user, 2026-10-31): its letters, drawn
+              // with the face's ligature where the face has one (`ligature`,
+              // web-components `TEIView`); its text the plain letters.
+              walk(
+                element, kind: kind, rend: rend, inlineRend: joined(TEIRenderer.ligature), alternative: alternative,
+                zone: initialZone, gloss: glossing(element), opened: opened)
             case "facsimile", "teiHeader", "tagsDecl", "rendition":
               // Where the page's figures sit, not what it reads.
               continue
@@ -1835,6 +1842,16 @@
       "pink", "red", "orange", "brown", "yellow", "olive", "yellow-green", "green", "blue", "purple",
       "white", "gray", "black",
     ]
+
+    /// The ligatures a `<g ref>` names (user, 2026-10-31): gnorium-python
+    /// `glyphs.LIGATURES`, the same refs. Its run carries `ligature`, so its
+    /// letters are drawn as one sort where the face has the ligature.
+    public static let ligatures: Set<String> = [
+      "ff", "fi", "fl", "ffi", "ffl", "slongslong", "slongi", "slongl", "slongh", "slongk", "slongb", "slongslongi",
+      "slongslongl", "ct", "st", "slongt",
+    ]
+    /// The rend a ligature's run carries.
+    public static let ligature = "ligature"
 
     /// The typeface classes a rend may name, never a font's name (user,
     /// 2026-10-11).
