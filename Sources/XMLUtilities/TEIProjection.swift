@@ -705,8 +705,19 @@
       guard
         let at = breaks.firstIndex(where: { self.serviceID(ofFacsimile: $0.facsimileURL) == serviceID })
       else { return nil }
-      let first = max(0, at - radius)
-      let last = min(breaks.count - 1, at + radius)
+      return excerpt(of: xml, pages: max(0, at - radius)...min(breaks.count - 1, at + radius))
+    }
+
+    /// A document cut down to a run of its pages, by their places from 0
+    /// (a quote's: the pages its sentence runs over), each page's markup
+    /// exactly as the whole document has it, as `excerpt(of:around:radius:)`
+    /// cuts it. Nil when the run is not among its pages.
+    public static func excerpt(of xml: String, pages: ClosedRange<Int>) -> String? {
+      guard let body = XMLFormatter.text(of: xml) else { return nil }
+      let breaks = pageBreaks(in: body)
+      guard pages.lowerBound >= 0, pages.upperBound < breaks.count else { return nil }
+      let first = pages.lowerBound
+      let last = pages.upperBound
       let end = last + 1 < breaks.count ? breaks[last + 1].tag.lowerBound : body.endIndex
       // The document's facsimile comes along: its pages' zones are there.
       let root = XMLFormatter.opening("TEI", in: xml) ?? #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"#

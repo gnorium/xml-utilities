@@ -57,6 +57,17 @@ final class TEIQuoteTests: XCTestCase {
     XCTAssertNil(TEIRenderer.excerpt(of: document, around: "https://example.org/iiif/nowhere"))
   }
 
+  /// A run of pages, a quote's (user, 2026-10-31): those pages alone, as the
+  /// document has them; none for a run outside it.
+  func testAnExcerptOfARunKeepsThosePagesAlone() throws {
+    let run = try XCTUnwrap(TEIRenderer.excerpt(of: document, pages: 1...2))
+    XCTAssertEqual(TEIRenderer.pages(in: run).map(\.label), ["2", "3"])
+    let original = Array(TEIRenderer.pages(in: document)[1...2])
+    XCTAssertEqual(TEIRenderer.pages(in: run).map { TEIRenderer.words(of: $0) }, original.map { TEIRenderer.words(of: $0) })
+    XCTAssertEqual(TEIRenderer.pages(in: try XCTUnwrap(TEIRenderer.excerpt(of: document, pages: 2...2))).map(\.label), ["3"])
+    XCTAssertNil(TEIRenderer.excerpt(of: document, pages: 3...9))
+  }
+
   /// A page's words as an anchor counts them: by line and place in the
   /// line, the supplied word left out, the word broken over the page break
   /// its part here and none of the next page's.
