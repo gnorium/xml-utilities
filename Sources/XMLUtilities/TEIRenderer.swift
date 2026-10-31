@@ -743,14 +743,18 @@
       let workPage = TEIFacsimile.workPage(of: textBlocks)
       let renditions = TEIRendition.declarations(in: TEIMarkup.document(xml))
       return pageSpans(in: xml).map { open, range in
-        let markup = String(xml[range])
+        // Trimmed, as the page holds it: a quote's highlights are counted
+        // in the page's own markup (`quote(in:)`), so the reading drawn
+        // must count from the same first character, or every mark lands a
+        // character off (Hamlet Q1's "of" marked "o", user 2026-10-31).
+        let markup = String(xml[range]).trimmingCharacters(in: .whitespacesAndNewlines)
         let marked = highlights[serviceID(ofFacsimile: open.facsimileURL)] ?? []
         let textBlock = TEIFacsimile.textBlock(of: open.facsimileURL, label: open.label, in: textBlocks)
         let frame = TEIPage.frame(renditions: renditions, textBlock: textBlock, workPage: workPage)
         return TEIPage(
           label: open.label,
           facsimileURL: open.facsimileURL,
-          markup: markup.trimmingCharacters(in: .whitespacesAndNewlines),
+          markup: markup,
           zones: zones, zoneIDs: zoneIDs, renditions: renditions,
           textBlock: textBlock,
           workPage: workPage,

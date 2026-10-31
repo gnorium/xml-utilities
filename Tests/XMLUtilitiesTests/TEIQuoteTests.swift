@@ -164,6 +164,18 @@ final class TEIQuoteTests: XCTestCase {
     XCTAssertEqual(highlights["https://example.org/iiif/q0"], [.init(11..<24, kind: .sentence), .init(12..<16, kind: .title)])
   }
 
+  /// A page whose markup opens on a new line (Hamlet Q1's title page) is
+  /// drawn with its quote's word marked whole, never a character off.
+  func testAQuoteIsMarkedWhereItsPageCountsIt() throws {
+    let doc = "<TEI><text><body><pb facs=\"a/full/max/0/default.jpg\"/>\n\n<p><lb/>THE</p>\n<p><lb/><w>Prince</w> <w>of</w> <w>Denmarke</w></p></body></text></TEI>"
+    let pages = TEIRenderer.pages(in: doc)
+    let of = try XCTUnwrap(TEIRenderer.words(of: pages[0]).first { $0.surface == "of" })
+    let at = TEIWordPosition(line: of.place.line, word: of.place.word, surface: "of")
+    let marks = try XCTUnwrap(TEIRenderer.quote(in: pages, imageID: "a", start: at, end: at))
+    let drawn = TEIRenderer.pages(in: doc, highlights: marks, marksWords: true)
+    XCTAssertEqual(drawn[0].lines.flatMap(\.runs).filter { $0.highlight == .title }.map(\.text).joined(), "of")
+  }
+
   func testTheWholeSentenceOfAnUnsplitWord() throws {
     let pages = TEIRenderer.pages(in: document)
     // "sentence" in "First  sentence\nhere.": the supplied word is not counted.
