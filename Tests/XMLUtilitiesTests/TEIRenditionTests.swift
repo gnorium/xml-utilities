@@ -30,6 +30,21 @@ final class TEIRenditionTests: XCTestCase {
       "font-variant-numeric:oldstyle-nums;")
   }
 
+  /// A display line shaped to its print (gnorium-python `base_tei._shape`, Hamlet Q1's title page,
+  /// 2026-10-31): the face's width axis and one scale about its baseline, bounded; nothing else of a transform.
+  func testADisplayLineIsShapedByItsWidthAxisAndOneScale() {
+    XCTAssertTrue(TEIRendition.valid(property: "font-stretch", value: "62.5%"))
+    XCTAssertFalse(TEIRendition.valid(property: "font-stretch", value: "40%"))
+    XCTAssertFalse(TEIRendition.valid(property: "font-stretch", value: "condensed"))
+    XCTAssertTrue(TEIRendition.valid(property: "transform", value: "translatey(-0.1467em)scale(1.2214,1.3785)"))
+    XCTAssertFalse(TEIRendition.valid(property: "transform", value: "scale(1.2,1.3)"))
+    XCTAssertFalse(TEIRendition.valid(property: "transform", value: "translatey(-0.1em)scale(9,1)"))
+    XCTAssertFalse(TEIRendition.valid(property: "transform", value: "translatey(-0.1em)rotate(5deg)"))
+    XCTAssertEqual(
+      TEIRendition.css(from: TEIRendition.tokens("font-stretch:62.5%;transform:translateY(-0.1467em)scale(1.2214,1.3785)")),
+      "font-stretch:62.5%;transform:translatey(-0.1467em)scale(1.2214,1.3785);")
+  }
+
   /// A tracked box is set past its end by its letter-spacing, the space
   /// CSS leaves after its last letter, so a centered or right-set tracked
   /// line stands on its ink (Hamlet Q1 p. 3's "HAMLET", user, 2026-10-30);

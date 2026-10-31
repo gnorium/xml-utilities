@@ -95,7 +95,17 @@ public enum TEIRendition {
     "column-gap",
     "inline-size", "block-size", "border-style", "padding", "padding-block", "padding-inline", "padding-block-start",
     "padding-block-end", "padding-inline-start", "padding-inline-end", "background-color",
+    // A display line shaped to its print (gnorium-python `base_tei._shape`): the face's width axis, and a
+    // scale about its baseline (`translateY(<em>)scale(x,y)` alone, one token: a rend's tokens part at
+    // white space).
+    "font-stretch", "transform",
   ]
+
+  /// The least and most a shaped line's scale may be on either axis, and the face's width axis in percent
+  /// (the edition face's narrowest is 62.5%). gnorium-python's `tei_encoding.TRANSFORM_SCALES` and
+  /// `FONT_STRETCHES`.
+  public static let transformScales: ClosedRange<Double> = 0.25...4
+  public static let fontStretches: ClosedRange<Double> = 50...200
 
   /// The properties CSS inherits: a child's own declaration of one
   /// overrides its parent's, and where it has none it takes its parent's.
@@ -138,6 +148,25 @@ public enum TEIRendition {
     // A region's own ground (user, 2026-10-25: gnorium-python
     // `base_tei.fills`), drawn as encoded in every theme: "#rrggbb" only.
     if property == "background-color" { return isHexColor(value) }
+    if property == "font-stretch" {
+      guard value.hasSuffix("%"), let number = plainNumber(String(value.dropLast())) else { return false }
+      return fontStretches.contains(number)
+    }
+    if property == "transform" {
+      // translateY(<em>)scale(<x>,<y>), as a rend's tokens lowercase it.
+      let text = value.lowercased()
+      guard text.hasPrefix("translatey("), text.hasSuffix(")"), let close = text.firstIndex(of: ")") else { return false }
+      let lift = text[text.index(text.startIndex, offsetBy: 11)..<close]
+      let rest = text[text.index(after: close)...]
+      guard lift.hasSuffix("em"), rest.hasPrefix("scale(") else { return false }
+      let liftText = String(lift.dropLast(2))
+      guard let move = plainNumber(liftText.hasPrefix("-") ? String(liftText.dropFirst()) : liftText),
+        move <= lengthBound(unit: "em")
+      else { return false }
+      let parts = rest.dropFirst(6).dropLast().split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+      let numbers = parts.compactMap(plainNumber)
+      return parts.count == 2 && numbers.count == 2 && numbers.allSatisfy(transformScales.contains)
+    }
     guard properties.contains(property), let length = Length(value) else { return false }
     let (number, unit) = (length.value, length.unit)
     switch property {
@@ -1023,6 +1052,14 @@ public enum TEIRendition {
   }
 
   /// Whether a value is a color as "#rrggbb": six hexadecimal digits.
+  /// A non-negative decimal number written plainly ("1.25", ".5"), no sign, exponent or unit.
+  static func plainNumber(_ text: String) -> Double? {
+    guard !text.isEmpty, text.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == ".") }),
+      text.filter({ $0 == "." }).count <= 1, text != "."
+    else { return nil }
+    return Double(text)
+  }
+
   static func isHexColor(_ value: String) -> Bool {
     let scalars = Array(value.unicodeScalars)
     guard scalars.count == 7, scalars[0] == "#" else { return false }
