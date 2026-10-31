@@ -166,6 +166,18 @@ final class TEIQuoteTests: XCTestCase {
 
   /// A page whose markup opens on a new line (Hamlet Q1's title page) is
   /// drawn with its quote's word marked whole, never a character off.
+  /// A quote is its words and the space between them (user, 2026-10-31):
+  /// a `<space>` inside it is marked as its words are.
+  func testASpaceInsideAQuoteIsMarked() throws {
+    let doc = "<TEI><text><body><pb facs=\"a/full/max/0/default.jpg\"/><p><lb/><s><w>Tragicall</w><space quantity=\"1\" unit=\"chars\"/><w>Hiſtorie</w><space quantity=\"1\" unit=\"chars\"/><w>of</w></s></p></body></text></TEI>"
+    let pages = TEIRenderer.pages(in: doc)
+    let of = try XCTUnwrap(TEIRenderer.words(of: pages[0]).first { $0.surface == "of" })
+    let at = TEIWordPosition(line: of.place.line, word: of.place.word, surface: "of")
+    let marks = try XCTUnwrap(TEIRenderer.quote(in: pages, imageID: "a", start: at, end: at))
+    let runs = TEIRenderer.pages(in: doc, highlights: marks, marksWords: true)[0].lines.flatMap(\.runs)
+    XCTAssertEqual(runs.filter { $0.text == " " }.map(\.highlight), [.sentence, .sentence])
+  }
+
   func testAQuoteIsMarkedWhereItsPageCountsIt() throws {
     let doc = "<TEI><text><body><pb facs=\"a/full/max/0/default.jpg\"/>\n\n<p><lb/>THE</p>\n<p><lb/><w>Prince</w> <w>of</w> <w>Denmarke</w></p></body></text></TEI>"
     let pages = TEIRenderer.pages(in: doc)

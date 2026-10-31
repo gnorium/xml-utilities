@@ -1530,9 +1530,12 @@
                 let unit = element.attribute("unit")
                 currentKind = kind
                 currentRend = rend
+                // Inside a quote it is the quote's (user, 2026-10-31): the
+                // quote is its words and the space between them, one mark.
                 runs.append(
                   .init(
                     text: " ", rend: joined("space"), kind: .space(quantity: quantity, unit: unit.isEmpty ? "chars" : unit),
+                    highlight: element.projectedStart.flatMap { highlight(at: $0, in: highlights) },
                     element: words?.index(of: element) ?? gloss, preserved: true))
               }
             case "cb":
