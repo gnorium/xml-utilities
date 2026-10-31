@@ -74,6 +74,27 @@ final class TEIScanLayoutTests: XCTestCase {
     XCTAssertEqual(TEIRenderer.words(of: kept).first?.zones, ["p1-wz1", "p1-wz2"])
   }
 
+  /// An id the page holds already placed keeps its place when the page is
+  /// laid in again; one that lacks it takes it (user, 2026-10-31: Hamlet
+  /// Q1's title page, its base line `p7-z-L1` laid in as `p7-p7-z-L1`).
+  func testAnIdAlreadyCarryingItsPagesPlaceIsNotPrefixedAgain() throws {
+    let page = Self.document(layout: Self.layout)
+      .replacingOccurrences(of: #"<pb n="1" facs="\#(Self.service)/full/max/0/default.jpg"/>"#, with: "")
+      .replacingOccurrences(
+        of: #"<zone xml:id="textblock""#,
+        with: #"<zone xml:id="p1-z-L1" ulx="100" uly="100" lrx="900" lry="150"/><zone xml:id="textblock""#)
+    let fragment = ##"<p><lb facs="#p1-z-L1"/><w facs="#wz1">One</w></p>"##
+    let document = Self.document(layout: "")
+    let laid = try XCTUnwrap(TEIFacsimile.laying(
+      page: page, fragment: fragment, over: try XCTUnwrap(TEIRenderer.pages(in: document).first), position: 1,
+      in: document))
+    XCTAssertTrue(laid.contains(##"<lb facs="#p1-z-L1"/><w facs="#p1-wz1">One</w>"##), laid)
+    XCTAssertTrue(laid.contains(#"xml:id="p1-z-L1""#), laid)
+    XCTAssertFalse(laid.contains("p1-p1-"), laid)
+    let kept = try XCTUnwrap(TEIRenderer.pages(in: laid).first)
+    XCTAssertEqual(TEIFacsimile.layout(of: try XCTUnwrap(kept.textBlock)).map(\.id), ["", "", "p1-wz1"])
+  }
+
   /// A word's `@facs` names polygons of the scan's layout, which are zones of
   /// the document's facsimile but not boxes: a page whose words point at their
   /// zones is whole, one whose pointer names no zone—one pointer or one of

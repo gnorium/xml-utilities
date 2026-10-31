@@ -702,32 +702,37 @@
         // Its word zones' ids, which its words' `@facs` name.
         let ownWords = ownBlock.map { layoutIDs(in: $0.layout) } ?? []
         let ids = own.map(\.id) + (ownBlock.map { [$0.id] } ?? []) + ownWords
-        var prefix = "p\(laying.position)-"
+        // An id the page holds already placed (`p3-z-L1`: a base page's
+        // line, handed to its explication as its document holds it) keeps
+        // it; prefixed again it grew a place each time the page was laid
+        // (user, 2026-10-31: Hamlet Q1's title page, `p7-p7-z-L1`).
+        let place = "p\(laying.position)-"
+        var prefix = place
         var attempt = 1
-        while ids.contains(where: { taken.contains(prefix + $0) }) {
+        while ids.contains(where: { taken.contains(placed($0, prefix: prefix, place: place)) }) {
           attempt += 1
           prefix = "p\(laying.position)-\(attempt)-"
         }
-        taken.formUnion(ids.map { prefix + $0 })
+        taken.formUnion(ids.map { placed($0, prefix: prefix, place: place) })
         let named = Set(own.map(\.id) + ownWords)
         // Its renditions made to agree with the document's: a step the page
         // numbers as the document numbers another keeps its own value
         // (`TEIRendition.reconciled`).
         let reconciled = TEIRendition.reconciled(
           TEIRendition.renditions(of: laying.page),
-          fragment: renamingPointers(in: laying.fragment, named: named, prefix: prefix), with: standing)
+          fragment: renamingPointers(in: laying.fragment, named: named, prefix: prefix, place: place), with: standing)
         bodies.append((laying.position - 1, reconciled.fragment))
         let old = laying.old
         surfaces += surface(
           own.map {
             TEIZone(
-              id: prefix + $0.id, ulx: $0.ulx, uly: $0.uly, lrx: $0.lrx, lry: $0.lry, surfaceULX: $0.surfaceULX,
+              id: placed($0.id, prefix: prefix, place: place), ulx: $0.ulx, uly: $0.uly, lrx: $0.lrx, lry: $0.lry, surfaceULX: $0.surfaceULX,
               surfaceULY: $0.surfaceULY, surfaceLRX: $0.surfaceLRX, surfaceLRY: $0.surfaceLRY)
           },
           textBlock: ownBlock.map {
             $0.renamed(
-              prefix + $0.id, imageURL: old.facsimileURL, label: old.label,
-              layout: renamingLayoutIDs(in: $0.layout, prefix: prefix))
+              placed($0.id, prefix: prefix, place: place), imageURL: old.facsimileURL, label: old.label,
+              layout: renamingLayoutIDs(in: $0.layout, prefix: prefix, place: place))
           },
           label: old.label, imageURL: old.facsimileURL)
         // The page's renditions joined into the header's (`TEIRendition.merging`):
@@ -763,11 +768,19 @@
       matches(of: layoutIDPattern, in: layout, group: 2).map { String(layout[$0]) }
     }
 
-    /// A text block's layout zones with each id prefixed (`laying`).
-    static func renamingLayoutIDs(in layout: String, prefix: String) -> String {
+    /// A zone's id as a page laid at `place` (`p3-`) holds it in a
+    /// document: `prefix` (the place, or the place and an attempt where it
+    /// was taken) before it, unless it already carries the place
+    /// (`laying`).
+    static func placed(_ id: String, prefix: String, place: String) -> String {
+      id.hasPrefix(place) ? id : prefix + id
+    }
+
+    /// A text block's layout zones with each id placed (`laying`, `placed`).
+    static func renamingLayoutIDs(in layout: String, prefix: String, place: String) -> String {
       var renamed = layout
       for range in matches(of: layoutIDPattern, in: renamed, group: 2).reversed() {
-        renamed.replaceSubrange(range, with: prefix + renamed[range])
+        renamed.replaceSubrange(range, with: placed(String(renamed[range]), prefix: prefix, place: place))
       }
       return renamed
     }
@@ -775,12 +788,12 @@
     /// Markup with each `@facs` pointer to one of the `named` zones
     /// prefixed: a `@facs` names one zone or several (`#a #b`: a word's
     /// pieces on the scan).
-    static func renamingPointers(in markup: String, named: Set<String>, prefix: String) -> String {
+    static func renamingPointers(in markup: String, named: Set<String>, prefix: String, place: String) -> String {
       var renamed = markup
       for range in matches(of: facsPattern, in: renamed, group: 2).reversed() {
         let pointers = renamed[range].split(whereSeparator: \.isWhitespace).map { pointer -> String in
           guard pointer.hasPrefix("#"), named.contains(String(pointer.dropFirst())) else { return String(pointer) }
-          return "#" + prefix + pointer.dropFirst()
+          return "#" + placed(String(pointer.dropFirst()), prefix: prefix, place: place)
         }
         renamed.replaceSubrange(range, with: pointers.joined(separator: " "))
       }
