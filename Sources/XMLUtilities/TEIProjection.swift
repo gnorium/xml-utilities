@@ -547,8 +547,14 @@
     /// the words, their lines stand for the sentence. Nil when the page is
     /// not among `pages`, or a word is not there or reads otherwise than its
     /// surface: nothing is highlighted rather than the wrong words.
+    ///
+    /// A quote that runs onto the next image (`endImageID`, the page after
+    /// `imageID`) ends on that page: its words from `start` to the first
+    /// page's end and from the next page's start to `end`, highlighted on
+    /// both.
     public static func quote(
-      in pages: [TEIPage], imageID: String, start: TEIWordPosition, end: TEIWordPosition
+      in pages: [TEIPage], imageID: String, start: TEIWordPosition, end: TEIWordPosition,
+      endImageID: String? = nil
     ) -> [String: [TEIHighlight]]? {
       let ids = pages.map { serviceID(ofFacsimile: $0.facsimileURL) }
       guard let at = ids.firstIndex(of: imageID) else { return nil }
@@ -556,12 +562,13 @@
       let projection = projections[at]
       // Each word's whole surface: a word broken over the page break is its
       // parts on the pages it runs over.
-      func located(_ position: TEIWordPosition) -> TEIProjection.Unit? {
-        guard let unit = projection.units.first(where: { $0.line == position.line && $0.number == position.word })
+      func located(_ position: TEIWordPosition, on index: Int) -> TEIProjection.Unit? {
+        guard
+          let unit = projections[index].units.first(where: { $0.line == position.line && $0.number == position.word })
         else { return nil }
         var surface = unit.surface
         if unit.runsOn {
-          for following in projections.dropFirst(at + 1) {
+          for following in projections.dropFirst(index + 1) {
             let continuation = following.leadingContinuation
             surface += continuation.text
             if continuation.ends { break }
@@ -570,6 +577,32 @@
         guard TEIProjection.fold(surface) == TEIProjection.fold(position.surface) else { return nil }
         return unit
       }
+      if let endImageID, endImageID != imageID {
+        guard at + 1 < ids.count, ids[at + 1] == endImageID, let first = located(start, on: at),
+          let last = located(end, on: at + 1)
+        else { return nil }
+        let next = projections[at + 1]
+        // Each page's part of the sentence and of the words: the first
+        // page from the first word on, the next up to the last.
+        func sentence(_ page: TEIProjection, holding offset: Int) -> Range<Int>? {
+          page.sentences.filter { $0.range.contains(offset) }.min { $0.range.count < $1.range.count }?.range
+        }
+        var highlights: [String: [TEIHighlight]] = [:]
+        let opening = sentence(projection, holding: first.range.lowerBound)
+          ?? (first.range.lowerBound..<projection.size)
+        let closing = sentence(next, holding: max(last.range.upperBound - 1, 0))
+          ?? (0..<last.range.upperBound)
+        highlights[imageID] = [
+          .init(min(opening.lowerBound, first.range.lowerBound)..<projection.size, kind: .sentence),
+          .init(first.range.lowerBound..<projection.size, kind: .title),
+        ]
+        highlights[endImageID] = [
+          .init(0..<max(closing.upperBound, last.range.upperBound), kind: .sentence),
+          .init(0..<last.range.upperBound, kind: .title),
+        ]
+        return highlights
+      }
+      func located(_ position: TEIWordPosition) -> TEIProjection.Unit? { located(position, on: at) }
       guard let first = located(start), let last = located(end), first.range.lowerBound < last.range.upperBound
       else { return nil }
       let title = first.range.lowerBound..<last.range.upperBound
@@ -623,9 +656,10 @@
     /// (`quote`) covers, by the page they start on. Empty where the
     /// anchor no longer reads.
     public static func quoteWords(
-      in pages: [TEIPage], imageID: String, start: TEIWordPosition, end: TEIWordPosition
+      in pages: [TEIPage], imageID: String, start: TEIWordPosition, end: TEIWordPosition, endImageID: String? = nil
     ) -> [(imageID: String, word: TEIWord)] {
-      guard let highlights = quote(in: pages, imageID: imageID, start: start, end: end) else { return [] }
+      guard let highlights = quote(in: pages, imageID: imageID, start: start, end: end, endImageID: endImageID)
+      else { return [] }
       var found: [(imageID: String, word: TEIWord)] = []
       for page in pages {
         let id = serviceID(ofFacsimile: page.facsimileURL)

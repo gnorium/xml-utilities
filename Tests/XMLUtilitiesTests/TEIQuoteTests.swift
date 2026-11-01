@@ -211,6 +211,35 @@ final class TEIQuoteTests: XCTestCase {
     XCTAssertEqual(highlights["https://example.org/iiif/p1"]?.last, .init(22..<34, kind: .title))
   }
 
+  /// A sentence that runs onto the next image is one quote over both
+  /// (user, 2026-11-01): its words from the first to the first page's end,
+  /// then from the next page's start to the last, highlighted on each; not
+  /// on a page that is not the next, nor where a word reads otherwise.
+  func testAQuoteOverTwoImagesIsHighlightedOnBoth() throws {
+    let pages = TEIRenderer.pages(in: document)
+    let first = TEIWordPosition(line: 2, word: 2, surface: "A")
+    let last = TEIWordPosition(line: 1, word: 2, surface: "on")
+    let highlights = try XCTUnwrap(
+      TEIRenderer.quote(
+        in: pages, imageID: "https://example.org/iiif/p1", start: first, end: last,
+        endImageID: "https://example.org/iiif/p2"))
+    let read = TEIRenderer.pages(in: document, highlights: highlights)
+    func titled(_ page: Int) -> String {
+      read[page].lines.flatMap(\.runs).filter { $0.highlight == .title }.map(\.text).joined()
+    }
+    XCTAssertEqual(titled(1).trimmingCharacters(in: .whitespacesAndNewlines), "A split word")
+    XCTAssertEqual(titled(2).trimmingCharacters(in: .whitespacesAndNewlines), "goes on")
+    XCTAssertEqual(titled(3), "")
+    XCTAssertNil(
+      TEIRenderer.quote(
+        in: pages, imageID: "https://example.org/iiif/p1", start: first, end: last,
+        endImageID: "https://example.org/iiif/p3"))
+    XCTAssertNil(
+      TEIRenderer.quote(
+        in: pages, imageID: "https://example.org/iiif/p1", start: first,
+        end: .init(line: 1, word: 2, surface: "off"), endImageID: "https://example.org/iiif/p2"))
+  }
+
   func testAWordThatReadsOtherwiseIsNotHighlighted() {
     let pages = TEIRenderer.pages(in: document)
     let moved = TEIWordPosition(line: 2, word: 3, surface: "word")
