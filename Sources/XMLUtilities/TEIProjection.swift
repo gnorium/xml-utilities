@@ -538,6 +538,23 @@
       }
     }
 
+    /// The sentence each word of a page is read in (user, 2026-11-01): the
+    /// smallest `<s>` of the page holding the word's start, by its place
+    /// among the page's sentences in reading order, from 0, as a quote's
+    /// sentence is found (`quote(in:)`). A word no `<s>` holds has none.
+    public static func sentences(of page: TEIPage) -> [TEIWordPlace: Int] {
+      let projection = TEIProjection.of(markup: page.markup)
+      let ordered = projection.sentences.sorted { $0.range.lowerBound < $1.range.lowerBound }
+      var found: [TEIWordPlace: Int] = [:]
+      for unit in projection.units {
+        let start = unit.range.lowerBound
+        let holding = ordered.indices.filter { ordered[$0].range.contains(start) }
+        guard let smallest = holding.min(by: { ordered[$0].range.count < ordered[$1].range.count }) else { continue }
+        found[.init(line: unit.line, word: unit.number)] = smallest
+      }
+      return found
+    }
+
     /// Where a quote reads in a document's pages: its words, found by
     /// their line and place in the line on the anchor's page (`start` to
     /// `end`), and the sentence holding them—the smallest `<s>` of the page
