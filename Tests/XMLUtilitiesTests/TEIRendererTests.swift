@@ -275,6 +275,33 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(figure.map(\.text), ["", "W"])
   }
 
+  /// Hamlet Q1 p. 3 (user, 2026-11-01): the S of "1. STand: who is that?"
+  /// is two lines deep; its zone covers its own line and "2. Tis I.", so it
+  /// drops two lines, and the line beside it begins after it. The line
+  /// below, which the zone clears, is a line of its own.
+  func testAnInitialDropsThroughTheLinesItsZoneStandsBeside() throws {
+    let page = """
+      <facsimile><surface ulx="0" uly="0" lrx="1000" lry="1000">\
+      <zone xml:id="z-L1" ulx="320" uly="444" lrx="480" lry="477"/>\
+      <zone xml:id="z-L2" ulx="320" uly="461" lrx="400" lry="477"/>\
+      <zone xml:id="z-L3" ulx="320" uly="478" lrx="600" lry="494"/>\
+      <zone xml:id="z-fig-1" ulx="338" uly="444" lrx="352" lry="476"/></surface></facsimile>\
+      <ab><lb facs="#z-L1"/>1. <w><hi rend="initial" facs="#z-fig-1">S</hi>Tand</w>: who is that?\
+      <lb facs="#z-L2"/>2. <w>Tis</w> <w>I</w>.<lb facs="#z-L3"/>1. O you come</ab>
+      """
+    let lines = TEIRenderer.lines(in: page, marksWords: true)
+    XCTAssertEqual(lines.map(\.text), ["1. STand: who is that?", "2. Tis I.", "1. O you come"])
+    let initial = try XCTUnwrap(lines[0].runs.first { $0.text == "S" })
+    XCTAssertEqual(initial.drop, 2)
+    XCTAssertEqual(lines[0].runs.filter { $0.drop > 1 }.count, 1)
+    XCTAssertNil(lines[0].hang)
+    XCTAssertEqual(lines[1].hang, TEILine.Hang(letter: "S", lines: 2))
+    XCTAssertNil(lines[2].hang)
+    // An initial whose zone no line after it stands beside drops no line.
+    let alone = TEIRenderer.lines(in: Self.facsimile + ##"<p><w><hi rend="initial" facs="#z2">W</hi>hen</w></p>"##)
+    XCTAssertEqual(alone[0].runs.map(\.drop), [1, 1])
+  }
+
   func testFigureWithoutDescriptionStillCarriesItsCrop() throws {
     let lines = TEIRenderer.lines(in: Self.facsimile + "<figure facs=\"#z1\"/>")
     XCTAssertEqual(lines.count, 1)

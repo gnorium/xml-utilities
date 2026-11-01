@@ -253,6 +253,7 @@
         placed.columnRend = line.columnRend
         placed.part = line.part
         placed.zone = line.zone
+        placed.hang = line.hang
         return placed
       }
     }
@@ -365,7 +366,23 @@
     /// italic speaker prefix—so it cannot be a property of the whole line.
     /// The renderer used to drop `<hi>` and keep its text, which turned
     /// "By WILLIAM SHAKESPEARE" and every italicised speaker into plain prose.
-    public let runs: [Run]
+    public internal(set) var runs: [Run]
+    /// The initial a line above drops beside it (`TEIRenderer.dropped`):
+    /// its letter and how many lines it spans, so the line's text begins
+    /// after it as the print sets it ("2. Tis I." beside the S of "1. STand"
+    /// in Hamlet Q1 p. 3). Nil for every other line.
+    public internal(set) var hang: Hang?
+
+    /// An initial a line stands beside (`hang`).
+    public struct Hang: Sendable, Equatable {
+      public let letter: String
+      public let lines: Int
+
+      public init(letter: String, lines: Int) {
+        self.letter = letter
+        self.lines = lines
+      }
+    }
     /// Whether the line opens a block—a paragraph, a verse line, a heading,
     /// anything set apart—rather than following an `<lb/>` inside one. A
     /// line break and a paragraph break are different evidence, and a diff
@@ -460,6 +477,10 @@
       /// translation, the source block it translates, as its segment names
       /// it (`TEIParallel.Segment.corresp`). "" where none says.
       public internal(set) var segment = ""
+      /// How many lines an initial spans (`TEIRenderer.dropped`): its own
+      /// and those its zone stands beside, as the print drops it; 1 for
+      /// every other run, and for an initial no line stands beside.
+      public internal(set) var drop = 1
 
       /// The same run with other text: all else kept.
       func with(text: String, preserved: Bool) -> Run {
@@ -467,6 +488,7 @@
           text: text, rend: rend, kind: kind, alternative: alternative, highlight: highlight, word: word, zone: zone,
           element: element, preserved: preserved)
         run.segment = segment
+        run.drop = drop
         return run
       }
 
@@ -1013,12 +1035,13 @@
       guard spacesAreBounded(in: root) else { return [] }
       let settings = renditions.merging(TEIRendition.declarations(in: root)) { _, local in local }
       guard !highlights.isEmpty || marksWords else {
-        return rendering(from: root, zones: zones, renditions: settings)
+        return dropped(rendering(from: root, zones: zones, renditions: settings))
       }
       let projection = TEIProjection(root)
-      return rendering(
-        from: root, highlights: highlights, words: marksWords ? Words(projection.units, root: root) : nil,
-        zones: zones, renditions: settings)
+      return dropped(
+        rendering(
+          from: root, highlights: highlights, words: marksWords ? Words(projection.units, root: root) : nil,
+          zones: zones, renditions: settings))
     }
 
     /// Expansion limits apply to the complete reading, not separately to
