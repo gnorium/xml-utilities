@@ -703,11 +703,15 @@ public enum TEIRendition {
   /// The body's leading, in rem (gnorium-python `type_scale`: the leading
   /// of the size step that holds the body type, 1rem): the `leading-N` of
   /// the `size-N` nearest 1rem in proportion (type is cut in proportional
-  /// steps), from a document's declarations (`declarations(in:)`)—or, where
-  /// a page's steps were reconciled into a multi-page document (`markup`),
-  /// the `#leading-*` paired on the same element with the `#size-*` nearest
-  /// 1rem; nil where its scale declares no such pair.
+  /// steps), from a document's declarations (`declarations(in:)`): the
+  /// book's, whatever the page sets (a title page set in display sizes
+  /// alone is paired by the body's leading, as gnorium-python
+  /// `tei_review._leading` pairs it: Skeat image 3, its 0.825rem lines'
+  /// 1.2857rem leading made its quarter a line off); only where they declare
+  /// no such pair, the `#leading-*` paired on the same element in the page
+  /// (`markup`) with the `#size-*` nearest 1rem; nil where neither has one.
   public static func bodyLeading(in declarations: [String: String], markup: String = "") -> Double? {
+    if let declared = declaredBodyLeading(in: declarations) { return declared }
     if !markup.isEmpty {
       let pattern = try! NSRegularExpression(pattern: #"\brendition\s*=\s*"([^"]*)""#)
       var best: (leading: Double, distance: Double)?
@@ -728,16 +732,22 @@ public enum TEIRendition {
       }
       if let best { return best.leading }
     }
-    var nearest: (number: Substring, distance: Double)?
+    return nil
+  }
+
+  /// The leading of the declared size step nearest 1rem (`bodyLeading`).
+  private static func declaredBodyLeading(in declarations: [String: String]) -> Double? {
+    // Of the sizes with a leading, the nearest 1rem (gnorium-python `type_scale._body_size`).
+    var nearest: (leading: Double, distance: Double)?
     for (id, tokens) in declarations where id.hasPrefix("size-") {
-      guard let size = Setting(tokens).length("font-size"), size.unit == "rem", size.value > 0 else { continue }
+      guard let size = Setting(tokens).length("font-size"), size.unit == "rem", size.value > 0,
+        let led = declarations["leading-" + id.dropFirst("size-".count)],
+        let leading = Setting(led).length("line-height"), leading.unit == "rem"
+      else { continue }
       let distance = abs(log(size.value))
-      if nearest.map({ distance < $0.distance }) ?? true { nearest = (id.dropFirst("size-".count), distance) }
+      if nearest.map({ distance < $0.distance }) ?? true { nearest = (leading.value, distance) }
     }
-    guard let number = nearest?.number, let tokens = declarations["leading-" + number],
-      let leading = Setting(tokens).length("line-height"), leading.unit == "rem"
-    else { return nil }
-    return leading.value
+    return nearest?.leading
   }
 
   static func declarations(in root: TEIMarkup.Element) -> [String: String] {
