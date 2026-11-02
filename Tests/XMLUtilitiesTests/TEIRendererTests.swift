@@ -613,6 +613,47 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(value(page.lines[0], "line-height"), 21 * 6.63 * scale, accuracy: 0.0001, "its line its box")
   }
 
+  /// The scan's width in the em a page is set in (`TEIPage.scanWidth`, the
+  /// reader's overlay's type scale), the frame's own rule (user, 2026-11-03):
+  /// Hamlet Q1's front cover as integrated (dev, the work's frame in its
+  /// header, 80.61 em across its text pages' photographs) is framed by its
+  /// leaf, so its scan is its leaf's 38 em over the leaf's share of its
+  /// width, its tooled frame as wide at that em as its zone; at the work's
+  /// em the overlay drew it at 0.63 of the scan's. A page with its own body
+  /// type is its scan's width over it, one with none its work's.
+  func testAScansWidthInEmIsTheFramesItsLeafsOnACover() throws {
+    let image = "https://cdm16003.contentdm.oclc.org/iiif/2/p15150coll3:1360"
+    let header = "<teiHeader><encodingDesc><tagsDecl>"
+      + #"<rendition xml:id="text-block" scheme="css" selector="text">font-size:85.44px;inline-size:26.47em;block-size:47.94em;margin:7.42em 13.26em 11.23em 9.33em;max-inline-size:80.61em</rendition>"#
+      + "</tagsDecl></encodingDesc></teiHeader>"
+    let facsimile = ##"<facsimile><surface n="Front cover" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\##(image)/full/max/0/default.jpg" width="6120px" height="6630px"/>"##
+      + ##"<zone xml:id="p1-z-fig-2" ulx="173" uly="61" lrx="882" lry="938"/><zone xml:id="p1-z-L2" ulx="417" uly="238" lrx="637" lry="259"/>"##
+      + ##"<zone xml:id="p1-textblock" type="textblock" points="172.3,64.24 879.57,59.61 884.82,936.85 175.7,941.07"/>"##
+      + ##"<zone type="leaf" points="144.85,53.4 890.9,53.4 890.9,945.42 144.85,945.42"/></surface></facsimile>"##
+    let body = ##"<text><body><pb n="Front cover" facs="\##(image)" rend="color(yellow)"/><figure facs="#p1-z-fig-2"/>"##
+      + ##"<lb facs="#p1-z-L2"/><note type="binding" subtype="copy">HAMLET</note></body></text>"##
+    let leafWidth = 890.9 - 144.85
+    for header in [header, ""] {
+      let page = try XCTUnwrap(TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + body + "</TEI>").first)
+      XCTAssertEqual(page.frame?.measure, TEIPage.leafMeasure)
+      let width = try XCTUnwrap(page.scanWidth, "a cover framed by its leaf has its leaf's em")
+      XCTAssertEqual(width, TEIPage.leafMeasure * 1000 / leafWidth, accuracy: 1e-9)
+      // Its tooled frame, set at its zone on the leaf, as wide on the scan at that em as its zone (709 of 1000).
+      let set = TEIRendition.css(from: page.lines[0].rend, only: ["inline-size"])
+      let em = try XCTUnwrap(Double(set.dropFirst("inline-size:".count).prefix { $0 != "e" }))
+      XCTAssertEqual(em * 6120 / width, 709 * 6.12, accuracy: 0.5)
+    }
+    // A text page: its scan's own body type, else its work's frame's 80.61 em.
+    let text = ##"<text><body><pb n="p. 3" facs="\##(image)"/><p>Words.</p></body></text>"##
+    let own = facsimile.replacingOccurrences(of: #"941.07""#, with: #"941.07" style="font-size:85.75px""#)
+    let measured = try XCTUnwrap(TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + own + text + "</TEI>").first)
+    XCTAssertEqual(try XCTUnwrap(measured.scanWidth), 6120 / 85.75, accuracy: 1e-9)
+    let declared = try XCTUnwrap(TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + text + "</TEI>").first)
+    XCTAssertEqual(try XCTUnwrap(declared.scanWidth), 80.61, accuracy: 1e-9)
+    let none = try XCTUnwrap(TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + facsimile + text + "</TEI>").first)
+    XCTAssertNil(none.scanWidth)
+  }
+
   /// A note's place in a margin is an area around the frame: a side, or a
   /// corner as two; "margin", its side unknown, and any other place none.
   func testANotesMarginalPlaceIsAnAreaAroundTheFrame() {

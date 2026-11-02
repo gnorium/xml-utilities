@@ -104,6 +104,26 @@
         ?? Self.frame(renditions: renditions, textBlock: textBlock, workPage: workPage)
     }
 
+    /// The page's scan's width in the em the page is set in (TEIView's
+    /// `data-scan-em`, the reader's overlay's type scale), the frame's
+    /// (`frame`) own rule: a page framed by its leaf (`leafFrame`) at its
+    /// leaf's width over `leafMeasure`, whatever type its work or its scan
+    /// declares (user, 2026-11-03: Hamlet Q1's front cover was laid at its
+    /// work's em, its text pages' photographs 80.61 em across, where its
+    /// edition sets its leaf 38 em wide: the overlay drew the gilt frame and
+    /// corner ornaments at 0.63 of the scan's, hung from the board's top);
+    /// else its scan's own body type (`TEITextBlock.frame`), else its work's
+    /// frame's (`TEIRendition.frame(in:)`, `max-inline-size`). Nil where
+    /// none gives a width.
+    public var scanWidth: Double? {
+      if let block = textBlock, case _? = Self.leafFrame(of: block, lines: lines), let leaf = block.leafBox {
+        return Self.leafMeasure * block.imageWidth / (leaf.right - leaf.left)
+      }
+      if let own = textBlock?.frame, own.width > 0 { return own.width }
+      if let work = TEIRendition.frame(in: renditions), work.width > 0 { return work.width }
+      return nil
+    }
+
     /// The width in em a page with no type of its own lays its leaf at
     /// (`leafFrame`): the canonical render's page (TEIView's, 640 px less
     /// its 16 px gutters, at its 16 px em).
