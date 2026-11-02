@@ -542,15 +542,35 @@
     /// smallest `<s>` of the page holding the word's start, by its place
     /// among the page's sentences in reading order, from 0, as a quote's
     /// sentence is found (`quote(in:)`). A word no `<s>` holds has none.
+    ///
+    /// A sentence split into parts on the page (`<s part="I|M|F">`: verse
+    /// set over two blocks, a sentence leaving a `<hi>`; gnorium-python
+    /// `calibration.sentences`) is one: a part "M" or "F" takes the number
+    /// of the open part before it, as `quote(in:)` joins them. A part the
+    /// page opens with continues the page before and is a sentence of its
+    /// own here.
     public static func sentences(of page: TEIPage) -> [TEIWordPlace: Int] {
       let projection = TEIProjection.of(markup: page.markup)
       let ordered = projection.sentences.sorted { $0.range.lowerBound < $1.range.lowerBound }
+      // Each <s>'s sentence: its parts one.
+      var numbers: [Int] = []
+      var count = 0
+      var open: Int?
+      for sentence in ordered {
+        if let open, sentence.part == "M" || sentence.part == "F" {
+          numbers.append(open)
+        } else {
+          numbers.append(count)
+          count += 1
+        }
+        open = sentence.part == "I" || sentence.part == "M" ? numbers.last : nil
+      }
       var found: [TEIWordPlace: Int] = [:]
       for unit in projection.units {
         let start = unit.range.lowerBound
         let holding = ordered.indices.filter { ordered[$0].range.contains(start) }
         guard let smallest = holding.min(by: { ordered[$0].range.count < ordered[$1].range.count }) else { continue }
-        found[.init(line: unit.line, word: unit.number)] = smallest
+        found[.init(line: unit.line, word: unit.number)] = numbers[smallest]
       }
       return found
     }
