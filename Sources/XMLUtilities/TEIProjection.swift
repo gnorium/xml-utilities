@@ -516,6 +516,16 @@
     /// pages): what its sentiment assignment names it by. "" where it has none.
     public let id: String
 
+    /// What a quote's picked form names it by (user, 2026-11-03): its
+    /// `xml:id`; on a calibrated page, whose words explication has not given
+    /// ids yet, its first zone (its `@facs`, "p3-wz12" as a document lays
+    /// it), unique in the document as a zone's id is; "" where it has
+    /// neither.
+    public var key: String {
+      guard id.isEmpty else { return id }
+      return zones.first ?? ""
+    }
+
     /// Whether it is not a whole word (user, 2026-09-29): a form cited as a
     /// form (`<m>`: an affix, a root, a stem), or its lemma or surface an
     /// affix ("με-", "-τρον").
