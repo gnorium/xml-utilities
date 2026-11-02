@@ -50,11 +50,12 @@
       let counted: Bool
     }
 
-    /// An `<s>`: its span, and its `part` ("I", "M" or "F" for a sentence split
-    /// across pages; "" when whole).
+    /// An `<s>`: its span, its `part` ("I", "M" or "F" for a sentence split
+    /// across pages; "" when whole) and its `xml:id` ("" where it has none).
     struct Sentence: Equatable {
       let range: Range<Int>
       let part: String
+      var id = ""
     }
 
     /// A `<w>`, or a form cited as a form (an `<m>` outside any `<w>`): its
@@ -284,7 +285,7 @@
         }
       }
       if element.name == "s", size > start {
-        sentences.append(.init(range: start..<size, part: element.attribute("part")))
+        sentences.append(.init(range: start..<size, part: element.attribute("part"), id: element.attribute("xml:id")))
       }
       if element.name == "formula", size > start {
         formulas.append(start..<size)
@@ -523,6 +524,19 @@
     }
   }
 
+  /// An `<s>` of a page (`TEIRenderer.sentenceElements(of:)`).
+  public struct TEISentence: Sendable, Equatable {
+    /// Its `xml:id`; "" where it has none.
+    public let id: String
+    /// "I", "M" or "F" for a part of a sentence split over blocks or
+    /// pages; "" when whole.
+    public let part: String
+    /// Its text, its white space collapsed.
+    public let text: String
+    /// The words it holds, in reading order.
+    public let words: [TEIWord]
+  }
+
   extension TEIRenderer {
     /// A page's words as a quote's anchor counts them
     /// (`tei-line-word-v5`), in reading order: each its place, its surface
@@ -573,6 +587,46 @@
         found[.init(line: unit.line, word: unit.number)] = numbers[smallest]
       }
       return found
+    }
+
+    /// Each `<s>` of each page of a document, page by page in reading order
+    /// (user, 2026-11-03: a quote names its sentences by their `xml:id`):
+    /// its id, its part ("I", "M" or "F"; "" when whole), its text with its
+    /// white space collapsed, and the words it holds, each word in the
+    /// smallest `<s>` holding its start, as `sentences(of:)` reads them. A
+    /// word broken over the page break is its whole surface, its parts on
+    /// the pages it runs over, as an anchor names it (`quote(in:)`).
+    public static func sentenceElements(in pages: [TEIPage]) -> [[TEISentence]] {
+      let projections = pages.map { TEIProjection.of(markup: $0.markup) }
+      return projections.indices.map { index in
+        let projection = projections[index]
+        let ordered = projection.sentences.sorted { $0.range.lowerBound < $1.range.lowerBound }
+        var held: [[TEIWord]] = Array(repeating: [], count: ordered.count)
+        for unit in projection.units {
+          let start = unit.range.lowerBound
+          let holding = ordered.indices.filter { ordered[$0].range.contains(start) }
+          guard let smallest = holding.min(by: { ordered[$0].range.count < ordered[$1].range.count }) else {
+            continue
+          }
+          var surface = unit.surface
+          if unit.runsOn {
+            for following in projections.dropFirst(index + 1) {
+              let continuation = following.leadingContinuation
+              surface += continuation.text
+              if continuation.ends { break }
+            }
+          }
+          held[smallest].append(
+            TEIWord(
+              place: .init(line: unit.line, word: unit.number), surface: surface, element: unit.element,
+              lemma: unit.lemma, morphology: unit.msd, language: unit.language, wordClass: unit.wordClass,
+              zones: unit.zones, id: unit.id))
+        }
+        return ordered.indices.map { at in
+          let text = projection.text(ordered[at].range).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+          return TEISentence(id: ordered[at].id, part: ordered[at].part, text: text, words: held[at])
+        }
+      }
     }
 
     /// Where a quote reads in a document's pages: its words, found by
