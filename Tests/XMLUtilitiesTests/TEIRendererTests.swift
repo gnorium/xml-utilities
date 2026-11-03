@@ -654,6 +654,51 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertNil(none.scanWidth)
   }
 
+  /// Hamlet Q1's front cover reflowed (user, 2026-11-03): its gilt lettering
+  /// is set at its ink's size in boxes of its zones, each line its box's
+  /// height, 0.714 of its type (`TEIRendition.leading`), so a line that
+  /// wraps sets solid; and each box, its ink's width, runs reflowed about
+  /// its middle as far as the leaf's nearer side (`TEIPage.reflowedBox`),
+  /// where in its box alone "HAMLET" wrapped its "T" over its "M".
+  func testACoversLetteringRunsReflowedAboutItsZonesMiddle() throws {
+    let image = "https://cdm16003.contentdm.oclc.org/iiif/2/p15150coll3:1360"
+    let tei = ##"<TEI xmlns="http://www.tei-c.org/ns/1.0"><facsimile><surface n="Front cover" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\##(image)/full/max/0/default.jpg" width="6120px" height="6630px"/>"##
+      + ##"<zone xml:id="p1-z-L2" ulx="417" uly="238" lrx="637" lry="259"/><zone xml:id="p1-z-L6" ulx="464" uly="427" lrx="595" lry="438"/>"##
+      + ##"<zone xml:id="p1-textblock" type="textblock" points="172.3,64.24 879.57,59.61 884.82,936.85 175.7,941.07"/>"##
+      + ##"<zone type="leaf" points="144.85,53.4 890.9,53.4 890.9,945.42 144.85,945.42"/></surface></facsimile>"##
+      + ##"<text><body><pb n="Front cover" facs="\##(image)" rend="color(yellow)"/>"##
+      + ##"<lb facs="#p1-z-L2"/><note type="binding" subtype="copy" style="letter-spacing:0.527em">HAMLET</note>"##
+      + ##"<lb facs="#p1-z-L6"/><note type="binding" subtype="copy" style="letter-spacing:0.1004em">LONDON 1603</note></body></text></TEI>"##
+    let page = try XCTUnwrap(TEIRenderer.pages(in: tei).first)
+    let measure = try XCTUnwrap(page.frame?.measure)
+    XCTAssertEqual(page.lines.map(\.text), ["HAMLET", "LONDON 1603"])
+    let scale = measure / ((890.9 - 144.85) * 6.12)
+    for (line, zone) in zip(page.lines, [(417.0, 637.0), (464, 595)]) {
+      XCTAssertEqual(try XCTUnwrap(TEIRendition.leading(of: line.rend)), TEIPage.capHeight, accuracy: 0.001, line.text)
+      let font = try XCTUnwrap(TEIRendition.fontSize(of: line.rend))
+      let box = try XCTUnwrap(TEIPage.reflowedBox(of: line.rend, measure: measure), line.text)
+      let middle = ((zone.0 + zone.1) / 2 - 144.85) * 6.12 * scale
+      // About the zone's middle, as far as the leaf's nearer side, in the line's own em.
+      XCTAssertEqual((box.start + box.size / 2) * font, middle, accuracy: 0.001, line.text)
+      XCTAssertEqual(box.size * font, 2 * min(middle, measure - middle), accuracy: 0.001, line.text)
+      XCTAssertGreaterThan(box.size * font, (zone.1 - zone.0) * 6.12 * scale, line.text)
+    }
+    // Never narrower than its box; none for a line with no box of its own.
+    let edge = "css:text-align=center css:inline-size=10em css:margin-inline-start=30em"
+    XCTAssertEqual(try XCTUnwrap(TEIPage.reflowedBox(of: edge, measure: 38)).start, 30)
+    XCTAssertEqual(try XCTUnwrap(TEIPage.reflowedBox(of: edge, measure: 38)).size, 10)
+    XCTAssertNil(TEIPage.reflowedBox(of: "css:font-size=2em css:line-height=0.88em", measure: 38))
+    XCTAssertNil(TEIPage.reflowedBox(of: "css:inline-size=4em", measure: 38), "a box not centered")
+    // A body's leading as written; a percentage; a scale step over its size.
+    XCTAssertEqual(TEIRendition.leading(of: "css:font-size=0.9982em css:line-height=1.2614em"), 1.2614)
+    XCTAssertEqual(TEIRendition.leading(of: "css:line-height=120%"), 1.2)
+    XCTAssertEqual(try XCTUnwrap(TEIRendition.leading(of: "css:font-size=2em css:line-height=1.5rem")), 0.75, accuracy: 1e-12)
+    XCTAssertNil(TEIRendition.leading(of: "css:font-size=2em"))
+    // A line-height out of bounds is drawn as none (Hamlet Q1 p. 3's heading, 0.7294em): no leading to set solid.
+    XCTAssertNil(TEIRendition.leading(of: "css:font-size=1.6739em css:line-height=0.7294em"))
+    XCTAssertEqual(TEIRendition.css(from: "css:font-size=1.6739em css:line-height=0.7294em"), "font-size:1.6739em;")
+  }
+
   /// A note's place in a margin is an area around the frame: a side, or a
   /// corner as two; "margin", its side unknown, and any other place none.
   func testANotesMarginalPlaceIsAnAreaAroundTheFrame() {

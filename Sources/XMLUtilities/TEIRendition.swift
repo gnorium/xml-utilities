@@ -227,6 +227,31 @@ public enum TEIRendition {
     return bodyEm(of: size)
   }
 
+  /// The leading a rend sets its lines at, in em of its own type: a
+  /// line-height as a number or in em as written, a percentage over a
+  /// hundred, a step of the type scale (rem, the body type's em) over its
+  /// font-size (`fontSize`); nil where it sets none `css(from:)` draws
+  /// (Hamlet Q1 p. 3's heading, 0.7294em, under the bounds, is drawn at
+  /// the reader's), or none it can compare. Under 1, its lines stand
+  /// closer than its type is tall: the pitch of lines that never wrap (a
+  /// line placed by its zone is its box's height, `TEIPage.placedByZone`),
+  /// which a reflowed line that wraps sets solid (TEIView, user
+  /// 2026-11-03).
+  public static func leading(of rend: String) -> Double? {
+    let setting = Setting(rend)
+    guard let value = setting.value("line-height"), valid(property: "line-height", value: value),
+      let height = Length(value)
+    else { return nil }
+    switch height.unit {
+    case "", "em": return height.value
+    case "%": return height.value / 100
+    case "rem":
+      guard let size = fontSize(of: rend), size > 0 else { return nil }
+      return height.value / size
+    default: return nil
+    }
+  }
+
   public static func tokens(_ css: String) -> String {
     css.split(separator: ";").compactMap { declaration -> String? in
       let pair = declaration.split(separator: ":", maxSplits: 1)

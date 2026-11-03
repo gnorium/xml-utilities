@@ -186,6 +186,31 @@
       "inline-size", "block-size", "margin-inline-start", "margin-block-start",
     ]
 
+    /// Where a line set in a box of its own (`placedByZone`: its zone's
+    /// width, centered in it) runs, reflowed (user, 2026-11-03): about its
+    /// box's middle, as far either way as the nearer side of the frame's
+    /// `measure` (in the page's em) lets it, never narrower than its box;
+    /// its start and its size in its own em, as its setting writes its box.
+    /// Its box is its ink's width, which the edition face fills to within a
+    /// hair, and CSS spaces a tracked line after its last letter too: in its
+    /// box alone, reflowed, a line wrapped (Hamlet Q1's front cover: "HAMLE"
+    /// over its "T", "SHAKESPEAR" over its "E", "LONDON" over "1603"). Nil
+    /// for a line with no box of its own, or one not centered in it.
+    public static func reflowedBox(of rend: String, measure: Double) -> (start: Double, size: Double)? {
+      // As its setting is drawn (`TEIRendition.css(from:)`): a value out of bounds is none.
+      let setting = TEIRendition.Setting(rend)
+      func drawn(_ property: String) -> TEIRendition.Length? {
+        setting.value(property).flatMap { TEIRendition.valid(property: property, value: $0) ? TEIRendition.Length($0) : nil }
+      }
+      guard let size = drawn("inline-size"), size.unit == "em", size.value > 0,
+        setting.value("text-align") == "center", let scale = TEIRendition.fontSize(of: rend), scale > 0
+      else { return nil }
+      let start = drawn("margin-inline-start").flatMap { $0.unit == "em" || $0.value == 0 ? $0.value : nil } ?? 0
+      let middle = (start + size.value / 2) * scale
+      let half = max(size.value / 2 * scale, min(middle, measure - middle))
+      return ((middle - half) / scale, 2 * half / scale)
+    }
+
     /// Whether `line` is of the page's main text: its text, a heading, a
     /// speaker or a stage direction, a table. A note (a binding's lettering,
     /// a marginal note), furniture, a figure, a rule, a space, a gap is not.
