@@ -370,34 +370,34 @@ final class TEIRendererTests: XCTestCase {
         """).first
     }
     // The text 880px wide on a leaf 1000px wide, a scan 2000px wide.
-    let leafed = try XCTUnwrap(page(#"<zone type="leaf" points="250,0 750,0 750,1000 250,1000"/>"#)?.frame)
+    let leafed = try XCTUnwrap(page(#"<zone type="leaf" points="250,0 750,0 750,1000 250,1000"/>"#)?.typeArea)
     XCTAssertEqual(leafed.measure, 44, accuracy: 0.001)
     // Its four margins (user, 2026-10-28): the head 78px, the foot 104px,
     // either side 60px, in 20px ems.
     for (margin, expected) in zip([leafed.head, leafed.foot, leafed.inner, leafed.outer], [3.9, 5.2, 3, 3]) {
       XCTAssertEqual(margin, expected, accuracy: 0.001)
     }
-    let unleafed = try XCTUnwrap(page("")?.frame)
+    let unleafed = try XCTUnwrap(page("")?.typeArea)
     for margin in [unleafed.head, unleafed.foot, unleafed.inner, unleafed.outer] { XCTAssertEqual(margin, 28, accuracy: 0.001) }
     // A leaf narrower at its left is a recto, its inner margin its left; at
     // its right, a verso, mirrored.
     let recto = try XCTUnwrap(page(#"<zone type="leaf" points="270,0 760,0 760,1000 270,1000"/>"#))
-    XCTAssertEqual(try XCTUnwrap(recto.frame).recto, true)
-    XCTAssertEqual(try XCTUnwrap(recto.frame).left, 1, accuracy: 0.001)
-    XCTAssertEqual(try XCTUnwrap(recto.frame).right, 4, accuracy: 0.001)
+    XCTAssertEqual(try XCTUnwrap(recto.typeArea).recto, true)
+    XCTAssertEqual(try XCTUnwrap(recto.typeArea).left, 1, accuracy: 0.001)
+    XCTAssertEqual(try XCTUnwrap(recto.typeArea).right, 4, accuracy: 0.001)
     let verso = try XCTUnwrap(page(#"<zone type="leaf" points="240,0 730,0 730,1000 240,1000"/>"#))
-    XCTAssertEqual(try XCTUnwrap(verso.frame).recto, false)
-    XCTAssertEqual(try XCTUnwrap(verso.frame).left, 4, accuracy: 0.001)
-    XCTAssertEqual(try XCTUnwrap(verso.frame).right, 1, accuracy: 0.001)
+    XCTAssertEqual(try XCTUnwrap(verso.typeArea).recto, false)
+    XCTAssertEqual(try XCTUnwrap(verso.typeArea).left, 4, accuracy: 0.001)
+    XCTAssertEqual(try XCTUnwrap(verso.typeArea).right, 1, accuracy: 0.001)
   }
 
-  /// Every page is set in the work's frame, its body pages' main text
+  /// Every page is set in the work's type area, its body pages' main text
   /// block in their body type's em: the header's rendition where the
   /// document has one, else the page's own measured text block (its
   /// surface's `textblock` zone, sized by its graphic, its type its style),
   /// else none; laid in again, a page's text block goes with it and the
-  /// frame is measured again (user, 2026-10-13, 2026-10-14).
-  func testPagesAreSetInTheWorksFrameMeasuredFromTheirTextBlocks() throws {
+  /// type area is measured again (user, 2026-10-13, 2026-10-14).
+  func testPagesAreSetInTheWorksTypeAreaMeasuredFromTheirTextBlocks() throws {
     let a = "https://example.org/iiif/a/full/1300,/0/default.jpg"
     let b = "https://example.org/iiif/b/full/1300,/0/default.jpg"
     let document = """
@@ -410,70 +410,70 @@ final class TEIRendererTests: XCTestCase {
       <pb n="2" facs="\(b)"/><p>Title.</p></body></text></TEI>
       """
     let pages = TEIRenderer.pages(in: document)
-    // No header frame yet: each page its own text block, in its own type.
-    let body = try XCTUnwrap(pages[0].frame)
+    // No header type area yet: each page its own text block, in its own type.
+    let body = try XCTUnwrap(pages[0].typeArea)
     XCTAssertEqual(body.measure, 44, accuracy: 0.001)
     XCTAssertEqual(body.height, 55.9, accuracy: 0.001)
     for margin in [body.head, body.foot, body.inner, body.outer] { XCTAssertEqual(margin, 3, accuracy: 0.001) }
-    XCTAssertEqual(try XCTUnwrap(pages[1].frame).measure, 10, accuracy: 0.001)
+    XCTAssertEqual(try XCTUnwrap(pages[1].typeArea).measure, 10, accuracy: 0.001)
     XCTAssertEqual(pages[0].textBlock?.fractions, [0.06, 0.06, 0.94, 0.06, 0.94, 0.92, 0.06, 0.92])
     XCTAssertEqual(pages[0].textBlock?.body, 20)
-    // The work frame: the body page's, the title page counting for its
+    // The work's type area: the body page's, the title page counting for its
     // little text; the header declares it and every page is set in it.
-    let framed = TEIFacsimile.framing(document)
-    XCTAssertTrue(framed.contains(
+    let declared = TEIFacsimile.declaringTypeArea(document)
+    XCTAssertTrue(declared.contains(
       #"<encodingDesc><p>Joined.</p><tagsDecl><rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em;max-inline-size:50em</rendition></tagsDecl></encodingDesc>"#))
-    for page in TEIRenderer.pages(in: framed) {
-      XCTAssertEqual(page.frame, TEIPageFrame(measure: 44, height: 55.9, head: 3, foot: 3, inner: 3, outer: 3))
+    for page in TEIRenderer.pages(in: declared) {
+      XCTAssertEqual(page.typeArea, TEIPageTypeArea(measure: 44, height: 55.9, head: 3, foot: 3, inner: 3, outer: 3))
     }
-    XCTAssertEqual(TEIFacsimile.framing(framed), framed)
-    // A page drawn alone is handed the frame and its own text block.
-    let title = TEIRenderer.pages(in: framed)[1]
+    XCTAssertEqual(TEIFacsimile.declaringTypeArea(declared), declared)
+    // A page drawn alone is handed the type area and its own text block.
+    let title = TEIRenderer.pages(in: declared)[1]
     let alone = "<TEI>" + TEIRendition.header(title.renditions) + TEIFacsimile.block(for: title)
       + "<text><body><pb n=\"2\" facs=\"\(b)\"/>" + title.markup + "</body></text></TEI>"
     let drawn = try XCTUnwrap(TEIRenderer.pages(in: alone).first)
     XCTAssertEqual(drawn.textBlock?.points, [300, 400, 700, 400, 700, 500, 300, 500])
     XCTAssertEqual(drawn.textBlock?.body, 40)
-    XCTAssertEqual(try XCTUnwrap(drawn.frame).measure, 44, accuracy: 0.001)
+    XCTAssertEqual(try XCTUnwrap(drawn.typeArea).measure, 44, accuracy: 0.001)
     // Read again with a text block of its own: laid in with it, renamed;
-    // the frame the header declares stands (the first declared wins).
+    // the type area the header declares stands (the first declared wins).
     let page = """
       <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader/><facsimile><surface n="2" ulx="0" uly="0" lrx="1000" lry="1000">\
       <graphic url="\(b)" width="1000px" height="1300px"/><zone xml:id="textblock" type="textblock" points="50,50 950,50 950,950 50,950" style="font-size:20px"/>\
       </surface></facsimile><text><body><p>Body again.</p></body></text></TEI>
       """
     let laid = try XCTUnwrap(TEIFacsimile.laying(
-      page: page, fragment: "<p>Body again.</p>", over: TEIRenderer.pages(in: framed)[1], position: 2, in: framed))
+      page: page, fragment: "<p>Body again.</p>", over: TEIRenderer.pages(in: declared)[1], position: 2, in: declared))
     XCTAssertTrue(laid.contains(
       #"<surface n="2" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\#(b)" width="1000px" height="1300px"/><zone xml:id="p2-textblock" type="textblock" points="50,50 950,50 950,950 50,950" style="font-size:20px"/></surface>"#))
     XCTAssertEqual(TEIFacsimile.textBlocks(in: laid).map(\.id), ["p1-textblock", "p2-textblock"])
-    XCTAssertEqual(TEIRenderer.pages(in: laid).first?.frame, TEIPageFrame(measure: 44, height: 55.9, head: 3, foot: 3, inner: 3, outer: 3))
+    XCTAssertEqual(TEIRenderer.pages(in: laid).first?.typeArea, TEIPageTypeArea(measure: 44, height: 55.9, head: 3, foot: 3, inner: 3, outer: 3))
     XCTAssertEqual(laid.components(separatedBy: #"xml:id="text-block""#).count, 2)
-    // Only a document declaring none is framed by its text blocks: two body
+    // Only a document declaring none takes its type area from its text blocks: two body
     // pages now.
     let undeclared = laid.replacingOccurrences(
       of: #"<tagsDecl><rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em;max-inline-size:50em</rendition></tagsDecl>"#,
       with: "")
     XCTAssertNotEqual(undeclared, laid)
-    let reframed = try XCTUnwrap(TEIRenderer.pages(in: TEIFacsimile.framing(undeclared)).first?.frame)
-    XCTAssertEqual(reframed.measure, 45, accuracy: 0.001)
-    XCTAssertEqual(reframed.height, 58.5, accuracy: 0.001)
-    for margin in [reframed.head, reframed.foot, reframed.inner, reframed.outer] { XCTAssertEqual(margin, 2.5, accuracy: 0.001) }
+    let remeasured = try XCTUnwrap(TEIRenderer.pages(in: TEIFacsimile.declaringTypeArea(undeclared)).first?.typeArea)
+    XCTAssertEqual(remeasured.measure, 45, accuracy: 0.001)
+    XCTAssertEqual(remeasured.height, 58.5, accuracy: 0.001)
+    for margin in [remeasured.head, remeasured.foot, remeasured.inner, remeasured.outer] { XCTAssertEqual(margin, 2.5, accuracy: 0.001) }
   }
 
-  /// A figure with no setting of its own on a framed page (user, 2026-10-30:
+  /// A figure with no setting of its own on a page set in a type area (user, 2026-10-30:
   /// Hamlet Q1's front cover, a board lettered in gilt, with no body type
   /// for `base_tei._figure` to write one in) is set by its zone on the
-  /// page's leaf, at the frame's scale: its size, its place across from the
+  /// page's leaf, at the type area's scale: its size, its place across from the
   /// text block's left, its place down from the text block's top or from
   /// the figure before it; a figure set already is left as it is, as is
-  /// every figure of a page with main text and no frame.
-  func testAFigureWithNoSettingOnAFramedPageIsSetByItsZoneOnTheLeaf() throws {
+  /// every figure of a page with main text and no type area.
+  func testAFigureWithNoSettingOnAPageInATypeAreaIsSetByItsZoneOnTheLeaf() throws {
     let a = "https://example.org/iiif/a/full/1300,/0/default.jpg"
     let header = "<teiHeader><encodingDesc><tagsDecl>"
       + #"<rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em</rendition>"#
       + "</tagsDecl></encodingDesc></teiHeader>"
-    // The leaf 800 px wide (100 to 900 of a 1000 px scan), the frame 50 em: an em is 16 px of the scan.
+    // The leaf 800 px wide (100 to 900 of a 1000 px scan), the type area 50 em: an em is 16 px of the scan.
     let facsimile = #"<facsimile><surface n="1" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\#(a)" width="1000px" height="1300px"/>"#
       + #"<zone xml:id="textblock" type="textblock" points="420,240 620,240 620,440 420,440"/>"#
       + #"<zone type="leaf" points="100,80 900,80 900,920 100,920"/>"#
@@ -482,9 +482,9 @@ final class TEIRendererTests: XCTestCase {
     let figures = ##"<pb n="1" facs="\##(a)"/><figure facs="#z1"/><figure facs="#z2"/>"##
       + ##"<figure facs="#z3" style="inline-size:2em;block-size:2em;margin-inline-start:1em"/>"##
     let body = "<text><body>" + figures + "</body></text>"
-    // Framed by the work, its main text after them.
-    let framed = "<text><body>" + figures + "<p>Words.</p></body></text>"
-    let pages = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + framed + "</TEI>")
+    // Set in the work's type area, its main text after them.
+    let withText = "<text><body>" + figures + "<p>Words.</p></body></text>"
+    let pages = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + withText + "</TEI>")
     let settings = pages[0].lines.dropLast().map { TEIRendition.css(from: $0.rend, only: TEIPage.figureSetting) }
     // z1: 80 by 100 scan px at 390 px down, 500 across: 5 by 8.125 em, 22 em from the text block's left
     // (400 px from the leaf's less the 3 em margin), 14.875 em from its top (286 px less the 3 em head).
@@ -496,10 +496,10 @@ final class TEIRendererTests: XCTestCase {
         "inline-size:6.25em;block-size:8.125em;margin-inline-start:-3em;margin-block-start:8.125em;",
         "inline-size:2em;block-size:2em;margin-inline-start:1em;",
       ])
-    // No main text, no body type: framed by its leaf, 38 em wide (`TEIPage.leafFrame`), an
+    // No main text, no body type: set in its leaf, 38 em wide (`TEIPage.leafTypeArea`), an
     // em 800/38 px of the scan; z1 3.8 by 6.175 em, 19 em from the leaf's left, 13.585 em from its top.
-    // With its work's frame in the header too (user, 2026-10-31: Hamlet Q1's cover under the integrated header):
-    // a page with no type of its own is its leaf whatever its work's frame, as filed before Integration.
+    // With its work's type area in the header too (user, 2026-10-31: Hamlet Q1's cover under the integrated header):
+    // a page with no type of its own is its leaf whatever its work's type area, as filed before Integration.
     let leaf = [
       "inline-size:3.8em;block-size:6.175em;margin-inline-start:19em;margin-block-start:13.585em;",
       "inline-size:4.75em;block-size:6.175em;margin-inline-start:0em;margin-block-start:6.175em;",
@@ -507,14 +507,14 @@ final class TEIRendererTests: XCTestCase {
     ]
     for header in ["", header] {
       let leafed = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + body + "</TEI>")
-      XCTAssertEqual(leafed[0].frame?.measure, TEIPage.leafMeasure)
+      XCTAssertEqual(leafed[0].typeArea?.measure, TEIPage.leafMeasure)
       XCTAssertEqual(leafed[0].lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.figureSetting) }, leaf)
     }
-    // With main text and no frame: as they are.
+    // With main text and no type area: as they are.
     let text = ##"<text><body><pb n="1" facs="\##(a)"/><figure facs="#z1"/><p>Words.</p></body></text>"##
-    let unframed = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + facsimile + text + "</TEI>")
-    XCTAssertNil(unframed[0].frame)
-    XCTAssertEqual(unframed[0].lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.figureSetting) }, ["", ""])
+    let withoutTypeArea = TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + facsimile + text + "</TEI>")
+    XCTAssertNil(withoutTypeArea[0].typeArea)
+    XCTAssertEqual(withoutTypeArea[0].lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.figureSetting) }, ["", ""])
   }
 
   /// A page with no main text (user, 2026-10-30: Hamlet Q1's front cover,
@@ -527,7 +527,7 @@ final class TEIRendererTests: XCTestCase {
     let header = "<teiHeader><encodingDesc><tagsDecl>"
       + #"<rendition xml:id="text-block" scheme="css" selector="text">font-size:20px;inline-size:44em;block-size:55.9em;margin:3em</rendition>"#
       + "</tagsDecl></encodingDesc></teiHeader>"
-    // As the figure test's leaf, framed by it whatever the work's frame (`TEIPage.leafFrame`): 38 em across its
+    // As the figure test's leaf, set in it whatever the work's type area (`TEIPage.leafTypeArea`): 38 em across its
     // 800 px, an em 800/38 px of the scan, from the leaf's top-left.
     let facsimile = #"<facsimile><surface n="1" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\#(a)" width="1000px" height="1300px"/>"#
       + #"<zone xml:id="textblock" type="textblock" points="420,240 620,240 620,440 420,440"/>"#
@@ -544,7 +544,7 @@ final class TEIRendererTests: XCTestCase {
     // (300 px), 7.41 em from its top (156 px); the crest 104 px under its bottom (286 px), 4.94 em down from it.
     // HAMLET is capitals, set at its ink's size: its cap height its box's 1.235 em, 1.7297 em, its box and place
     // in that em.
-    XCTAssertEqual(page.frame?.measure, TEIPage.leafMeasure)
+    XCTAssertEqual(page.typeArea?.measure, TEIPage.leafMeasure)
     XCTAssertEqual(
       page.lines.map { TEIRendition.css(from: $0.rend, only: TEIPage.lineSetting.union(["text-align", "font-size"])) },
       [
@@ -564,9 +564,9 @@ final class TEIRendererTests: XCTestCase {
   /// Hamlet Q1's front cover as filed (dev, 2026-10-30, calibration_pages
   /// for p15150coll3:1360): a board lettered in gilt around a traced crest,
   /// no main text, no body type measured (its text block has no
-  /// `font-size`) and no work frame in its header. It is framed by its
-  /// leaf (`TEIPage.leafFrame`), so its lettering and its crest stand at
-  /// their zones, centered on the board as the scan has them; unframed,
+  /// `font-size`) and no work type area in its header. It is set in its
+  /// leaf (`TEIPage.leafTypeArea`), so its lettering and its crest stand at
+  /// their zones, centered on the board as the scan has them; without it,
   /// nothing on it was placed: its lettering ran at the top left at the
   /// reader's size, its crest at its drawing's own pixels.
   func testACoverWithNoTypeOfItsOwnIsSetOnItsLeafByItsZones() throws {
@@ -584,10 +584,10 @@ final class TEIRendererTests: XCTestCase {
       + ##"<figure facs="#z-fig-1"><graphic url="/mission-control/calibration-figures/z-fig-1.svg" mimeType="image/svg+xml"/></figure>"##
       + ##"<lb facs="#z-L6"/><note type="binding" subtype="copy">LONDON 1603</note></body></text></TEI>"##
     let page = try XCTUnwrap(TEIRenderer.pages(in: tei).first)
-    let frame = try XCTUnwrap(page.frame, "a cover with no type of its own is framed by its leaf")
-    XCTAssertEqual(frame.measure, TEIPage.leafMeasure)
-    XCTAssertEqual(frame.left, 0)
-    XCTAssertEqual(frame.head, 0)
+    let typeArea = try XCTUnwrap(page.typeArea, "a cover with no type of its own is set in its leaf")
+    XCTAssertEqual(typeArea.measure, TEIPage.leafMeasure)
+    XCTAssertEqual(typeArea.left, 0)
+    XCTAssertEqual(typeArea.head, 0)
     func value(_ line: TEILine, _ property: String) -> Double {
       let css = TEIRendition.css(from: line.rend, only: [property])
       return Double(css.dropFirst(property.count + 1).prefix { $0 != "e" && $0 != "r" && $0 != ";" }) ?? .nan
@@ -614,14 +614,14 @@ final class TEIRendererTests: XCTestCase {
   }
 
   /// The scan's width in the em a page is set in (`TEIPage.scanWidth`, the
-  /// reader's overlay's type scale), the frame's own rule (user, 2026-11-03):
-  /// Hamlet Q1's front cover as integrated (dev, the work's frame in its
-  /// header, 80.61 em across its text pages' photographs) is framed by its
+  /// reader's overlay's type scale), the type area's own rule (user, 2026-11-03):
+  /// Hamlet Q1's front cover as integrated (dev, the work's type area in its
+  /// header, 80.61 em across its text pages' photographs) is set in its
   /// leaf, so its scan is its leaf's 38 em over the leaf's share of its
-  /// width, its tooled frame as wide at that em as its zone; at the work's
+  /// width, its tooled border as wide at that em as its zone; at the work's
   /// em the overlay drew it at 0.63 of the scan's. A page with its own body
   /// type is its scan's width over it, one with none its work's.
-  func testAScansWidthInEmIsTheFramesItsLeafsOnACover() throws {
+  func testAScansWidthInEmIsTheTypeAreasItsLeafsOnACover() throws {
     let image = "https://cdm16003.contentdm.oclc.org/iiif/2/p15150coll3:1360"
     let header = "<teiHeader><encodingDesc><tagsDecl>"
       + #"<rendition xml:id="text-block" scheme="css" selector="text">font-size:85.44px;inline-size:26.47em;block-size:47.94em;margin:7.42em 13.26em 11.23em 9.33em;max-inline-size:80.61em</rendition>"#
@@ -635,15 +635,15 @@ final class TEIRendererTests: XCTestCase {
     let leafWidth = 890.9 - 144.85
     for header in [header, ""] {
       let page = try XCTUnwrap(TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + facsimile + body + "</TEI>").first)
-      XCTAssertEqual(page.frame?.measure, TEIPage.leafMeasure)
-      let width = try XCTUnwrap(page.scanWidth, "a cover framed by its leaf has its leaf's em")
+      XCTAssertEqual(page.typeArea?.measure, TEIPage.leafMeasure)
+      let width = try XCTUnwrap(page.scanWidth, "a cover set in its leaf has its leaf's em")
       XCTAssertEqual(width, TEIPage.leafMeasure * 1000 / leafWidth, accuracy: 1e-9)
-      // Its tooled frame, set at its zone on the leaf, as wide on the scan at that em as its zone (709 of 1000).
+      // Its tooled border, set at its zone on the leaf, as wide on the scan at that em as its zone (709 of 1000).
       let set = TEIRendition.css(from: page.lines[0].rend, only: ["inline-size"])
       let em = try XCTUnwrap(Double(set.dropFirst("inline-size:".count).prefix { $0 != "e" }))
       XCTAssertEqual(em * 6120 / width, 709 * 6.12, accuracy: 0.5)
     }
-    // A text page: its scan's own body type, else its work's frame's 80.61 em.
+    // A text page: its scan's own body type, else its work's type area's 80.61 em.
     let text = ##"<text><body><pb n="p. 3" facs="\##(image)"/><p>Words.</p></body></text>"##
     let own = facsimile.replacingOccurrences(of: #"941.07""#, with: #"941.07" style="font-size:85.75px""#)
     let measured = try XCTUnwrap(TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + own + text + "</TEI>").first)
@@ -670,7 +670,7 @@ final class TEIRendererTests: XCTestCase {
       + ##"<lb facs="#p1-z-L2"/><note type="binding" subtype="copy" style="letter-spacing:0.527em">HAMLET</note>"##
       + ##"<lb facs="#p1-z-L6"/><note type="binding" subtype="copy" style="letter-spacing:0.1004em">LONDON 1603</note></body></text></TEI>"##
     let page = try XCTUnwrap(TEIRenderer.pages(in: tei).first)
-    let measure = try XCTUnwrap(page.frame?.measure)
+    let measure = try XCTUnwrap(page.typeArea?.measure)
     XCTAssertEqual(page.lines.map(\.text), ["HAMLET", "LONDON 1603"])
     let scale = measure / ((890.9 - 144.85) * 6.12)
     for (line, zone) in zip(page.lines, [(417.0, 637.0), (464, 595)]) {
@@ -699,9 +699,9 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(TEIRendition.css(from: "css:font-size=1.6739em css:line-height=0.7294em"), "font-size:1.6739em;")
   }
 
-  /// A note's place in a margin is an area around the frame: a side, or a
+  /// A note's place in a margin is an area around the type area: a side, or a
   /// corner as two; "margin", its side unknown, and any other place none.
-  func testANotesMarginalPlaceIsAnAreaAroundTheFrame() {
+  func testANotesMarginalPlaceIsAnAreaAroundTheTypeArea() {
     XCTAssertEqual(TEIRenderer.marginalArea(of: "margin-left"), "margin-left")
     XCTAssertEqual(TEIRenderer.marginalArea(of: "bottom"), "bottom")
     XCTAssertEqual(TEIRenderer.marginalArea(of: "top margin-left"), "top-left")
@@ -714,7 +714,7 @@ final class TEIRendererTests: XCTestCase {
 
   /// A page genuinely larger than its work's (a foldout: its scan wider
   /// than the body pages' by more than a margin) is its scan's own size, in
-  /// the work's em; a page of the body pages' size is its frame and its
+  /// the work's em; a page of the body pages' size is its type area and its
   /// marginalia with their margin.
   func testAGenuinelyLargerPageIsItsScansOwnSize() throws {
     let a = "https://example.org/iiif/a/full/1300,/0/default.jpg"
@@ -730,8 +730,8 @@ final class TEIRendererTests: XCTestCase {
       <text><body><pb n="1" facs="\(a)"/><p>Body.</p><pb n="2" facs="\(b)"/><p>Plate.</p></body></text></TEI>
       """
     let pages = TEIRenderer.pages(in: document)
-    XCTAssertEqual(pages[0].frame, TEIPageFrame(measure: 44, height: 55.9, head: 3, foot: 3, inner: 3, outer: 3))
-    XCTAssertEqual(pages[1].frame, TEIPageFrame(measure: 44, height: 55.9, head: 3, foot: 3, inner: 3, outer: 3, pageWidth: 120, pageHeight: 65))
+    XCTAssertEqual(pages[0].typeArea, TEIPageTypeArea(measure: 44, height: 55.9, head: 3, foot: 3, inner: 3, outer: 3))
+    XCTAssertEqual(pages[1].typeArea, TEIPageTypeArea(measure: 44, height: 55.9, head: 3, foot: 3, inner: 3, outer: 3, pageWidth: 120, pageHeight: 65))
   }
 
   /// A page read again is laid into the document with its zones: its body
@@ -1275,13 +1275,13 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(lines.map(\.opensParagraph), [false, true, false, true, true, false, true])
   }
 
-  /// An epigraph frames its lines, set as a whole by its rend; a note
+  /// An epigraph boxes its lines, set as a whole by its rend; a note
   /// stands a paragraph's space apart (user, 2026-10-11).
-  func testAnEpigraphFramesItsLines() {
+  func testAnEpigraphBoxesItsLines() {
     let lines = TEIRenderer.lines(
       in: #"<p>Before</p><epigraph rend="align(center) smaller"><cit><quote><lg><l rend="align(left)">A line<lb/></l></lg></quote><bibl rend="align(right)">Author<lb/></bibl></cit></epigraph><note type="binding" subtype="edition"><stamp>Stamp</stamp></note>"#)
     XCTAssertEqual(lines.map(\.text), ["Before", "A line", "Author", "Stamp"])
-    XCTAssertEqual(lines.map(\.frame), ["", "align(center) smaller", "align(center) smaller", ""])
+    XCTAssertEqual(lines.map(\.box), ["", "align(center) smaller", "align(center) smaller", ""])
     XCTAssertEqual(lines.map(\.rend), ["", "align(left)", "align(right)", ""])
     XCTAssertEqual(lines.map(\.opensParagraph), [true, true, true, true])
   }
@@ -1349,8 +1349,8 @@ final class TEIRendererTests: XCTestCase {
 
   /// A page's surface given its text block where the document keeps none:
   /// into the surface its figures have, its graphic sized, or a surface of
-  /// its own; a derived one (the work frame placed on a page with no main
-  /// text) read back as derived and never counted in the work frame. The
+  /// its own; a derived one (the work's type area placed on a page with no main
+  /// text) read back as derived and never counted in the work's type area. The
   /// surface is replaced only as found.
   func testATextBlockIsPlacedWhereTheDocumentKeepsNone() throws {
     let a = "https://example.org/iiif/a/full/max/0/default.jpg"
@@ -1374,7 +1374,7 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(blocks.map(\.id), ["p1-textblock", "p2-textblock"])
     XCTAssertEqual(blocks.map(\.derived), [false, true])
     XCTAssertEqual(TEIRenderer.pages(in: placed)[1].textBlock?.derived, true)
-    XCTAssertEqual(TEIFacsimile.workFrame(in: placed)?.body, 20)
+    XCTAssertEqual(TEIFacsimile.workTypeArea(in: placed)?.body, 20)
     // Only as found: a surface changed since is refused; backwards, it is as it was.
     XCTAssertNil(TEIFacsimile.replacingSurface("", with: second, of: pages[1], in: placed))
     XCTAssertNil(TEIFacsimile.replacingSurface(standing, with: first, of: pages[0], in: placed))
@@ -1420,7 +1420,7 @@ final class TEIRendererTests: XCTestCase {
   }
 
   /// A figure keeps its own setting (gnorium-python `base_tei._figure`: its size and its place across as the
-  /// scan has them, user 2026-10-28), which a framed page draws it at.
+  /// scan has them, user 2026-10-28), which a page set in its type area draws it at.
   func testAFigureKeepsItsSizeAndPlace() {
     let lines = TEIRenderer.lines(
       in: ##"<figure facs="#z-fig-1" style="inline-size:18.9em;block-size:21.5em;margin-inline-start:8.9em"/><p>A</p>"##)

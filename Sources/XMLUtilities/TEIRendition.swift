@@ -1,12 +1,12 @@
 #if SERVER
 import Foundation
 
-/// The frame a work's pages are set in (`TEIRendition.frameRendition`): its
+/// The type area a work's pages are set in (`TEIRendition.typeAreaRendition`): its
 /// body type on its scans, in their pixels per em, and in that em the main
 /// text block's measure and height and the leaf's four margins around a
 /// page's content (user, 2026-10-28: its head and foot, its inner margin at
-/// the fold and its outer at the fore-edge; gnorium-python `WorkFrame`).
-public struct TEIWorkFrame: Sendable, Equatable {
+/// the fold and its outer at the fore-edge; gnorium-python `WorkTypeArea`).
+public struct TEIWorkTypeArea: Sendable, Equatable {
   public let body: Double
   public let measure: Double
   public let height: Double
@@ -15,9 +15,9 @@ public struct TEIWorkFrame: Sendable, Equatable {
   public let inner: Double
   public let outer: Double
   /// The width of the work's scans in its em (`max-inline-size`; gnorium-python
-  /// `WorkFrame.width`, user, 2026-10-18): the book is set in one type, so a
+  /// `WorkTypeArea.width`, user, 2026-10-18): the book is set in one type, so a
   /// scan of it, at any resolution, has its em as its width over this. 0
-  /// where the frame does not declare it.
+  /// where the type area does not declare it.
   public let width: Double
 
   public init(
@@ -35,7 +35,7 @@ public struct TEIWorkFrame: Sendable, Equatable {
   }
 
   /// The smallest of its margins: by how much more a leaf must be larger
-  /// to be a page of its own size (`TEIPage.frame`).
+  /// to be a page of its own size (`TEIPage.typeArea`).
   public var leastMargin: Double { min(head, foot, inner, outer) }
 
   /// Its margins as CSS's `margin` in em, a recto's (head, right: its
@@ -47,13 +47,13 @@ public struct TEIWorkFrame: Sendable, Equatable {
   }
 }
 
-/// The frame one page is set in (`TEIPage.frame`), in em of its work's body
+/// The type area one page is set in (`TEIPage.typeArea`), in em of its work's body
 /// type: the main text block's measure and height, and the leaf's margins
 /// around the page's content, its inner one at the fold—a recto's left, a
 /// verso's right (`recto`: its own leaf's narrower side, user,
 /// 2026-10-28); and, for a page genuinely larger than its work's (a plate,
 /// a foldout), its own size (0 for any other page).
-public struct TEIPageFrame: Sendable, Equatable {
+public struct TEIPageTypeArea: Sendable, Equatable {
   public let measure: Double
   public let height: Double
   public let head: Double
@@ -120,11 +120,11 @@ public enum TEIRendition {
   static let startMargins: Set<String> = ["margin-top", "margin-block-start"]
   /// A block's margin after it: its last child's collapses with it.
   static let endMargins: Set<String> = ["margin-bottom", "margin-block-end"]
-  /// What draws a block's frame—a printed ruled box (`border-style`), its
+  /// What draws a block's box—a printed rule around it (`border-style`), its
   /// inset (`padding…`), its measure (`inline-size`), its own ground (a
   /// shaded box, a tinted panel: `background-color`)—and places it: its
   /// own box's, which no child takes.
-  public static let frameProperties: Set<String> = [
+  public static let boxProperties: Set<String> = [
     "border-style", "padding", "padding-block", "padding-inline", "padding-block-start", "padding-block-end",
     "padding-inline-start", "padding-inline-end", "inline-size", "block-size", "background-color",
   ]
@@ -181,7 +181,7 @@ public enum TEIRendition {
       if unit == "rem" { return (0.75 * fontSizes.lowerBound...3 * fontSizes.upperBound).contains(number) }
       return false
     case "inline-size", "block-size":
-      // A rule's or a frame's measure (a page's text block's height): up
+      // A rule's or a type area's measure (a page's text block's height): up
       // to a page's, never negative. Lengths are in the body type's em
       // (user, 2026-10-14), a page some sixty of them wide and eighty
       // tall: twice the page-em bounds they replace.
@@ -194,7 +194,7 @@ public enum TEIRendition {
       if unit == "" { return number == 0 }
       let bound = lengthBound(unit: unit)
       // A margin may be negative: a note in a margin placed over the
-      // frame's empty part, by its measured white (user, 2026-10-14).
+      // type area's empty part, by its measured white (user, 2026-10-14).
       return abs(number) <= bound
         && (number >= 0 || ["text-indent", "letter-spacing", "word-spacing"].contains(property) || property.hasPrefix("margin"))
     }
@@ -306,30 +306,30 @@ public enum TEIRendition {
     return declarations.map { "\($0.name):\($0.value);" }.joined()
   }
 
-  /// The work frame's rendition (gnorium-python `facsimile.frame_rendition`,
+  /// The work's type area's rendition (gnorium-python `facsimile.type_area_rendition`,
   /// user, 2026-10-14): the work's body type on its scans (`font-size`, in
   /// the scans' pixels, as its surfaces' graphics count them: type set on
   /// an image shown at its own pixels), and in that em the main text block
   /// every page of the text is set in—its measure (`inline-size`) and its
   /// height (`block-size`)—and the margin around a page's content
   /// (`margin`): the medians of its pages' measured main text blocks
-  /// (`TEIFacsimile.workFrame`). TEI's own CSS rendition of `<text>` in the
+  /// (`TEIFacsimile.workTypeArea`). TEI's own CSS rendition of `<text>` in the
   /// header's `<tagsDecl>`, so a document carries it and a page drawn alone
   /// is handed it with the rest (`header`); derived, written again whenever
   /// a page is laid in. Every em the TEI writes is this body type's.
-  public static let frameID = "text-block"
+  public static let typeAreaID = "text-block"
 
-  public static func frameRendition(_ frame: TEIWorkFrame) -> String {
-    "<rendition xml:id=\"\(frameID)\" scheme=\"css\" selector=\"text\">"
-      + "font-size:\(Length(value: frame.body, unit: "px").text);inline-size:\(Length(value: frame.measure, unit: "em").text);"
-      + "block-size:\(Length(value: frame.height, unit: "em").text);margin:\(frame.marginShorthand { Length(value: $0, unit: "em").text })"
-      + (frame.width > 0 ? ";max-inline-size:\(Length(value: frame.width, unit: "em").text)" : "") + "</rendition>"
+  public static func typeAreaRendition(_ typeArea: TEIWorkTypeArea) -> String {
+    "<rendition xml:id=\"\(typeAreaID)\" scheme=\"css\" selector=\"text\">"
+      + "font-size:\(Length(value: typeArea.body, unit: "px").text);inline-size:\(Length(value: typeArea.measure, unit: "em").text);"
+      + "block-size:\(Length(value: typeArea.height, unit: "em").text);margin:\(typeArea.marginShorthand { Length(value: $0, unit: "em").text })"
+      + (typeArea.width > 0 ? ";max-inline-size:\(Length(value: typeArea.width, unit: "em").text)" : "") + "</rendition>"
   }
 
-  /// The work frame the renditions declare (`frameID`); nil where they
+  /// The work's type area the renditions declare (`typeAreaID`); nil where they
   /// declare none, or one without its body type.
-  public static func frame(in definitions: [String: String]) -> TEIWorkFrame? {
-    guard let rend = definitions[frameID] else { return nil }
+  public static func typeArea(in definitions: [String: String]) -> TEIWorkTypeArea? {
+    guard let rend = definitions[typeAreaID] else { return nil }
     let setting = Setting(rend)
     guard let body = setting.length("font-size"), body.unit == "px", body.value > 0,
       let measure = setting.length("inline-size"), measure.unit == "em", measure.value > 0,
@@ -337,7 +337,7 @@ public enum TEIRendition {
       let margins = marginSides(setting.value("margin") ?? "")
     else { return nil }
     let width = setting.length("max-inline-size")
-    return TEIWorkFrame(
+    return TEIWorkTypeArea(
       body: body.value, measure: measure.value, height: height.value, head: margins.top, foot: margins.bottom,
       inner: margins.left, outer: margins.right, width: width?.unit == "em" ? width?.value ?? 0 : 0)
   }
@@ -345,10 +345,10 @@ public enum TEIRendition {
   /// CSS's `margin` shorthand in em (one to four lengths: every side; head
   /// and foot, sides; head, sides, foot; head, right, foot, left) as its
   /// four sides (gnorium-python `type_scale.margin_sides`); nil where it is
-  /// no such. A frame's is a recto's: its left its inner, its right its
+  /// no such. A type area's is a recto's: its left its inner, its right its
   /// outer.
   static func marginSides(_ value: String) -> (top: Double, right: Double, bottom: Double, left: Double)? {
-    // Its lengths apart by white, or by commas in a rend token (`frameTokens`), which white would part.
+    // Its lengths apart by white, or by commas in a rend token (`typeAreaTokens`), which white would part.
     let parts = value.split { $0.isWhitespace || $0 == "," }.map { Length(String($0).lowercased()) }
     guard (1...4).contains(parts.count), parts.allSatisfy({ $0?.unit == "em" && ($0?.value ?? -1) >= 0 }) else { return nil }
     let values = parts.compactMap { $0?.value }
@@ -360,9 +360,9 @@ public enum TEIRendition {
     }
   }
 
-  /// The work frame's declarations as tokens: its four lengths, each in its
-  /// unit (`frame(in:)`), never a property a page's text takes.
-  static func frameTokens(_ css: String) -> String {
+  /// The work's type area's declarations as tokens: its four lengths, each in its
+  /// unit (`typeArea(in:)`), never a property a page's text takes.
+  static func typeAreaTokens(_ css: String) -> String {
     let units = ["font-size": "px", "inline-size": "em", "block-size": "em", "margin": "em", "max-inline-size": "em"]
     return css.split(separator: ";").compactMap { declaration -> String? in
       let pair = declaration.split(separator: ":", maxSplits: 1)
@@ -379,22 +379,22 @@ public enum TEIRendition {
   public static func header(_ definitions: [String: String]) -> String {
     guard !definitions.isEmpty else { return "" }
     let entries = definitions.keys.sorted().map { id in
-      let selector = id == frameID ? " selector=\"text\"" : ""
-      let declared = id == frameID ? frame(in: definitions).map(frameDeclarations) ?? "" : css(from: definitions[id] ?? "")
+      let selector = id == typeAreaID ? " selector=\"text\"" : ""
+      let declared = id == typeAreaID ? typeArea(in: definitions).map(typeAreaDeclarations) ?? "" : css(from: definitions[id] ?? "")
       return "<rendition xml:id=\"\(XMLFormatter.escapingAttribute(id))\" scheme=\"css\"\(selector)>\(XMLFormatter.escapingAttribute(declared))</rendition>"
     }.joined()
     return XMLFormatter.prettified("<teiHeader><encodingDesc><tagsDecl>" + entries + "</tagsDecl></encodingDesc></teiHeader>")
   }
 
-  /// The work frame's declarations as its rendition writes them.
-  static func frameDeclarations(_ frame: TEIWorkFrame) -> String {
-    let rendition = frameRendition(frame)
+  /// The work's type area's declarations as its rendition writes them.
+  static func typeAreaDeclarations(_ typeArea: TEIWorkTypeArea) -> String {
+    let rendition = typeAreaRendition(typeArea)
     guard let open = rendition.firstIndex(of: ">"), let close = rendition.range(of: "</rendition>") else { return "" }
     return String(rendition[rendition.index(after: open)..<close.lowerBound])
   }
 
   /// The renditions a TEI document, page or header declares (its work
-  /// frame and type scale among them), as `TEIPage.renditions` keeps them.
+  /// type area and type scale among them), as `TEIPage.renditions` keeps them.
   public static func declarations(of xml: String) -> [String: String] {
     declarations(in: TEIMarkup.document(xml))
   }
@@ -429,27 +429,27 @@ public enum TEIRendition {
   }
 
   /// The witness's renditions over several declarations (each
-  /// `renditions(of:)` a header): the first frame declared, and every step,
+  /// `renditions(of:)` a header): the first type area declared, and every step,
   /// the first declaration of an id kept—a later measurement only adds
-  /// steps. As a header declares them: the frame first, then each kind's
+  /// steps. As a header declares them: the type area first, then each kind's
   /// steps in id order; any other rendition is no part of them.
   /// gnorium-python `type_scale.joined(declared).xml`, the reference.
   public static func joined(_ declared: [String]) -> String {
-    var frame: TEIWorkFrame?
+    var typeArea: TEIWorkTypeArea?
     var steps: [(id: String, kind: String, value: Double)] = []
     for renditions in declared {
       let scale = scale(of: renditions)
-      frame = frame ?? scale.frame
+      typeArea = typeArea ?? scale.typeArea
       for step in scale.steps where !steps.contains(where: { $0.id == step.id }) { steps.append(step) }
     }
     func order(_ step: (id: String, kind: String, value: Double)) -> (Int, Int) {
       (stepKinds.firstIndex(of: step.kind) ?? 0, Int(step.id.split(separator: "-").last ?? "") ?? 0)
     }
-    let header = frame.map { frame in
-      "<rendition xml:id=\"\(frameID)\" scheme=\"css\" selector=\"text\">"
-        + "font-size:\(String(format: "%.2f", frame.body))px;inline-size:\(String(format: "%.2f", frame.measure))em;"
-        + "block-size:\(String(format: "%.2f", frame.height))em;margin:\(frame.marginShorthand { String(format: "%.2f", $0) + "em" })"
-        + (frame.width > 0 ? ";max-inline-size:\(String(format: "%.2f", frame.width))em" : "") + "</rendition>"
+    let header = typeArea.map { typeArea in
+      "<rendition xml:id=\"\(typeAreaID)\" scheme=\"css\" selector=\"text\">"
+        + "font-size:\(String(format: "%.2f", typeArea.body))px;inline-size:\(String(format: "%.2f", typeArea.measure))em;"
+        + "block-size:\(String(format: "%.2f", typeArea.height))em;margin:\(typeArea.marginShorthand { String(format: "%.2f", $0) + "em" })"
+        + (typeArea.width > 0 ? ";max-inline-size:\(String(format: "%.2f", typeArea.width))em" : "") + "</rendition>"
     } ?? ""
     return header
       + steps.sorted { order($0) < order($1) }.map { step in
@@ -457,12 +457,12 @@ public enum TEIRendition {
       }.joined()
   }
 
-  /// The frame and steps `renditions` declare (gnorium-python
-  /// `type_scale.parse`): the work frame (`frameID`), its body type in px
+  /// The type area and steps `renditions` declare (gnorium-python
+  /// `type_scale.parse`): the work's type area (`typeAreaID`), its body type in px
   /// and its lengths in em, and each step (`size-1`…), its value in rem;
   /// a rendition that is neither is no part of them.
-  static func scale(of renditions: String) -> (frame: TEIWorkFrame?, steps: [(id: String, kind: String, value: Double)]) {
-    var frame: TEIWorkFrame?
+  static func scale(of renditions: String) -> (typeArea: TEIWorkTypeArea?, steps: [(id: String, kind: String, value: Double)]) {
+    var typeArea: TEIWorkTypeArea?
     var steps: [(id: String, kind: String, value: Double)] = []
     func length(_ value: String?, _ unit: String) -> Double? {
       guard let value, let length = Length(value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()),
@@ -480,11 +480,11 @@ public enum TEIRendition {
         css[pair[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] =
           pair[1].trimmingCharacters(in: .whitespacesAndNewlines)
       }
-      if id == frameID {
+      if id == typeAreaID {
         if let body = length(css["font-size"], "px"), body > 0, let measure = length(css["inline-size"], "em"),
           let height = length(css["block-size"], "em"), let margins = marginSides(css["margin"] ?? "")
         {
-          frame = TEIWorkFrame(
+          typeArea = TEIWorkTypeArea(
             body: body, measure: measure, height: height, head: margins.top, foot: margins.bottom, inner: margins.left,
             outer: margins.right, width: length(css["max-inline-size"], "em") ?? 0)
         }
@@ -494,7 +494,7 @@ public enum TEIRendition {
       let kind = String(id.prefix { $0 != "-" })
       if let value = length(css[stepProperty[kind] ?? ""], "rem") { steps.append((id, kind, value)) }
     }
-    return (frame, steps)
+    return (typeArea, steps)
   }
 
   /// `document` with `renditions` as its header's `<tagsDecl>`, in place of
@@ -543,7 +543,7 @@ public enum TEIRendition {
   }
 
   /// `document` with a page's renditions (`renditions`, as a page's header
-  /// declares them) joined into its header's (`joined`): its frame where it
+  /// declares them) joined into its header's (`joined`): its type area where it
   /// declares none, its steps beside the document's, a step the document
   /// declares keeping its id and value—as the assembly joins its pages'
   /// (gnorium-python `concatenate_tei`). The document as it was where the
@@ -565,7 +565,7 @@ public enum TEIRendition {
   }
 
   /// The renditions of `declared` (each `renditions(of:)` a header) that
-  /// are neither the work frame nor a step of the scale (`joined` leaves
+  /// are neither the work's type area nor a step of the scale (`joined` leaves
   /// them out): a furniture role's placement (`fw-header`), a centering
   /// step (`align-center-1`), a display line's spacing or place, a block's
   /// indent, the tracking steps, a space's character (gnorium-python
@@ -578,7 +578,7 @@ public enum TEIRendition {
     for renditions in declared {
       for written in renditionElements(in: renditions) {
         let id = identifier(of: written)
-        guard !id.isEmpty, id != frameID, !isStep(id), seen.insert(id).inserted else { continue }
+        guard !id.isEmpty, id != typeAreaID, !isStep(id), seen.insert(id).inserted else { continue }
         out += written
       }
     }
@@ -617,11 +617,11 @@ public enum TEIRendition {
   }
 
   /// A written `<rendition>`'s declaration, compared as a header's are
-  /// read (`tokens`, the frame's `frameTokens`), else as written.
+  /// read (`tokens`, the type area's `typeAreaTokens`), else as written.
   static func declaration(of written: String) -> String {
     guard let element = read(written) else { return "" }
     let text = element.text.trimmingCharacters(in: .whitespacesAndNewlines)
-    let read = element.id == frameID ? frameTokens(text) : tokens(text)
+    let read = element.id == typeAreaID ? typeAreaTokens(text) : tokens(text)
     return read.isEmpty ? text : read
   }
 
@@ -654,7 +654,7 @@ public enum TEIRendition {
     for written in own {
       let id = identifier(of: written)
       let declared = declaration(of: written)
-      guard !id.isEmpty, id != frameID, let theirs = standing[id], theirs != declared else {
+      guard !id.isEmpty, id != typeAreaID, let theirs = standing[id], theirs != declared else {
         out += written
         continue
       }
@@ -698,7 +698,7 @@ public enum TEIRendition {
   }
 
   /// `document` with `renditions` (a page's header's, as a person edited
-  /// it) laid over its header's: each frame and step `renditions` declares
+  /// it) laid over its header's: each type area and step `renditions` declares
   /// in place of the document's, the document's others kept (`joined`,
   /// `renditions` first). The document as it was where that declares
   /// nothing new—read as the witness's renditions, not as written.
@@ -780,7 +780,7 @@ public enum TEIRendition {
     func visit(_ node: TEIMarkup.Element) {
       if node.name == "rendition", ["", "css"].contains(node.attribute("scheme")), !node.attribute("xml:id").isEmpty {
         let id = node.attribute("xml:id")
-        result[id] = id == frameID ? frameTokens(node.textContent) : tokens(node.textContent)
+        result[id] = id == typeAreaID ? typeAreaTokens(node.textContent) : tokens(node.textContent)
       }
       for child in node.elements { visit(child) }
     }
@@ -911,7 +911,7 @@ public enum TEIRendition {
   /// margin before it at its first block (collapsed with its own)—and
   /// what it sets overrides the same property only. Its font-size in em
   /// or % counts its parent's; a length in rem is the body type's
-  /// (`inEm`). The parent's frame and its margin after
+  /// (`inEm`). The parent's box and its margin after
   /// it are its own box's, never passed on (`closing(_:within:)`). A
   /// keyword overrides the parent's of its kind (an alignment, an indent,
   /// an ink, a typeface, a step of size); any other is kept beside it.
@@ -931,9 +931,9 @@ public enum TEIRendition {
     }
     let factor = own.relativeFont
     if case .block(let first) = placement {
-      // The parent's own box: its frame, its margin after it, and its
+      // The parent's own box: its box properties, its margin after it, and its
       // margin before it unless this is its first block.
-      result.remove(frameProperties.union(endMargins).union(["column-gap"]))
+      result.remove(boxProperties.union(endMargins).union(["column-gap"]))
       if !first { result.remove(startMargins) }
       // An inherited length is inherited as computed: in the child's em.
       if let factor, factor != 1 {
@@ -976,7 +976,7 @@ public enum TEIRendition {
 
   /// A child's rend with its lengths in rem—the steps of its witness's
   /// type scale (gnorium-python `type_scale`), in the body type, CSS's root
-  /// em: the `<text>` the work frame sets at the body type—as em of its
+  /// em: the `<text>` the work's type area sets at the body type—as em of its
   /// own font, as the cascade counts them: its font-size over its parent's
   /// computed font (`fontSize(of:)`), every other length over its own. A
   /// step means one size wherever it is referenced.
@@ -1029,28 +1029,28 @@ public enum TEIRendition {
     }
   }
 
-  /// A frame's own box, counted in the font around it: its border, inset,
+  /// A box's own setting, counted in the font around it: its border, inset,
   /// measure and margins, an em of its own font read in the font of what
   /// it stands in (the page's, where `rend`'s font-size is relative to it).
-  public static func frame(of rend: String) -> String {
+  public static func box(of rend: String) -> String {
     let setting = Setting(rend)
-    var frame = Setting("")
+    var box = Setting("")
     let factor = setting.relativeFont ?? 1
-    let box = frameProperties.union(inlineMargins).union(startMargins).union(endMargins)
-    for entry in setting.entries where entry.key.hasPrefix("css:") && box.contains(String(entry.key.dropFirst(4))) {
+    let own = boxProperties.union(inlineMargins).union(startMargins).union(endMargins)
+    for entry in setting.entries where entry.key.hasPrefix("css:") && own.contains(String(entry.key.dropFirst(4))) {
       let property = String(entry.key.dropFirst(4))
       guard let value = setting.value(property) else { continue }
       if let length = Length(value) {
-        frame.set(property, Length(value: length.unit == "em" ? length.value * factor : length.value, unit: length.unit))
+        box.set(property, Length(value: length.unit == "em" ? length.value * factor : length.value, unit: length.unit))
       } else {
-        frame.set("css:" + property, "css:\(property)=\(value)")
+        box.set("css:" + property, "css:\(property)=\(value)")
       }
     }
-    // Its alignment too: a framed block set centered (an owner's pasted
+    // Its alignment too: a boxed block set centered (an owner's pasted
     // bookplate regularized to the head's middle, user, 2026-10-14) is a
     // box centered, not only its lines.
-    for entry in setting.entries where entry.key == "align(" { frame.set(entry.key, entry.token) }
-    return frame.rend
+    for entry in setting.entries where entry.key == "align(" { box.set(entry.key, entry.token) }
+    return box.rend
   }
 
   /// A block's rend inside a column container that draws the container's
@@ -1069,17 +1069,17 @@ public enum TEIRendition {
     return inner.rend
   }
 
-  /// What a framed block's lines take of its setting: all but the frame's
-  /// own box (`frame(of:)`), which the frame draws.
-  public static func inside(frame rend: String) -> String {
+  /// What a boxed block's lines take of its setting: all but the box's
+  /// own setting (`box(of:)`), which the box draws.
+  public static func inside(box rend: String) -> String {
     var setting = Setting(rend)
-    setting.remove(frameProperties.union(inlineMargins).union(startMargins).union(endMargins))
+    setting.remove(boxProperties.union(inlineMargins).union(startMargins).union(endMargins))
     return setting.rend
   }
 
-  /// Whether a rend draws a frame around its block: a printed rule
+  /// Whether a rend draws a box around its block: a printed rule
   /// (`border-style`) or a ground of its own (`background-color`).
-  public static func frames(_ rend: String) -> Bool {
+  public static func drawsBox(_ rend: String) -> Bool {
     let setting = Setting(rend)
     if setting.value("background-color") != nil { return true }
     guard let style = setting.value("border-style") else { return false }
@@ -1101,8 +1101,8 @@ public enum TEIRendition {
     return scalars.dropFirst().allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) || ("A"..."F").contains($0) }
   }
 
-  /// A column container's gap, counted in the font around it, as `frame`
-  /// counts a frame's box: nil where it sets none.
+  /// A column container's gap, counted in the font around it, as `box(of:)`
+  /// counts a box's: nil where it sets none.
   public static func columnGap(of rend: String) -> String? {
     let setting = Setting(rend)
     guard let gap = setting.length("column-gap") else { return nil }

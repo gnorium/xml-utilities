@@ -22,7 +22,7 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertTrue(TEIRendition.valid(property: "font-variant-numeric", value: "oldstyle-nums"))
     XCTAssertTrue(TEIRendition.valid(property: "font-variant-numeric", value: "lining-nums"))
     XCTAssertFalse(TEIRendition.valid(property: "font-variant-numeric", value: "tabular-nums"))
-    // A note over the frame's empty part keeps its measured, negative white.
+    // A note over the type area's empty part keeps its measured, negative white.
     XCTAssertTrue(TEIRendition.valid(property: "margin-block-end", value: "-14.5em"))
     XCTAssertFalse(TEIRendition.valid(property: "padding", value: "-1em"))
     XCTAssertEqual(
@@ -78,38 +78,38 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertTrue(TEIRendition.css(from: line.rend).hasSuffix("letter-spacing:0.576em;margin-inline-end:-0.576em;"))
   }
 
-  /// The work frame's rendition keeps its body type in the scans' pixels
+  /// The work's type area's rendition keeps its body type in the scans' pixels
   /// and its lengths in that em, whatever a page's text may write.
-  func testTheWorkFrameKeepsItsBodyTypeAndMargin() {
-    let frame = TEIWorkFrame(body: 44.78, measure: 54.8, height: 64.86, head: 4.07, foot: 4.07, inner: 4.07, outer: 4.07)
-    let rendition = TEIRendition.frameRendition(frame)
+  func testTheWorksTypeAreaKeepsItsBodyTypeAndMargin() {
+    let typeArea = TEIWorkTypeArea(body: 44.78, measure: 54.8, height: 64.86, head: 4.07, foot: 4.07, inner: 4.07, outer: 4.07)
+    let rendition = TEIRendition.typeAreaRendition(typeArea)
     XCTAssertEqual(
       rendition,
       #"<rendition xml:id="text-block" scheme="css" selector="text">font-size:44.78px;inline-size:54.8em;block-size:64.86em;margin:4.07em</rendition>"#)
     let document = "<TEI><teiHeader><encodingDesc><tagsDecl>" + rendition
       + "</tagsDecl></encodingDesc></teiHeader><text><body><pb n=\"1\" facs=\"https://example.org/a.jpg\"/><p>A</p></body></text></TEI>"
     let read = try! XCTUnwrap(TEIRenderer.pages(in: document).first).renditions
-    XCTAssertEqual(TEIRendition.frame(in: read), frame)
+    XCTAssertEqual(TEIRendition.typeArea(in: read), typeArea)
     XCTAssertTrue(TEIRendition.header(read).contains(">font-size:44.78px;inline-size:54.8em;block-size:64.86em;margin:4.07em<"))
     // The scans' width in that em, where it is declared (the book's one em).
-    let wide = TEIWorkFrame(body: 44.78, measure: 54.8, height: 64.86, head: 4.07, foot: 4.07, inner: 4.07, outer: 4.07, width: 61.45)
-    XCTAssertTrue(TEIRendition.frameRendition(wide).hasSuffix("margin:4.07em;max-inline-size:61.45em</rendition>"))
+    let wide = TEIWorkTypeArea(body: 44.78, measure: 54.8, height: 64.86, head: 4.07, foot: 4.07, inner: 4.07, outer: 4.07, width: 61.45)
+    XCTAssertTrue(TEIRendition.typeAreaRendition(wide).hasSuffix("margin:4.07em;max-inline-size:61.45em</rendition>"))
     // The leaf's four margins (user, 2026-10-28), a recto's: head, right (its
     // outer), foot, left (its inner), as gnorium-python declares them, read back.
-    let leaf = TEIWorkFrame(body: 44.78, measure: 54.8, height: 64.86, head: 7.3, foot: 11.5, inner: 10.4, outer: 12.7)
-    let declared = TEIRendition.frameRendition(leaf)
+    let leaf = TEIWorkTypeArea(body: 44.78, measure: 54.8, height: 64.86, head: 7.3, foot: 11.5, inner: 10.4, outer: 12.7)
+    let declared = TEIRendition.typeAreaRendition(leaf)
     XCTAssertTrue(declared.contains("margin:7.3em 12.7em 11.5em 10.4em<"))
     let fourSided = "<TEI><teiHeader><encodingDesc><tagsDecl>" + declared
       + "</tagsDecl></encodingDesc></teiHeader><text><body><pb n=\"1\" facs=\"https://example.org/a.jpg\"/><p>A</p></body></text></TEI>"
     let leafRead = try! XCTUnwrap(TEIRenderer.pages(in: fourSided).first).renditions
-    XCTAssertEqual(TEIRendition.frame(in: leafRead), leaf)
+    XCTAssertEqual(TEIRendition.typeArea(in: leafRead), leaf)
     XCTAssertTrue(TEIRendition.header(leafRead).contains(";margin:7.3em 12.7em 11.5em 10.4em<"))
-    let wideDocument = "<TEI><teiHeader><encodingDesc><tagsDecl>" + TEIRendition.frameRendition(wide)
+    let wideDocument = "<TEI><teiHeader><encodingDesc><tagsDecl>" + TEIRendition.typeAreaRendition(wide)
       + "</tagsDecl></encodingDesc></teiHeader><text><body><pb n=\"1\" facs=\"https://example.org/a.jpg\"/><p>A</p></body></text></TEI>"
     let wideRead = try! XCTUnwrap(TEIRenderer.pages(in: wideDocument).first).renditions
-    XCTAssertEqual(TEIRendition.frame(in: wideRead), wide)
-    // Without its body type, no frame.
-    XCTAssertNil(TEIRendition.frame(in: [TEIRendition.frameID: "css:inline-size=35.2em css:block-size=44.72em"]))
+    XCTAssertEqual(TEIRendition.typeArea(in: wideRead), wide)
+    // Without its body type, no type area.
+    XCTAssertNil(TEIRendition.typeArea(in: [TEIRendition.typeAreaID: "css:inline-size=35.2em css:block-size=44.72em"]))
   }
 
   func testDivisionStyleCascadesToItsParagraphs() {
@@ -170,7 +170,7 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertEqual(collapsed.last?.rend, "css:margin-block-end=3em")
   }
 
-  func testPrintedRuleColumnsFrameAndPhraseStyle() throws {
+  func testPrintedRuleColumnsBoxAndPhraseStyle() throws {
     let rule = TEIRenderer.lines(in: #"<p>A</p><milestone unit="section" rend="rule align(center)" style="inline-size:12em"/><p>B</p>"#)
     guard case .rule = rule[1].kind else { return XCTFail("no rule") }
     XCTAssertEqual(rule[1].rend, "rule align(center) css:inline-size=12em")
@@ -180,27 +180,27 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertEqual(TEIRendition.columnGap(of: note[0].columnRend), "1em")
     XCTAssertEqual(TEIRendition.columnMargins(of: note[0].columnRend), "padding-inline-start:0.5em;")
     XCTAssertEqual(TEIRendition.inColumns(note[0].rend, of: note[0].columnRend), "align(justify) css:font-size=0.5em css:column-gap=2em")
-    let framed = TEIRenderer.lines(
+    let boxed = TEIRenderer.lines(
       in: #"<note type="binding" subtype="edition" style="border-style:solid;padding:1em;inline-size:20em;margin-inline-start:8em"><p rend="color(blue)" style="font-size:0.5em">Gift</p></note>"#)
-    XCTAssertEqual(framed[0].frame, "css:border-style=solid css:padding=1em css:inline-size=20em css:margin-inline-start=8em")
-    XCTAssertEqual(framed[0].rend, "color(blue) css:font-size=0.5em")
+    XCTAssertEqual(boxed[0].box, "css:border-style=solid css:padding=1em css:inline-size=20em css:margin-inline-start=8em")
+    XCTAssertEqual(boxed[0].rend, "color(blue) css:font-size=0.5em")
     // A run of lines on a ground of its own (user, 2026-10-25: a shaded
     // box, gnorium-python `base_tei.fills`): its rendition's
-    // `background-color` and its inset frame its lines, drawn as encoded;
+    // `background-color` and its inset box its lines, drawn as encoded;
     // a color that is no "#rrggbb" is none, and the run after it is no
     // part of it.
     let filled = TEIRenderer.lines(
       in: ##"<TEI><teiHeader><encodingDesc><tagsDecl><rendition xml:id="fill-d7e4f3" scheme="css">background-color:#D7E4F3</rendition></tagsDecl></encodingDesc></teiHeader><text><body><ab rendition="#fill-d7e4f3" rend="color(red)" style="padding:1em"><lb/>Boxed<lb/>lines</ab><ab><lb/>After</ab><ab style="background-color:blue"><lb/>Plain</ab></body></text></TEI>"##)
     XCTAssertEqual(filled.map(\.text), ["Boxed", "lines", "After", "Plain"])
-    XCTAssertEqual(filled[0].frame, "css:background-color=#d7e4f3 css:padding=1em")
-    XCTAssertEqual(filled[1].frame, filled[0].frame)
-    XCTAssertEqual(filled[2].frame, "")
-    XCTAssertEqual(filled[3].frame, "")
+    XCTAssertEqual(filled[0].box, "css:background-color=#d7e4f3 css:padding=1em")
+    XCTAssertEqual(filled[1].box, filled[0].box)
+    XCTAssertEqual(filled[2].box, "")
+    XCTAssertEqual(filled[3].box, "")
     // The page's own pair on its <pb> (its ground, its default ink's
-    // class) is the theme's: no frame and no color on any line.
+    // class) is the theme's: no box and no color on any line.
     let cover = TEIRenderer.lines(
       in: ##"<TEI><teiHeader><encodingDesc><tagsDecl><rendition xml:id="ground-1c2230" scheme="css">background-color:#1c2230</rendition></tagsDecl></encodingDesc></teiHeader><text><body><pb n="Front cover" rendition="#ground-1c2230" rend="color(yellow)"/><lb/>HAMLET</body></text></TEI>"##)
-    XCTAssertTrue(cover.allSatisfy { $0.frame.isEmpty && !$0.rend.contains("color") })
+    XCTAssertTrue(cover.allSatisfy { $0.box.isEmpty && !$0.rend.contains("color") })
     // An ink is its class (`color(NAME)`, user, 2026-10-29), never a
     // sampled shade: a rendition's `color` is no part of the grammar, and
     // a line it points to is drawn in the page's ink.
@@ -209,7 +209,7 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertFalse(sampled[0].rend.contains("color"))
     XCTAssertEqual(sampled[1].rend, "color(red)")
     XCTAssertFalse(TEIRendition.valid(property: "color", value: "#b03a2e"))
-    XCTAssertTrue(TEIRendition.frames("css:background-color=#d7e4f3"))
+    XCTAssertTrue(TEIRendition.drawsBox("css:background-color=#d7e4f3"))
     XCTAssertFalse(TEIRendition.valid(property: "background-color", value: "#d7e4f"))
     let leader = TEIRenderer.lines(in: #"<p style="letter-spacing:0.05em">Title <pc style="word-spacing:2.5em">. . .</pc></p>"#)
     XCTAssertEqual(leader[0].rend, "css:letter-spacing=0.05em")
@@ -238,7 +238,7 @@ final class TEIRenditionTests: XCTestCase {
     let standing = try fixture("standing").trimmingCharacters(in: .whitespacesAndNewlines)
     let joined = TEIRendition.joined([standing] + pages)
     XCTAssertEqual(joined, try fixture("joined-standing"))
-    // The standing frame and size-1 are kept; its size-7 and gap-5 stay
+    // The standing type area and size-1 are kept; its size-7 and gap-5 stay
     // beside the pages' steps; what is no step goes.
     XCTAssertTrue(joined.hasPrefix(#"<rendition xml:id="text-block" scheme="css" selector="text">font-size:46.10px;"#))
     XCTAssertTrue(joined.contains("font-size:0.83rem") && joined.contains(#"xml:id="size-7""#) && joined.contains(#"xml:id="gap-5""#))
@@ -262,17 +262,17 @@ final class TEIRenditionTests: XCTestCase {
   /// declares none, the document's kept where it does, and the document
   /// as it was when the page adds nothing.
   func testAPageRenditionsJoinTheDocumentHeader() {
-    let frame = #"<rendition xml:id="text-block" scheme="css" selector="text">font-size:45.89px;inline-size:54.54em;block-size:75.62em;margin:3.99em</rendition>"#
+    let typeArea = #"<rendition xml:id="text-block" scheme="css" selector="text">font-size:45.89px;inline-size:54.54em;block-size:75.62em;margin:3.99em</rendition>"#
     let size = #"<rendition xml:id="size-1" scheme="css">font-size:0.8251rem</rendition>"#
     let document = #"<TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><fileDesc><titleStmt><title>T</title></titleStmt></fileDesc><encodingDesc><p>Joined.</p></encodingDesc></teiHeader><text><body><p>A</p></body></text></TEI>"#
-    let joined = TEIRendition.joining(frame + size, into: document)
-    XCTAssertEqual(TEIRendition.renditions(of: joined), frame + size)
+    let joined = TEIRendition.joining(typeArea + size, into: document)
+    XCTAssertEqual(TEIRendition.renditions(of: joined), typeArea + size)
     XCTAssertTrue(
       joined.contains(
         """
         <encodingDesc>
             <tagsDecl>
-              \(frame)
+              \(typeArea)
               \(size)
             </tagsDecl><p>Joined.</p></encodingDesc>
         """))
@@ -281,7 +281,7 @@ final class TEIRenditionTests: XCTestCase {
     let other = #"<rendition xml:id="size-1" scheme="css">font-size:0.9rem</rendition><rendition xml:id="gap-1" scheme="css">margin-block-start:0.7845rem</rendition>"#
     XCTAssertEqual(
       TEIRendition.renditions(of: TEIRendition.joining(other, into: joined)),
-      frame + size + #"<rendition xml:id="gap-1" scheme="css">margin-block-start:0.7845rem</rendition>"#)
+      typeArea + size + #"<rendition xml:id="gap-1" scheme="css">margin-block-start:0.7845rem</rendition>"#)
     // A document with no header is given one, formatted one element per line.
     XCTAssertEqual(
       TEIRendition.joining(size, into: "<TEI><text/></TEI>"),
@@ -309,7 +309,7 @@ final class TEIRenditionTests: XCTestCase {
       </TEI>
       """
     XCTAssertEqual(
-      TEIRendition.declaring(frame + size, in: explicated),
+      TEIRendition.declaring(typeArea + size, in: explicated),
       """
       <TEI xmlns="http://www.tei-c.org/ns/1.0">
         <teiHeader>
@@ -320,7 +320,7 @@ final class TEIRenditionTests: XCTestCase {
           </fileDesc>
           <encodingDesc>
             <tagsDecl>
-              \(frame)
+              \(typeArea)
               \(size)
             </tagsDecl>
           </encodingDesc>

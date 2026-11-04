@@ -81,51 +81,51 @@
       return named
     }
 
-    /// The frame the page is set in (user, 2026-10-14): the work's
-    /// (`TEIRendition.frame(in:)`, its header's), else the page's own
-    /// measured main text block (`TEITextBlock.frame`), else none. The
-    /// page is its frame and its marginalia with the frame's margin, equal,
+    /// The type area the page is set in (user, 2026-10-14): the work's
+    /// (`TEIRendition.typeArea(in:)`, its header's), else the page's own
+    /// measured main text block (`TEITextBlock.typeArea`), else none. The
+    /// page is its type area and its marginalia with the type area's margin, equal,
     /// around them (`TEIView`), unless it is genuinely larger than its
     /// work's pages (a plate, a foldout, a manuscript leaf): its leaf
     /// larger than theirs by more than a margin either way. Then it is its
-    /// leaf's own size, at the same scale (`TEIPageFrame.page`). Leaves,
+    /// leaf's own size, at the same scale (`TEIPageTypeArea.page`). Leaves,
     /// never photographs: a photograph of an opening, a ruler beside it, is
     /// no larger page, and every leaf of a size is one box, its blank's
     /// mark where every other blank's is (user, 2026-10-26).
     /// A page with no type of its own and no main text, but something its
     /// zones place on its kept leaf (Hamlet Q1's front cover), is its leaf
-    /// (`leafFrame`), whatever frame its work declares: framed by the
+    /// (`leafTypeArea`), whatever type area its work declares: set in the
     /// work's under the integrated header (user, 2026-10-31), the cover's
     /// text block was the work's measure, which the reader's overlay and
     /// the structure check lay its scan's text block on, its gilt drawn
     /// off its lettering; as filed, before Integration, it is its leaf.
-    public var frame: TEIPageFrame? {
-      Self.leafFrame(of: textBlock, lines: lines)
-        ?? Self.frame(renditions: renditions, textBlock: textBlock, workPage: workPage)
+    public var typeArea: TEIPageTypeArea? {
+      Self.leafTypeArea(of: textBlock, lines: lines)
+        ?? Self.typeArea(renditions: renditions, textBlock: textBlock, workPage: workPage)
     }
 
     /// The page's scan's width in the em the page is set in (TEIView's
-    /// `data-scan-em`, the reader's overlay's type scale), the frame's
-    /// (`frame`) own rule: a page framed by its leaf (`leafFrame`) at its
+    /// `data-scan-em`, the reader's overlay's type scale), the type area's
+    /// (`typeArea`) own rule: a page set in its leaf (`leafTypeArea`) at its
     /// leaf's width over `leafMeasure`, whatever type its work or its scan
     /// declares (user, 2026-11-03: Hamlet Q1's front cover was laid at its
     /// work's em, its text pages' photographs 80.61 em across, where its
-    /// edition sets its leaf 38 em wide: the overlay drew the gilt frame and
+    /// edition sets its leaf 38 em wide: the overlay drew the gilt border and
     /// corner ornaments at 0.63 of the scan's, hung from the board's top);
-    /// else its scan's own body type (`TEITextBlock.frame`), else its work's
-    /// frame's (`TEIRendition.frame(in:)`, `max-inline-size`). Nil where
+    /// else its scan's own body type (`TEITextBlock.typeArea`), else its work's
+    /// type area's (`TEIRendition.typeArea(in:)`, `max-inline-size`). Nil where
     /// none gives a width.
     public var scanWidth: Double? {
-      if let block = textBlock, case _? = Self.leafFrame(of: block, lines: lines), let leaf = block.leafBox {
+      if let block = textBlock, case _? = Self.leafTypeArea(of: block, lines: lines), let leaf = block.leafBox {
         return Self.leafMeasure * block.imageWidth / (leaf.right - leaf.left)
       }
-      if let own = textBlock?.frame, own.width > 0 { return own.width }
-      if let work = TEIRendition.frame(in: renditions), work.width > 0 { return work.width }
+      if let own = textBlock?.typeArea, own.width > 0 { return own.width }
+      if let work = TEIRendition.typeArea(in: renditions), work.width > 0 { return work.width }
       return nil
     }
 
     /// The width in em a page with no type of its own lays its leaf at
-    /// (`leafFrame`): the canonical render's page (TEIView's, 640 px less
+    /// (`leafTypeArea`): the canonical render's page (TEIView's, 640 px less
     /// its 16 px gutters, at its 16 px em).
     public static let leafMeasure = 38.0
 
@@ -135,16 +135,16 @@
     /// (`placedByZone`).
     public static let capHeight = 0.714
 
-    /// The frame of a page with no frame of its own (no work frame, no body
+    /// The type area of a page with no type area of its own (no work type area, no body
     /// type measured on its scan: a board lettered in gilt, Hamlet Q1's
     /// front cover, 2026-10-30) that sets no main text (`isMainText`) but
     /// a line or a figure its zone places: its leaf, `leafMeasure` em wide,
     /// at its own proportions, no margin around it, each line and figure
     /// set on it at its zone (`placedByZone`). Without it such a page was
-    /// unframed and nothing on it placed: its lettering ran at the top left
+    /// without a type area and nothing on it placed: its lettering ran at the top left
     /// at the reader's size, its crest at its drawing's own pixels. Nil
     /// where the page keeps no leaf or its scan's size is not given.
-    static func leafFrame(of textBlock: TEITextBlock?, lines: [TEILine]) -> TEIPageFrame? {
+    static func leafTypeArea(of textBlock: TEITextBlock?, lines: [TEILine]) -> TEIPageTypeArea? {
       guard !lines.contains(where: isMainText),
         lines.contains(where: { line in
           if case .figure(_, _?, _) = line.kind { return true }
@@ -153,15 +153,15 @@
         }),
         let block = textBlock, block.imageWidth > 0, block.imageHeight > 0, let leaf = block.leafBox
       else { return nil }
-      return TEIPageFrame(
+      return TEIPageTypeArea(
         measure: leafMeasure, height: leafMeasure * (leaf.bottom - leaf.top) / (leaf.right - leaf.left), head: 0,
         foot: 0, inner: 0, outer: 0)
     }
 
-    static func frame(
+    static func typeArea(
       renditions: [String: String], textBlock: TEITextBlock?, workPage: (width: Double, height: Double)?
-    ) -> TEIPageFrame? {
-      guard let work = TEIRendition.frame(in: renditions) ?? textBlock?.frame else { return nil }
+    ) -> TEIPageTypeArea? {
+      guard let work = TEIRendition.typeArea(in: renditions) ?? textBlock?.typeArea else { return nil }
       var page: (width: Double, height: Double)?
       if let workPage, let textBlock, textBlock.imageWidth > 0, textBlock.imageHeight > 0,
         textBlock.paperWidth - workPage.width > work.leastMargin * work.body
@@ -169,7 +169,7 @@
       {
         page = (textBlock.paperWidth / work.body, textBlock.paperHeight / work.body)
       }
-      return TEIPageFrame(
+      return TEIPageTypeArea(
         measure: work.measure, height: work.height, head: work.head, foot: work.foot, inner: work.inner,
         outer: work.outer, recto: textBlock?.recto ?? true, pageWidth: page?.width ?? 0, pageHeight: page?.height ?? 0)
     }
@@ -188,7 +188,7 @@
 
     /// Where a line set in a box of its own (`placedByZone`: its zone's
     /// width, centered in it) runs, reflowed (user, 2026-11-03): about its
-    /// box's middle, as far either way as the nearer side of the frame's
+    /// box's middle, as far either way as the nearer side of the type area's
     /// `measure` (in the page's em) lets it, never narrower than its box;
     /// its start and its size in its own em, as its setting writes its box.
     /// Its box is its ink's width, which the edition face fills to within a
@@ -228,24 +228,24 @@
     /// none—a binding's board lettered in gilt (Hamlet Q1's front cover),
     /// whose lettering is copy evidence, set without a setting of its
     /// own—and its crest was drawn at the head of the pane, at its
-    /// drawing's own pixels, its lettering at the top left. Framed, such a
-    /// page is its leaf laid at the frame's scale (`TEIPageFrame`: the
-    /// leaf's width is the frame's measure and its side margins, or a
+    /// drawing's own pixels, its lettering at the top left. In a type area, such a
+    /// page is its leaf laid at the type area's scale (`TEIPageTypeArea`: the
+    /// leaf's width is the type area's measure and its side margins, or a
     /// larger page's own), so each is set as its zone has it on the leaf
     /// (a line's, its line break's: `TEILine.zone`): its size, its place
     /// across from the text block's left, and its place down from the text
     /// block's top, or from the line or figure so placed before it; a
     /// line's text centered in its box, so its middle stands at its ink's
     /// whatever the face sets it at, a line of capitals at its ink's size.
-    /// A page with no frame of its own and no main text is framed by its
-    /// leaf (`leafFrame`). A line with a box or a place down of
-    /// its own (`lineSetting`) keeps it. A page with no frame, or whose
+    /// A page with no type area of its own and no main text is set in its
+    /// leaf (`leafTypeArea`). A line with a box or a place down of
+    /// its own (`lineSetting`) keeps it. A page with no type area, or whose
     /// leaf is not kept, leaves its lines as they are.
-    static func placedByZone(_ lines: [TEILine], frame: TEIPageFrame?, textBlock: TEITextBlock?) -> [TEILine] {
-      guard let frame, let block = textBlock, block.imageWidth > 0, block.imageHeight > 0, let leaf = block.leafBox,
+    static func placedByZone(_ lines: [TEILine], typeArea: TEIPageTypeArea?, textBlock: TEITextBlock?) -> [TEILine] {
+      guard let typeArea, let block = textBlock, block.imageWidth > 0, block.imageHeight > 0, let leaf = block.leafBox,
         leaf.right > leaf.left
       else { return lines }
-      let leafWidth = frame.pageWidth > 0 ? frame.pageWidth : frame.left + frame.measure + frame.right
+      let leafWidth = typeArea.pageWidth > 0 ? typeArea.pageWidth : typeArea.left + typeArea.measure + typeArea.right
       let scale = leafWidth / (leaf.right - leaf.left)
       let placesLines = !lines.contains(where: isMainText)
       var bottom: Double?
@@ -265,7 +265,7 @@
         let top = box.y / 100 * block.imageHeight
         let width = box.width / 100 * block.imageWidth
         let height = box.height / 100 * block.imageHeight
-        let down = bottom.map { (top - $0) * scale } ?? ((top - leaf.top) * scale - frame.head)
+        let down = bottom.map { (top - $0) * scale } ?? ((top - leaf.top) * scale - typeArea.head)
         bottom = top + height
         // A line of capitals (gilt lettering) is set at its ink's size: its
         // cap height its box's height (`capHeight`), its box and place then
@@ -285,7 +285,7 @@
             "font-size:\(length($0));line-height:\(TEIRendition.Length(value: height * scale, unit: "rem").text);"
           } ?? "")
           + "inline-size:\(em(width * scale));block-size:\(em(height * scale));"
-          + "margin-inline-start:\(em((left - leaf.left) * scale - frame.left));margin-block-start:\(em(down))"
+          + "margin-inline-start:\(em((left - leaf.left) * scale - typeArea.left));margin-block-start:\(em(down))"
         var placed = TEILine(
           kind: line.kind, text: line.text,
           rend: [line.rend, TEIRendition.tokens(setting)].filter { !$0.isEmpty }.joined(separator: " "),
@@ -293,7 +293,7 @@
           // A line so placed stands at its measured white, no paragraph's space added to it.
           opensParagraph: isLine ? false : line.opensParagraph,
           sharesLine: line.sharesLine, joinsPrevious: line.joinsPrevious, element: line.element)
-        placed.frame = line.frame
+        placed.box = line.box
         placed.column = line.column
         placed.columnRend = line.columnRend
         placed.part = line.part
@@ -439,11 +439,11 @@
     /// first line after one. A verse line, or a line after an `<lb/>`, has
     /// none.
     public internal(set) var opensParagraph: Bool
-    /// The setting of the block that frames it, where one sets its lines
-    /// as a whole apart from their own (an `<epigraph rend="align(center)">`
-    /// centered on the page, its lines left-aligned within it); empty
-    /// elsewhere.
-    public internal(set) var frame = ""
+    /// The box it stands in: the setting of the block that boxes it, where
+    /// one sets its lines as a whole apart from their own (an
+    /// `<epigraph rend="align(center)">` centered on the page, its lines
+    /// left-aligned within it); empty elsewhere.
+    public internal(set) var box = ""
     /// Standard cb markers identify reading columns, without coordinates.
     public internal(set) var column = 0
     /// The setting of the element its columns are set in (the `<note>` or
@@ -686,14 +686,14 @@
   /// a facsimile edition is read one opening at a time and no HTML fragment
   /// can carry that structure.
   public enum TEIRenderer {
-    /// The areas around the frame a note in a margin is set in, outside
-    /// the frame where the scan has it (user, 2026-10-14), in reading order:
+    /// The areas around the type area a note in a margin is set in, outside
+    /// the type area where the scan has it (user, 2026-10-14), in reading order:
     /// above, beside, below, a corner where it stands beyond two sides.
     public static let marginalAreas = [
       "top-left", "top", "top-right", "margin-left", "margin-right", "bottom-left", "bottom", "bottom-right",
     ]
 
-    /// The area around the frame (`marginalAreas`) a note's place (TEI's
+    /// The area around the type area (`marginalAreas`) a note's place (TEI's
     /// `place`, one or two of "top", "bottom", "margin-left",
     /// "margin-right": "top margin-left" a corner; gnorium-python
     /// `tei_encoding.MARGINAL_PLACES`) sets it in; nil for any other place.
@@ -714,7 +714,7 @@
     }
 
     /// The `<teiHeader>` of a document as written, where it declares one:
-    /// where its renditions declare the witness's frame or type scale
+    /// where its renditions declare the witness's type area or type scale
     /// (`TEIRendition.declarations`, as a session reads the declared type,
     /// gnorium-server `DeclaredType`)—a madrigal's or a book's TEI once
     /// Calibration froze it. Nil where the document has no header or one
@@ -817,7 +817,7 @@
         let markup = String(xml[range]).trimmingCharacters(in: .whitespacesAndNewlines)
         let marked = highlights[serviceID(ofFacsimile: open.facsimileURL)] ?? []
         let textBlock = TEIFacsimile.textBlock(of: open.facsimileURL, label: open.label, in: textBlocks)
-        let frame = TEIPage.frame(renditions: renditions, textBlock: textBlock, workPage: workPage)
+        let typeArea = TEIPage.typeArea(renditions: renditions, textBlock: textBlock, workPage: workPage)
         return TEIPage(
           label: open.label,
           facsimileURL: open.facsimileURL,
@@ -829,7 +829,7 @@
         ) {
           let read = lines(in: markup, highlights: marked, marksWords: marksWords, zones: zones, renditions: renditions)
           return TEIPage.placedByZone(
-            read, frame: TEIPage.leafFrame(of: textBlock, lines: read) ?? frame, textBlock: textBlock)
+            read, typeArea: TEIPage.leafTypeArea(of: textBlock, lines: read) ?? typeArea, textBlock: textBlock)
         }
       }
     }
@@ -1336,13 +1336,13 @@
       mark(owner, inheritedPreservation)
       // The block each element's text is set in, by its `@corresp`.
       var segments: [ObjectIdentifier: String] = [:]
-      func frame(_ element: TEIMarkup.Element, _ inherited: String) {
+      func assignSegments(_ element: TEIMarkup.Element, _ inherited: String) {
         let own = element.attribute("corresp")
         let segment = !own.isEmpty && !TEIParallel.inline.contains(element.name) ? own : inherited
         segments[ObjectIdentifier(element)] = segment
-        for child in element.elements { frame(child, segment) }
+        for child in element.elements { assignSegments(child, segment) }
       }
-      frame(owner, "")
+      assignSegments(owner, "")
       var lines: [TEILine] = []
       var runs: [TEILine.Run] = []
       var currentKind: TEILine.Kind = .text
@@ -1353,8 +1353,8 @@
       // Whether the next line opens a paragraph's space: at a paragraph's
       // or a stanza's start and after its end.
       var paragraphPending = false
-      // The frame the lines set now stand in (`TEILine.frame`).
-      var currentFrame = ""
+      // The box the lines set now stand in (`TEILine.box`).
+      var currentBox = ""
       var currentColumn = 0
       var currentColumnRend = ""
       // Whether a line break (`<lb/>`, `<cb/>`, `<pb/>`) came since the last
@@ -1376,7 +1376,7 @@
           var line = TEILine(
             kind: currentKind, text: text, rend: currentRend, runs: runs, opensBlock: blockPending,
             opensParagraph: paragraphPending, sharesLine: !lineBroken, joinsPrevious: breakInWord)
-          line.frame = currentFrame
+          line.box = currentBox
           line.column = currentColumn
           line.columnRend = currentColumn > 0 ? currentColumnRend : ""
           if blockPending {
@@ -1398,7 +1398,7 @@
       func append(_ line: TEILine) {
         var line = line
         line.opensParagraph = paragraphPending
-        line.frame = currentFrame
+        line.box = currentBox
         line.column = currentColumn
         line.columnRend = currentColumn > 0 ? currentColumnRend : ""
         paragraphPending = false
@@ -1408,11 +1408,11 @@
         breakInWord = false
       }
 
-      /// A bordered block's frame (`TEILine.frame`): its box
-      /// (`TEIRendition.frame(of:)`) and its ink, which its rule is drawn in.
-      func framing(_ setting: String) -> String {
+      /// A bordered block's box (`TEILine.box`): its own setting
+      /// (`TEIRendition.box(of:)`) and its ink, which its rule is drawn in.
+      func boxRend(_ setting: String) -> String {
         let ink = setting.split(whereSeparator: \.isWhitespace).filter { $0.hasPrefix("color(") }
-        return ([TEIRendition.frame(of: setting)] + ink.map(String.init)).filter { !$0.isEmpty }.joined(separator: " ")
+        return ([TEIRendition.box(of: setting)] + ink.map(String.init)).filter { !$0.isEmpty }.joined(separator: " ")
       }
 
       /// A block's margin after it, at the last block of those it holds
@@ -1569,16 +1569,16 @@
               // paragraph's space, before and after.
               paragraphPending = true
               let entry = lines.count
-              let outerFrame = currentFrame
-              let framed = TEIRendition.frames(setting)
-              if framed { currentFrame = framing(setting) }
+              let outerBox = currentBox
+              let boxed = TEIRendition.drawsBox(setting)
+              if boxed { currentBox = boxRend(setting) }
               walk(
                 element, kind: .note(place: element.attribute("place")),
-                rend: framed ? TEIRendition.inside(frame: setting) : setting,
+                rend: boxed ? TEIRendition.inside(box: setting) : setting,
                 inlineRend: inlineRend, gloss: glossing(element), opened: entry)
               flush()
-              if !framed { close(from: entry, setting) }
-              currentFrame = outerFrame
+              if !boxed { close(from: entry, setting) }
+              currentBox = outerBox
               blockPending = true
               paragraphPending = true
             case "space":
@@ -1675,16 +1675,16 @@
               blockPending = true
               let isParagraph = element.name == "p" || element.name == "lg"
               if isParagraph { paragraphPending = true }
-              // An epigraph frames its lines: set as a whole by its rend,
-              // its lines by their own. A block with a printed frame
-              // (`border-style`) frames its lines in it: the frame's box
-              // is the frame's, the rest of its setting its lines'.
+              // An epigraph boxes its lines: set as a whole by its rend,
+              // its lines by their own. A block with a printed box
+              // (`border-style`) sets its lines in it: the box's own setting
+              // is the box's, the rest of its setting its lines'.
               let epigraph = element.name == "epigraph"
-              let bordered = !epigraph && TEIRendition.frames(setting)
-              let frames = epigraph || bordered
-              let outerFrame = currentFrame
-              if epigraph { currentFrame = ownRend }
-              if bordered { currentFrame = framing(setting) }
+              let bordered = !epigraph && TEIRendition.drawsBox(setting)
+              let setsBox = epigraph || bordered
+              let outerBox = currentBox
+              if epigraph { currentBox = ownRend }
+              if bordered { currentBox = boxRend(setting) }
               // A block begins a line of its own; only furniture set beside
               // furniture (a page number, then a running head) shares one.
               if element.name != "fw" { lineBroken = true }
@@ -1698,10 +1698,10 @@
               }
               walk(
                 element, kind: blockKind,
-                rend: epigraph ? rend : bordered ? TEIRendition.inside(frame: setting) : setting,
+                rend: epigraph ? rend : bordered ? TEIRendition.inside(box: setting) : setting,
                 inlineRend: inlineRend, gloss: glossing(element), opened: entry)
               flush()
-              if !frames { close(from: entry, setting) }
+              if !setsBox { close(from: entry, setting) }
               if element.name == "p" || element.name == "entry" {
                 // Its own part, with the parts a column break gave its
                 // lines: a paragraph run on from the page before is final
@@ -1722,7 +1722,7 @@
               }
               blockPending = true
               if isParagraph { paragraphPending = true }
-              if frames { currentFrame = outerFrame }
+              if setsBox { currentBox = outerBox }
               if element.name != "fw" { lineBroken = true }
             case "table":
               flush()
@@ -1763,7 +1763,7 @@
                 $0.name == "graphic" && $0.attribute("mimeType") == TEIRenderer.drawingMIMEType
               }
               // Its own setting (gnorium-python `base_tei._figure`: its size and its place across, in
-              // the body's em, as the scan has them), which a framed page draws it at.
+              // the body's em, as the scan has them), which a page set in its type area draws it at.
               append(
                 .init(
                   kind: .figure(
@@ -1787,7 +1787,7 @@
               // lines set alike, or one on a ground of its own—a shaded box,
               // a tinted panel, user, 2026-10-25: `background-color`,
               // `base_tei.fills`—or in a printed rule): a block of its own;
-              // framed, its frame draws the ground as encoded, in every
+              // boxed, its box draws the ground as encoded, in every
               // theme, and its inset, and its lines are set inside it. Its
               // ink and its type's size are its words' own.
               flush()
@@ -1797,18 +1797,18 @@
               let setting = TEIRendition.cascade(
                 rend, TEIRenderer.blockSetting(of: ownRend), .block(first: lines.count == opened && runs.isEmpty))
               let type = TEIRenderer.typeSetting(of: ownRend)
-              let framed = TEIRendition.frames(setting)
-              let outerFrame = currentFrame
-              if framed { currentFrame = framing(setting) }
+              let boxed = TEIRendition.drawsBox(setting)
+              let outerBox = currentBox
+              if boxed { currentBox = boxRend(setting) }
               walk(
-                element, kind: kind, rend: framed ? TEIRendition.inside(frame: setting) : setting,
+                element, kind: kind, rend: boxed ? TEIRendition.inside(box: setting) : setting,
                 inlineRend: type.isEmpty ? inlineRend : joined(type), alternative: alternative, zone: initialZone,
                 gloss: glossing(element), opened: entry)
               flush()
-              if !framed { close(from: entry, setting) }
+              if !boxed { close(from: entry, setting) }
               blockPending = true
               lineBroken = true
-              if framed { currentFrame = outerFrame }
+              if boxed { currentBox = outerBox }
             default:
               // Words, punctuation, sentences, glyphs, names, dates, numbers,
               // quotes and references add nothing to the reading but

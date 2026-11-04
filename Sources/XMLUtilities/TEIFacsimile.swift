@@ -84,10 +84,10 @@
     public let body: Double
     /// Whether it is derived, not measured (`subtype="derived"`,
     /// gnorium-python `facsimile.DERIVED`): a page that sets no main text
-    /// (an owner's label alone) has the work frame placed on its scan as
+    /// (an owner's label alone) has the work's type area placed on its scan as
     /// the edition sets it, centered at its pixels per em
     /// (`layout_measure.derived_corners`). The overlay lays it on the
-    /// rendered frame itself, whole.
+    /// rendered type area itself, whole.
     public let derived: Bool
     /// The scan's measured layout on the same surface, as the tools wrote
     /// it (gnorium-python `facsimile.layout_zones`, user, 2026-10-14): its
@@ -143,22 +143,22 @@
       return (length(0, 1), length(0, 3))
     }
 
-    /// The page as its own work frame, in its own type's em (`body`): its
+    /// The page as its own work type area, in its own type's em (`body`): its
     /// main text block's measure and height, and its leaf's margins
     /// (`margins`: its head and foot, of its sides the narrower its inner,
     /// user, 2026-10-28); where it keeps no leaf, its side margin on every
     /// side (half the scan's width less the measure). Nil where its size or
     /// its type is not given.
-    public var frame: TEIWorkFrame? {
+    public var typeArea: TEIWorkTypeArea? {
       guard body > 0, let size else { return nil }
       if let margins {
-        return TEIWorkFrame(
+        return TEIWorkTypeArea(
           body: body, measure: size.measure / body, height: size.height / body, head: margins.head / body,
           foot: margins.foot / body, inner: min(margins.left, margins.right) / body,
           outer: max(margins.left, margins.right) / body, width: imageWidth / body)
       }
       let side = max(0, (paperWidth - size.measure) / 2 / body)
-      return TEIWorkFrame(
+      return TEIWorkTypeArea(
         body: body, measure: size.measure / body, height: size.height / body, head: side, foot: side, inner: side,
         outer: side, width: imageWidth / body)
     }
@@ -431,7 +431,7 @@
             $0.split(separator: ",").map { Double($0) }
           }
           guard points.count == 8, points.allSatisfy({ $0 != nil }) else { continue }
-          let body = TEIRendition.Setting(TEIRendition.frameTokens(zone.attribute("style"))).length("font-size")
+          let body = TEIRendition.Setting(TEIRendition.typeAreaTokens(zone.attribute("style"))).length("font-size")
           found.append(
             TEITextBlock(
               id: zone.attribute("xml:id"), points: points.compactMap { $0 }, surfaceULX: left, surfaceULY: top,
@@ -452,16 +452,16 @@
         ?? blocks.first { $0.imageURL.isEmpty && !label.isEmpty && $0.label == label }
     }
 
-    /// The frame every page of a work is set in, its body pages' main text
-    /// block (gnorium-python `facsimile.work_frame`): the median body type,
+    /// The type area every page of a work is set in, its body pages' main text
+    /// block (gnorium-python `type_scale.type_area`): the median body type,
     /// measure, height and side margin of its pages' measured text blocks,
     /// each weighted by its block's area, so a title page or an imprint
     /// counts for the little text it holds; lengths in the work's em, its
     /// body type. Nil where no page's type is measured.
-    public static func workFrame(in document: String) -> TEIWorkFrame? {
+    public static func workTypeArea(in document: String) -> TEIWorkTypeArea? {
       typealias Page = (block: TEITextBlock, measure: Double, height: Double)
       let pages = textBlocks(in: blocks(in: document)).compactMap { block -> Page? in
-        // A derived block is the frame placed, never a measure of it.
+        // A derived block is the type area placed, never a measure of it.
         guard block.body > 0, !block.derived, let size = block.size else { return nil }
         return (block, size.measure, size.height)
       }
@@ -471,20 +471,20 @@
       }
       let body = median { $0.block.body }
       // The leaf's four margins (user, 2026-10-28; gnorium-python
-      // `type_scale.frame`): its head and foot, of its sides the narrower
+      // `type_scale.type_area`): its head and foot, of its sides the narrower
       // its inner, the wider its outer, each in its own page's em; where no
       // page keeps its leaf, the side margin on every side.
       let leaved = pages.compactMap { page in page.block.margins.map { (page, $0) } }
       guard !leaved.isEmpty else {
         let side = median { max(0, ($0.block.paperWidth - $0.measure) / 2) } / body
-        return TEIWorkFrame(
+        return TEIWorkTypeArea(
           body: body, measure: median { $0.measure } / body, height: median { $0.height } / body, head: side, foot: side,
           inner: side, outer: side, width: median { $0.block.imageWidth } / body)
       }
       func margin(_ pick: ((head: Double, foot: Double, left: Double, right: Double)) -> Double) -> Double {
         weightedMedian(leaved.map { (pick($0.1) / $0.0.block.body, $0.0.measure * $0.0.height) })
       }
-      return TEIWorkFrame(
+      return TEIWorkTypeArea(
         body: body, measure: median { $0.measure } / body, height: median { $0.height } / body,
         head: margin { $0.head }, foot: margin { $0.foot }, inner: margin { min($0.left, $0.right) },
         outer: margin { max($0.left, $0.right) }, width: median { $0.block.imageWidth } / body)
@@ -493,7 +493,7 @@
     /// The size of a work's leaves on their scans in pixels: the median
     /// width and height of its measured pages' leaves (`paperWidth`,
     /// `paperHeight`: the scan's own where it keeps no leaf), each weighted
-    /// by its main text block's area as the work frame is (`workFrame`), so
+    /// by its main text block's area as the work's type area is (`workTypeArea`), so
     /// its body pages' is the size. Its leaves, never its photographs: a
     /// photograph holds a ruler, a color chart, the next leaf, more or less
     /// of each from page to page (user, 2026-10-26). Nil where none is
@@ -523,39 +523,39 @@
       return ordered.last?.value ?? 0
     }
 
-    /// `document` with its header's work frame (`TEIRendition.frameID`):
-    /// a frame it declares stands—the first frame declared wins, as
+    /// `document` with its header's work type area (`TEIRendition.typeAreaID`):
+    /// a type area it declares stands—the first type area declared wins, as
     /// everywhere the witness's renditions are joined (`TEIRendition.joined`,
     /// gnorium-python `type_scale.joined`); where it declares none, its
-    /// pages' text blocks give it (`workFrame`), and none where no page is
+    /// pages' text blocks give it (`workTypeArea`), and none where no page is
     /// measured. A document with no header is as it was.
-    public static func framing(_ document: String) -> String {
-      if TEIRendition.frame(in: TEIRendition.declarations(of: TEIRendition.renditions(of: document))) != nil {
+    public static func declaringTypeArea(_ document: String) -> String {
+      if TEIRendition.typeArea(in: TEIRendition.declarations(of: TEIRendition.renditions(of: document))) != nil {
         return document
       }
-      var framed = document
-      if let old = framed.range(of: #"\s*<rendition\b[^>]*xml:id="text-block"[^>]*>[^<]*</rendition>"#, options: .regularExpression) {
-        framed.removeSubrange(old)
+      var declared = document
+      if let old = declared.range(of: #"\s*<rendition\b[^>]*xml:id="text-block"[^>]*>[^<]*</rendition>"#, options: .regularExpression) {
+        declared.removeSubrange(old)
       }
-      if let emptied = framed.range(of: #"\s*<tagsDecl>\s*</tagsDecl>"#, options: .regularExpression) {
-        framed.removeSubrange(emptied)
+      if let emptied = declared.range(of: #"\s*<tagsDecl>\s*</tagsDecl>"#, options: .regularExpression) {
+        declared.removeSubrange(emptied)
       }
-      guard let frame = workFrame(in: framed) else { return framed }
-      let rendition = TEIRendition.frameRendition(frame)
-      if let close = framed.range(of: "</tagsDecl>") {
-        let lineStart = framed[..<close.lowerBound].lastIndex(of: "\n")
-        if let lineStart, framed[framed.index(after: lineStart)..<close.lowerBound].allSatisfy({ $0 == " " }) {
-          let indent = String(framed[framed.index(after: lineStart)..<close.lowerBound])
-          framed.insert(contentsOf: "  " + rendition + "\n" + indent, at: close.lowerBound)
+      guard let typeArea = workTypeArea(in: declared) else { return declared }
+      let rendition = TEIRendition.typeAreaRendition(typeArea)
+      if let close = declared.range(of: "</tagsDecl>") {
+        let lineStart = declared[..<close.lowerBound].lastIndex(of: "\n")
+        if let lineStart, declared[declared.index(after: lineStart)..<close.lowerBound].allSatisfy({ $0 == " " }) {
+          let indent = String(declared[declared.index(after: lineStart)..<close.lowerBound])
+          declared.insert(contentsOf: "  " + rendition + "\n" + indent, at: close.lowerBound)
         } else {
-          framed.insert(contentsOf: rendition, at: close.lowerBound)
+          declared.insert(contentsOf: rendition, at: close.lowerBound)
         }
-      } else if let close = framed.range(of: "</encodingDesc>") {
-        framed.insert(contentsOf: "<tagsDecl>" + rendition + "</tagsDecl>", at: close.lowerBound)
-      } else if let at = framed.range(of: "</fileDesc>")?.upperBound {
-        framed.insert(contentsOf: "<encodingDesc><tagsDecl>" + rendition + "</tagsDecl></encodingDesc>", at: at)
+      } else if let close = declared.range(of: "</encodingDesc>") {
+        declared.insert(contentsOf: "<tagsDecl>" + rendition + "</tagsDecl>", at: close.lowerBound)
+      } else if let at = declared.range(of: "</fileDesc>")?.upperBound {
+        declared.insert(contentsOf: "<encodingDesc><tagsDecl>" + rendition + "</tagsDecl></encodingDesc>", at: at)
       }
-      return framed
+      return declared
     }
 
     /// The ids of the zones a page's markup names (`facs="#…"`), in order: a
@@ -614,19 +614,21 @@
     /// document's facsimile in place of the old page's surface, each id
     /// prefixed with the page's place (`p3-z1`, gnorium-python
     /// `document_surface`) and the fragment's references renamed to match,
-    /// and its renditions joined into the document's header; the work
-    /// frame then declared as the pages laid in give it (`framing`), unless
-    /// the caller declares it itself (`framed` false).
+    /// and its renditions joined into the document's header; the work's
+    /// type area then declared as the pages laid in give it (`declaringTypeArea`),
+    /// unless the caller declares it itself (`declaresTypeArea` false).
     /// The page is found by its place (`position`, counted from 1, in
     /// `TEIRenderer.pageRanges`), never by searching for its text: a blank
     /// page's empty markup is in no document, and identical markup on an
     /// earlier page would be found first (prod, 2026-10-10). Nil when that
     /// place holds no page reading `old`'s image.
     public static func laying(
-      page: String, fragment: String, over old: TEIPage, position: Int, in document: String, framed: Bool = true
+      page: String, fragment: String, over old: TEIPage, position: Int, in document: String,
+      declaresTypeArea: Bool = true
     ) -> String? {
       let laid = laying(
-        [Laying(page: page, fragment: fragment, over: old, position: position)], in: document, framed: framed)
+        [Laying(page: page, fragment: fragment, over: old, position: position)], in: document,
+        declaresTypeArea: declaresTypeArea)
       return laid.laid.isEmpty ? nil : laid.document
     }
 
@@ -655,7 +657,7 @@
     /// seconds, dev 2026-10-26). The document, and which of `pages` were
     /// laid (by their place in `pages`): a page whose place holds no page
     /// reading its old page's image, or a place already given, is not.
-    public static func laying(_ pages: [Laying], in document: String, framed: Bool = true) -> (
+    public static func laying(_ pages: [Laying], in document: String, declaresTypeArea: Bool = true) -> (
       document: String, laid: [Int]
     ) {
       // Each page found by its place, reading its old page's image.
@@ -756,8 +758,8 @@
         if let at { laid.insert(contentsOf: "\n  <facsimile>" + surfaces + "</facsimile>", at: at) }
       }
       if standing != declared { laid = TEIRendition.declaring(standing, in: laid) }
-      // The work frame as the pages laid in now give it.
-      return (framed ? framing(laid) : laid, chosen)
+      // The work's type area as the pages laid in now give it.
+      return (declaresTypeArea ? declaringTypeArea(laid) : laid, chosen)
     }
 
     private static let layoutIDPattern = try! NSRegularExpression(pattern: #"(xml:id\s*=\s*")([^"]+)(")"#)

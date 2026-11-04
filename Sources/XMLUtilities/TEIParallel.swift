@@ -263,11 +263,12 @@
       return out
     }
 
-    /// A page's segments and their flows: one frame a block, the page itself
+    /// A page's segments and their flows: one flow a block, the page itself
     /// the first, each holding its text and, as placeholders, every element
-    /// inside it; a frame with text in it is a segment.
+    /// inside it; a block with text in it is a segment.
     static func segments(of tokens: [Token], in range: Range<Int>, profile: Profile) -> ([Segment], [String: [Item]]) {
-      final class Frame {
+      /// A block and its flow: its text and the elements inside it.
+      final class BlockFlow {
         let element: String
         /// Its opening tag's token; nil for the page itself.
         let opening: Int?
@@ -277,11 +278,11 @@
           self.opening = opening
         }
       }
-      var frames: [Frame] = []
-      var stack: [(frame: Frame, name: String)] = []
-      let root = Frame(element: "text")
-      frames.append(root)
-      var current: Frame { stack.last?.frame ?? root }
+      var blocks: [BlockFlow] = []
+      var stack: [(block: BlockFlow, name: String)] = []
+      let root = BlockFlow(element: "text")
+      blocks.append(root)
+      var current: BlockFlow { stack.last?.block ?? root }
 
       var index = range.lowerBound
       while index < range.upperBound {
@@ -323,9 +324,9 @@
             // A block: its opening tag stands in its parent's flow, and it
             // has a flow of its own.
             current.items.append(.placeholder(index..<(index + 1)))
-            let frame = Frame(element: name, opening: index)
-            frames.append(frame)
-            stack.append((frame, name))
+            let block = BlockFlow(element: name, opening: index)
+            blocks.append(block)
+            stack.append((block, name))
             index += 1
           }
         }
@@ -333,18 +334,18 @@
 
       var segments: [Segment] = []
       var flows: [String: [Item]] = [:]
-      for frame in frames {
-        let hasText = frame.items.contains { item in
+      for block in blocks {
+        let hasText = block.items.contains { item in
           if case .text(let index) = item {
             return !tokens[index].raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
           }
           return false
         }
-        guard hasText, profile.carries(frame.element) else { continue }
+        guard hasText, profile.carries(block.element) else { continue }
         let key = "s\(segments.count + 1)"
         var text = ""
         var placeholders = 0
-        for item in frame.items {
+        for item in block.items {
           switch item {
           case .text(let index):
             text += collapsed(XMLFormatter.decodingEntities(tokens[index].raw))
@@ -355,10 +356,10 @@
         }
         segments.append(
           Segment(
-            key: key, element: frame.element,
+            key: key, element: block.element,
             text: text.trimmingCharacters(in: .whitespacesAndNewlines), placeholders: placeholders,
-            opening: frame.opening))
-        flows[key] = frame.items
+            opening: block.opening))
+        flows[key] = block.items
       }
       return (segments, flows)
     }
