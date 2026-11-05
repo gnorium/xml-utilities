@@ -570,16 +570,16 @@ final class TEIRendererTests: XCTestCase {
   /// nothing on it was placed: its lettering ran at the top left at the
   /// reader's size, its crest at its drawing's own pixels.
   func testACoverWithNoTypeOfItsOwnIsSetOnItsLeafByItsZones() throws {
-    let image = "https://cdm16003.contentdm.oclc.org/iiif/2/p15150coll3:1360"
+    let frame = "https://cdm16003.contentdm.oclc.org/iiif/2/p15150coll3:1360"
     let tei = ##"<TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><encodingDesc><tagsDecl><rendition xml:id="ground-333635" scheme="css">background-color:#333635</rendition></tagsDecl></encodingDesc></teiHeader>"##
-      + ##"<facsimile><surface rendition="#ground-333635" n="Front cover" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\##(image)/full/max/0/default.jpg" width="6120px" height="6630px"/>"##
+      + ##"<facsimile><surface rendition="#ground-333635" n="Front cover" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\##(frame)/full/max/0/default.jpg" width="6120px" height="6630px"/>"##
       + ##"<zone xml:id="textblock" type="textblock" points="422.53,239.73 623.51,238 625.51,435.87 424.53,437.6"/>"##
       + ##"<zone type="block" subtype="main" points="422.53,239.73 623.51,238 624.31,317.33 423.33,319.06"/>"##
       + ##"<zone type="line" points="422.53,239.73 623.51,238 623.7,257.01 422.72,258.73"><path type="baseline" points="422.54,241.04 623.52,239.32"/></zone>"##
       + ##"<zone type="leaf" points="144.93,54 891.01,54 891.01,946 144.93,946"/>"##
       + ##"<zone xml:id="z-L2" ulx="422" uly="238" lrx="624" lry="259"/><zone xml:id="z-L3" ulx="435" uly="303" lrx="610" lry="319"/>"##
       + ##"<zone xml:id="z-L6" ulx="478" uly="427" lrx="585" lry="438"/><zone xml:id="z-fig-1" type="figure" ulx="515" uly="348" lrx="548" lry="395"/></surface></facsimile>"##
-      + ##"<text><body><pb n="Front cover" facs="\##(image)" rend="color(yellow)"/><lb facs="#z-L2"/><note type="binding" subtype="copy">HAMLET</note>"##
+      + ##"<text><body><pb n="Front cover" facs="\##(frame)" rend="color(yellow)"/><lb facs="#z-L2"/><note type="binding" subtype="copy">HAMLET</note>"##
       + ##"<lb facs="#z-L3"/><note type="binding" subtype="copy">SHAKESPEARE</note>"##
       + ##"<figure facs="#z-fig-1"><graphic url="/mission-control/calibration-figures/z-fig-1.svg" mimeType="image/svg+xml"/></figure>"##
       + ##"<lb facs="#z-L6"/><note type="binding" subtype="copy">LONDON 1603</note></body></text></TEI>"##
@@ -622,15 +622,15 @@ final class TEIRendererTests: XCTestCase {
   /// em the overlay drew it at 0.63 of the scan's. A page with its own body
   /// type is its scan's width over it, one with none its work's.
   func testAScansWidthInEmIsTheTypeAreasItsLeafsOnACover() throws {
-    let image = "https://cdm16003.contentdm.oclc.org/iiif/2/p15150coll3:1360"
+    let frame = "https://cdm16003.contentdm.oclc.org/iiif/2/p15150coll3:1360"
     let header = "<teiHeader><encodingDesc><tagsDecl>"
       + #"<rendition xml:id="text-block" scheme="css" selector="text">font-size:85.44px;inline-size:26.47em;block-size:47.94em;margin:7.42em 13.26em 11.23em 9.33em;max-inline-size:80.61em</rendition>"#
       + "</tagsDecl></encodingDesc></teiHeader>"
-    let facsimile = ##"<facsimile><surface n="Front cover" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\##(image)/full/max/0/default.jpg" width="6120px" height="6630px"/>"##
+    let facsimile = ##"<facsimile><surface n="Front cover" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\##(frame)/full/max/0/default.jpg" width="6120px" height="6630px"/>"##
       + ##"<zone xml:id="p1-z-fig-2" ulx="173" uly="61" lrx="882" lry="938"/><zone xml:id="p1-z-L2" ulx="417" uly="238" lrx="637" lry="259"/>"##
       + ##"<zone xml:id="p1-textblock" type="textblock" points="172.3,64.24 879.57,59.61 884.82,936.85 175.7,941.07"/>"##
       + ##"<zone type="leaf" points="144.85,53.4 890.9,53.4 890.9,945.42 144.85,945.42"/></surface></facsimile>"##
-    let body = ##"<text><body><pb n="Front cover" facs="\##(image)" rend="color(yellow)"/><figure facs="#p1-z-fig-2"/>"##
+    let body = ##"<text><body><pb n="Front cover" facs="\##(frame)" rend="color(yellow)"/><figure facs="#p1-z-fig-2"/>"##
       + ##"<lb facs="#p1-z-L2"/><note type="binding" subtype="copy">HAMLET</note></body></text>"##
     let leafWidth = 890.9 - 144.85
     for header in [header, ""] {
@@ -644,7 +644,7 @@ final class TEIRendererTests: XCTestCase {
       XCTAssertEqual(em * 6120 / width, 709 * 6.12, accuracy: 0.5)
     }
     // A text page: its scan's own body type, else its work's type area's 80.61 em.
-    let text = ##"<text><body><pb n="p. 3" facs="\##(image)"/><p>Words.</p></body></text>"##
+    let text = ##"<text><body><pb n="p. 3" facs="\##(frame)"/><p>Words.</p></body></text>"##
     let own = facsimile.replacingOccurrences(of: #"941.07""#, with: #"941.07" style="font-size:85.75px""#)
     let measured = try XCTUnwrap(TEIRenderer.pages(in: #"<TEI xmlns="http://www.tei-c.org/ns/1.0">"# + header + own + text + "</TEI>").first)
     XCTAssertEqual(try XCTUnwrap(measured.scanWidth), 6120 / 85.75, accuracy: 1e-9)
@@ -661,12 +661,12 @@ final class TEIRendererTests: XCTestCase {
   /// its middle as far as the leaf's nearer side (`TEIPage.reflowedBox`),
   /// where in its box alone "HAMLET" wrapped its "T" over its "M".
   func testACoversLetteringRunsReflowedAboutItsZonesMiddle() throws {
-    let image = "https://cdm16003.contentdm.oclc.org/iiif/2/p15150coll3:1360"
+    let frame = "https://cdm16003.contentdm.oclc.org/iiif/2/p15150coll3:1360"
     let tei = ##"<TEI xmlns="http://www.tei-c.org/ns/1.0"><facsimile><surface n="Front cover" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\##(image)/full/max/0/default.jpg" width="6120px" height="6630px"/>"##
       + ##"<zone xml:id="p1-z-L2" ulx="417" uly="238" lrx="637" lry="259"/><zone xml:id="p1-z-L6" ulx="464" uly="427" lrx="595" lry="438"/>"##
       + ##"<zone xml:id="p1-textblock" type="textblock" points="172.3,64.24 879.57,59.61 884.82,936.85 175.7,941.07"/>"##
       + ##"<zone type="leaf" points="144.85,53.4 890.9,53.4 890.9,945.42 144.85,945.42"/></surface></facsimile>"##
-      + ##"<text><body><pb n="Front cover" facs="\##(image)" rend="color(yellow)"/>"##
+      + ##"<text><body><pb n="Front cover" facs="\##(frame)" rend="color(yellow)"/>"##
       + ##"<lb facs="#p1-z-L2"/><note type="binding" subtype="copy" style="letter-spacing:0.527em">HAMLET</note>"##
       + ##"<lb facs="#p1-z-L6"/><note type="binding" subtype="copy" style="letter-spacing:0.1004em">LONDON 1603</note></body></text></TEI>"##
     let page = try XCTUnwrap(TEIRenderer.pages(in: tei).first)
@@ -876,7 +876,7 @@ final class TEIRendererTests: XCTestCase {
   /// break has it folded into the image's, named as the side and carrying
   /// the image; an opening's later side keeps its own, a mark within the
   /// image's page (gnorium-python `own_page_break`).
-  func testLayingFoldsTheSidesOwnBreakIntoTheImages() throws {
+  func testLayingFoldsTheSidesOwnBreakIntoTheFrames() throws {
     let document = Self.laidDocument(["<p>One.</p>", "<p>Two.</p>"])
     let one = try XCTUnwrap(TEIRenderer.layingPage(1, with: "<pb n=\"2\"/>\n<p>New.</p>", in: document))
     XCTAssertTrue(one.contains("<pb n=\"2\" facs=\"https://example.org/iiif/p2/full/1300,/0/default.jpg\"/>\n<p>New.</p>"))

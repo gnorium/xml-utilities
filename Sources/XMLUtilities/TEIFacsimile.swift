@@ -75,10 +75,10 @@
     public let surfaceLRX: Double
     public let surfaceLRY: Double
     /// The scan's size in pixels, its surface's graphic's (0: not given).
-    public let imageWidth: Double
-    public let imageHeight: Double
+    public let frameWidth: Double
+    public let frameHeight: Double
     /// Its surface's image and label: which page it is of.
-    public let imageURL: String
+    public let frameURL: String
     public let label: String
     /// The type it is set in: the scan's pixels per em (0: not measured).
     public let body: Double
@@ -103,7 +103,7 @@
 
     public init(
       id: String, points: [Double], surfaceULX: Double = 0, surfaceULY: Double = 0, surfaceLRX: Double = 1000,
-      surfaceLRY: Double = 1000, imageWidth: Double = 0, imageHeight: Double = 0, imageURL: String = "",
+      surfaceLRY: Double = 1000, frameWidth: Double = 0, frameHeight: Double = 0, frameURL: String = "",
       label: String = "", body: Double = 0, derived: Bool = false, layout: String = ""
     ) {
       self.id = id
@@ -112,9 +112,9 @@
       self.surfaceULY = surfaceULY
       self.surfaceLRX = surfaceLRX
       self.surfaceLRY = surfaceLRY
-      self.imageWidth = imageWidth
-      self.imageHeight = imageHeight
-      self.imageURL = imageURL
+      self.frameWidth = frameWidth
+      self.frameHeight = frameHeight
+      self.frameURL = frameURL
       self.label = label
       self.body = body
       self.derived = derived
@@ -133,11 +133,11 @@
     /// Its measure and height in the scan's pixels: its top edge's length
     /// and its left edge's. Nil where the scan's size is not given.
     public var size: (measure: Double, height: Double)? {
-      guard imageWidth > 0, imageHeight > 0, points.count == 8 else { return nil }
+      guard frameWidth > 0, frameHeight > 0, points.count == 8 else { return nil }
       let corners = fractions
       func length(_ a: Int, _ b: Int) -> Double {
-        let dx = (corners[2 * b] - corners[2 * a]) * imageWidth
-        let dy = (corners[2 * b + 1] - corners[2 * a + 1]) * imageHeight
+        let dx = (corners[2 * b] - corners[2 * a]) * frameWidth
+        let dy = (corners[2 * b + 1] - corners[2 * a + 1]) * frameHeight
         return (dx * dx + dy * dy).squareRoot()
       }
       return (length(0, 1), length(0, 3))
@@ -155,12 +155,12 @@
         return TEIWorkTypeArea(
           body: body, measure: size.measure / body, height: size.height / body, head: margins.head / body,
           foot: margins.foot / body, inner: min(margins.left, margins.right) / body,
-          outer: max(margins.left, margins.right) / body, width: imageWidth / body)
+          outer: max(margins.left, margins.right) / body, width: frameWidth / body)
       }
       let side = max(0, (paperWidth - size.measure) / 2 / body)
       return TEIWorkTypeArea(
         body: body, measure: size.measure / body, height: size.height / body, head: side, foot: side, inner: side,
-        outer: side, width: imageWidth / body)
+        outer: side, width: frameWidth / body)
     }
 
     /// The white between its leaf's edges and its main text block on the
@@ -168,10 +168,10 @@
     /// head, foot, left and right margins, each at least 0. Nil where it
     /// keeps no leaf or the scan's size is not given.
     public var margins: (head: Double, foot: Double, left: Double, right: Double)? {
-      guard imageWidth > 0, imageHeight > 0, points.count == 8, let leaf = leafBox else { return nil }
+      guard frameWidth > 0, frameHeight > 0, points.count == 8, let leaf = leafBox else { return nil }
       let corners = fractions
-      let xs = stride(from: 0, to: 8, by: 2).map { corners[$0] * imageWidth }
-      let ys = stride(from: 1, to: 8, by: 2).map { corners[$0] * imageHeight }
+      let xs = stride(from: 0, to: 8, by: 2).map { corners[$0] * frameWidth }
+      let ys = stride(from: 1, to: 8, by: 2).map { corners[$0] * frameHeight }
       guard let left = xs.min(), let right = xs.max(), let top = ys.min(), let bottom = ys.max() else { return nil }
       return (max(0, top - leaf.top), max(0, leaf.bottom - bottom), max(0, left - leaf.left), max(0, leaf.right - right))
     }
@@ -195,8 +195,8 @@
       guard let left = points.map({ $0[0] }).min(), let right = points.map({ $0[0] }).max(),
         let top = points.map({ $0[1] }).min(), let bottom = points.map({ $0[1] }).max(), right > left, bottom > top
       else { return nil }
-      func x(_ value: Double) -> Double { (value - surfaceULX) / (surfaceLRX - surfaceULX) * imageWidth }
-      func y(_ value: Double) -> Double { (value - surfaceULY) / (surfaceLRY - surfaceULY) * imageHeight }
+      func x(_ value: Double) -> Double { (value - surfaceULX) / (surfaceLRX - surfaceULX) * frameWidth }
+      func y(_ value: Double) -> Double { (value - surfaceULY) / (surfaceLRY - surfaceULY) * frameHeight }
       return (x(left), y(top), x(right), y(bottom))
     }
 
@@ -214,7 +214,7 @@
     /// extent the whole scan's where its zone gives none.
     private var paperSize: (width: Double, height: Double) {
       guard let range = layout.range(of: #"<zone\b[^>]*\btype="leaf"[^>]*/>"#, options: .regularExpression) else {
-        return (imageWidth, imageHeight)
+        return (frameWidth, frameHeight)
       }
       let points = XMLFormatter.attribute("points", in: String(layout[range])).split(whereSeparator: \.isWhitespace)
         .map { $0.split(separator: ",").compactMap { Double($0) } }.filter { $0.count == 2 }
@@ -224,8 +224,8 @@
         return (last - first) / (high - low) * scan
       }
       return (
-        extent(0, from: surfaceULX, to: surfaceLRX, scan: imageWidth),
-        extent(1, from: surfaceULY, to: surfaceLRY, scan: imageHeight)
+        extent(0, from: surfaceULX, to: surfaceLRX, scan: frameWidth),
+        extent(1, from: surfaceULY, to: surfaceLRY, scan: frameHeight)
       )
     }
 
@@ -243,10 +243,10 @@
     }
 
     /// The same text block under another id (a page's place in a document).
-    func renamed(_ id: String, imageURL: String? = nil, label: String? = nil, layout: String? = nil) -> TEITextBlock {
+    func renamed(_ id: String, frameURL: String? = nil, label: String? = nil, layout: String? = nil) -> TEITextBlock {
       TEITextBlock(
         id: id, points: points, surfaceULX: surfaceULX, surfaceULY: surfaceULY, surfaceLRX: surfaceLRX,
-        surfaceLRY: surfaceLRY, imageWidth: imageWidth, imageHeight: imageHeight, imageURL: imageURL ?? self.imageURL,
+        surfaceLRY: surfaceLRY, frameWidth: frameWidth, frameHeight: frameHeight, frameURL: frameURL ?? self.frameURL,
         label: label ?? self.label, body: body, derived: derived, layout: layout ?? self.layout)
     }
   }
@@ -435,8 +435,8 @@
           found.append(
             TEITextBlock(
               id: zone.attribute("xml:id"), points: points.compactMap { $0 }, surfaceULX: left, surfaceULY: top,
-              surfaceLRX: right, surfaceLRY: bottom, imageWidth: pixels("width"), imageHeight: pixels("height"),
-              imageURL: graphic?.attribute("url") ?? "", label: surface.attribute("n"), body: body?.value ?? 0,
+              surfaceLRX: right, surfaceLRY: bottom, frameWidth: pixels("width"), frameHeight: pixels("height"),
+              frameURL: graphic?.attribute("url") ?? "", label: surface.attribute("n"), body: body?.value ?? 0,
               derived: zone.attribute("subtype") == derivedSubtype, layout: layoutZones(in: String(markup[range]))))
         }
       }
@@ -448,8 +448,8 @@
     /// surface with no image, its label's.
     public static func textBlock(of facsimileURL: String, label: String, in blocks: [TEITextBlock]) -> TEITextBlock? {
       let service = TEIRenderer.serviceID(ofFacsimile: facsimileURL)
-      return blocks.first { !$0.imageURL.isEmpty && TEIRenderer.serviceID(ofFacsimile: $0.imageURL) == service }
-        ?? blocks.first { $0.imageURL.isEmpty && !label.isEmpty && $0.label == label }
+      return blocks.first { !$0.frameURL.isEmpty && TEIRenderer.serviceID(ofFacsimile: $0.frameURL) == service }
+        ?? blocks.first { $0.frameURL.isEmpty && !label.isEmpty && $0.label == label }
     }
 
     /// The type area every page of a work is set in, its body pages' main text
@@ -479,7 +479,7 @@
         let side = median { max(0, ($0.block.paperWidth - $0.measure) / 2) } / body
         return TEIWorkTypeArea(
           body: body, measure: median { $0.measure } / body, height: median { $0.height } / body, head: side, foot: side,
-          inner: side, outer: side, width: median { $0.block.imageWidth } / body)
+          inner: side, outer: side, width: median { $0.block.frameWidth } / body)
       }
       func margin(_ pick: ((head: Double, foot: Double, left: Double, right: Double)) -> Double) -> Double {
         weightedMedian(leaved.map { (pick($0.1) / $0.0.block.body, $0.0.measure * $0.0.height) })
@@ -487,7 +487,7 @@
       return TEIWorkTypeArea(
         body: body, measure: median { $0.measure } / body, height: median { $0.height } / body,
         head: margin { $0.head }, foot: margin { $0.foot }, inner: margin { min($0.left, $0.right) },
-        outer: margin { max($0.left, $0.right) }, width: median { $0.block.imageWidth } / body)
+        outer: margin { max($0.left, $0.right) }, width: median { $0.block.frameWidth } / body)
     }
 
     /// The size of a work's leaves on their scans in pixels: the median
@@ -500,7 +500,7 @@
     /// measured.
     public static func workPage(of blocks: [TEITextBlock]) -> (width: Double, height: Double)? {
       let pages = blocks.compactMap { block -> (TEITextBlock, Double)? in
-        guard block.imageWidth > 0, block.imageHeight > 0, !block.derived, let size = block.size else { return nil }
+        guard block.frameWidth > 0, block.frameHeight > 0, !block.derived, let size = block.size else { return nil }
         return (block, size.measure * size.height)
       }
       guard !pages.isEmpty else { return nil }
@@ -595,7 +595,7 @@
       var seen: Set<String> = []
       let distinct = named.filter { seen.insert($0.id).inserted }
       return "<facsimile>"
-        + surface(distinct, textBlock: textBlock, label: textBlock?.label ?? "", imageURL: textBlock?.imageURL ?? "")
+        + surface(distinct, textBlock: textBlock, label: textBlock?.label ?? "", frameURL: textBlock?.frameURL ?? "")
         + "</facsimile>"
     }
 
@@ -603,7 +603,7 @@
     public static func block(for page: TEIPage) -> String {
       block(
         for: page.markup, zones: page.zones,
-        textBlock: page.textBlock.map { $0.renamed($0.id, imageURL: page.facsimileURL, label: page.label) })
+        textBlock: page.textBlock.map { $0.renamed($0.id, frameURL: page.facsimileURL, label: page.label) })
     }
 
     /// A page laid into a document in place of a page it holds: `fragment`
@@ -661,13 +661,13 @@
       document: String, laid: [Int]
     ) {
       // Each page found by its place, reading its old page's image.
-      let images = TEIRenderer.pageImages(in: document)
+      let frames = TEIRenderer.pageFrames(in: document)
       var chosen: [Int] = []
       var places: Set<Int> = []
       for (number, page) in pages.enumerated() {
         let index = page.position - 1
-        guard images.indices.contains(index),
-          TEIRenderer.serviceID(ofFacsimile: images[index]) == TEIRenderer.serviceID(ofFacsimile: page.old.facsimileURL),
+        guard frames.indices.contains(index),
+          TEIRenderer.serviceID(ofFacsimile: frames[index]) == TEIRenderer.serviceID(ofFacsimile: page.old.facsimileURL),
           places.insert(index).inserted
         else { continue }
         chosen.append(number)
@@ -733,10 +733,10 @@
           },
           textBlock: ownBlock.map {
             $0.renamed(
-              placed($0.id, prefix: prefix, place: place), imageURL: old.facsimileURL, label: old.label,
+              placed($0.id, prefix: prefix, place: place), frameURL: old.facsimileURL, label: old.label,
               layout: renamingLayoutIDs(in: $0.layout, prefix: prefix, place: place))
           },
-          label: old.label, imageURL: old.facsimileURL)
+          label: old.label, frameURL: old.facsimileURL)
         // The page's renditions joined into the header's (`TEIRendition.merging`):
         // a step the page references declared in the document it is laid in.
         standing = TEIRendition.merging(reconciled.renditions, into: standing)
@@ -894,7 +894,7 @@
 
     /// One page's surface: its label, its extent, its image (sized where it
     /// has a text block), its zones and its text block; "" with neither.
-    static func surface(_ zones: [TEIZone], textBlock: TEITextBlock? = nil, label: String, imageURL: String) -> String {
+    static func surface(_ zones: [TEIZone], textBlock: TEITextBlock? = nil, label: String, frameURL: String) -> String {
       let extent: [Double]
       if let first = zones.first {
         extent = [first.surfaceULX, first.surfaceULY, first.surfaceLRX, first.surfaceLRY]
@@ -908,12 +908,12 @@
       out +=
         " ulx=\"\(TEIZone.number(extent[0]))\" uly=\"\(TEIZone.number(extent[1]))\""
         + " lrx=\"\(TEIZone.number(extent[2]))\" lry=\"\(TEIZone.number(extent[3]))\">"
-      if let textBlock, textBlock.imageWidth > 0, textBlock.imageHeight > 0 {
+      if let textBlock, textBlock.frameWidth > 0, textBlock.frameHeight > 0 {
         out +=
-          "<graphic url=\"\(XMLFormatter.escapingAttribute(imageURL))\" width=\"\(TEIZone.number(textBlock.imageWidth))px\""
-          + " height=\"\(TEIZone.number(textBlock.imageHeight))px\"/>"
-      } else if !imageURL.isEmpty {
-        out += "<graphic url=\"\(XMLFormatter.escapingAttribute(imageURL))\"/>"
+          "<graphic url=\"\(XMLFormatter.escapingAttribute(frameURL))\" width=\"\(TEIZone.number(textBlock.frameWidth))px\""
+          + " height=\"\(TEIZone.number(textBlock.frameHeight))px\"/>"
+      } else if !frameURL.isEmpty {
+        out += "<graphic url=\"\(XMLFormatter.escapingAttribute(frameURL))\"/>"
       }
       for zone in zones {
         out +=

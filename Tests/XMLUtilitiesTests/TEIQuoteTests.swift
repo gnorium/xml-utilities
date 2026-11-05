@@ -22,16 +22,16 @@ final class TEIQuoteTests: XCTestCase {
     let word = TEIWordPosition(line: 2, word: 4, surface: "word")
     XCTAssertEqual(
       TEIRenderer.surroundingSentence(
-        in: pages, imageID: "https://example.org/iiif/p1",
+        in: pages, frameID: "https://example.org/iiif/p1",
         start: word, end: word), "A split goes on here.")
     let wrong = TEIWordPosition(line: 2, word: 4, surface: "other")
     XCTAssertNil(
       TEIRenderer.surroundingSentence(
-        in: pages, imageID: "https://example.org/iiif/p1",
+        in: pages, frameID: "https://example.org/iiif/p1",
         start: wrong, end: wrong))
     XCTAssertEqual(
       TEIRenderer.surroundingSentence(
-        in: Array(pages.prefix(2)), imageID: "https://example.org/iiif/p1",
+        in: Array(pages.prefix(2)), frameID: "https://example.org/iiif/p1",
         start: word, end: word), "A split")
     let broken =
       "<TEI><text><body><pb facs=\"a/full/100,/0/default.jpg\"/><p><s part=\"I\">Before <w part=\"I\">com</w></s></p>"
@@ -39,7 +39,7 @@ final class TEIQuoteTests: XCTestCase {
     let full = TEIWordPosition(line: 1, word: 2, surface: "computer")
     XCTAssertEqual(
       TEIRenderer.surroundingSentence(
-        in: TEIRenderer.pages(in: broken), imageID: "a",
+        in: TEIRenderer.pages(in: broken), frameID: "a",
         start: full, end: full), "Before after.")
   }
 
@@ -131,7 +131,7 @@ final class TEIQuoteTests: XCTestCase {
     // "word": line 2 (after the <lb/>), after "here", "A" and "split".
     let word = TEIWordPosition(line: 2, word: 4, surface: "word")
     let highlights = try XCTUnwrap(
-      TEIRenderer.quote(in: pages, imageID: "https://example.org/iiif/p1", start: word, end: word))
+      TEIRenderer.quote(in: pages, frameID: "https://example.org/iiif/p1", start: word, end: word))
     XCTAssertEqual(highlights["https://example.org/iiif/p1"], [.init(22..<34, kind: .sentence), .init(30..<34, kind: .title)])
     XCTAssertEqual(highlights["https://example.org/iiif/p2"], [.init(0..<13, kind: .sentence)])
     XCTAssertNil(highlights["https://example.org/iiif/p0"])
@@ -160,7 +160,7 @@ final class TEIQuoteTests: XCTestCase {
     let here = TEIWordPosition(line: 2, word: 1, surface: "here")
     let highlights = try XCTUnwrap(
       TEIRenderer.quote(
-        in: TEIRenderer.pages(in: document), imageID: "https://example.org/iiif/q0", start: here, end: here))
+        in: TEIRenderer.pages(in: document), frameID: "https://example.org/iiif/q0", start: here, end: here))
     XCTAssertEqual(highlights["https://example.org/iiif/q0"], [.init(11..<24, kind: .sentence), .init(12..<16, kind: .title)])
   }
 
@@ -173,7 +173,7 @@ final class TEIQuoteTests: XCTestCase {
     let pages = TEIRenderer.pages(in: doc)
     let of = try XCTUnwrap(TEIRenderer.words(of: pages[0]).first { $0.surface == "of" })
     let at = TEIWordPosition(line: of.place.line, word: of.place.word, surface: "of")
-    let marks = try XCTUnwrap(TEIRenderer.quote(in: pages, imageID: "a", start: at, end: at))
+    let marks = try XCTUnwrap(TEIRenderer.quote(in: pages, frameID: "a", start: at, end: at))
     let runs = TEIRenderer.pages(in: doc, highlights: marks, marksWords: true)[0].lines.flatMap(\.runs)
     XCTAssertEqual(runs.filter { $0.text == " " }.map(\.highlight), [.sentence, .sentence])
   }
@@ -183,7 +183,7 @@ final class TEIQuoteTests: XCTestCase {
     let pages = TEIRenderer.pages(in: doc)
     let of = try XCTUnwrap(TEIRenderer.words(of: pages[0]).first { $0.surface == "of" })
     let at = TEIWordPosition(line: of.place.line, word: of.place.word, surface: "of")
-    let marks = try XCTUnwrap(TEIRenderer.quote(in: pages, imageID: "a", start: at, end: at))
+    let marks = try XCTUnwrap(TEIRenderer.quote(in: pages, frameID: "a", start: at, end: at))
     let drawn = TEIRenderer.pages(in: doc, highlights: marks, marksWords: true)
     XCTAssertEqual(drawn[0].lines.flatMap(\.runs).filter { $0.highlight == .title }.map(\.text).joined(), "of")
   }
@@ -193,7 +193,7 @@ final class TEIQuoteTests: XCTestCase {
     // "sentence" in "First  sentence\nhere.": the supplied word is not counted.
     let sentence = TEIWordPosition(line: 1, word: 2, surface: "sentence")
     let highlights = try XCTUnwrap(
-      TEIRenderer.quote(in: pages, imageID: "https://example.org/iiif/p1", start: sentence, end: sentence))
+      TEIRenderer.quote(in: pages, frameID: "https://example.org/iiif/p1", start: sentence, end: sentence))
     XCTAssertEqual(highlights["https://example.org/iiif/p1"], [.init(0..<21, kind: .sentence), .init(7..<15, kind: .title)])
     let read = TEIRenderer.pages(in: document, highlights: highlights)
     let runs = read[1].lines.flatMap(\.runs)
@@ -206,7 +206,7 @@ final class TEIQuoteTests: XCTestCase {
     let pages = TEIRenderer.pages(in: document)
     let highlights = try XCTUnwrap(
       TEIRenderer.quote(
-        in: pages, imageID: "https://example.org/iiif/p1",
+        in: pages, frameID: "https://example.org/iiif/p1",
         start: .init(line: 2, word: 2, surface: "A"), end: .init(line: 2, word: 4, surface: "word")))
     XCTAssertEqual(highlights["https://example.org/iiif/p1"]?.last, .init(22..<34, kind: .title))
   }
@@ -215,14 +215,14 @@ final class TEIQuoteTests: XCTestCase {
   /// (user, 2026-11-01): its words from the first to the first page's end,
   /// then from the next page's start to the last, highlighted on each; not
   /// on a page that is not the next, nor where a word reads otherwise.
-  func testAQuoteOverTwoImagesIsHighlightedOnBoth() throws {
+  func testAQuoteOverTwoFramesIsHighlightedOnBoth() throws {
     let pages = TEIRenderer.pages(in: document)
     let first = TEIWordPosition(line: 2, word: 2, surface: "A")
     let last = TEIWordPosition(line: 1, word: 2, surface: "on")
     let highlights = try XCTUnwrap(
       TEIRenderer.quote(
-        in: pages, imageID: "https://example.org/iiif/p1", start: first, end: last,
-        endImageID: "https://example.org/iiif/p2"))
+        in: pages, frameID: "https://example.org/iiif/p1", start: first, end: last,
+        endFrameID: "https://example.org/iiif/p2"))
     let read = TEIRenderer.pages(in: document, highlights: highlights)
     func titled(_ page: Int) -> String {
       read[page].lines.flatMap(\.runs).filter { $0.highlight == .title }.map(\.text).joined()
@@ -232,22 +232,22 @@ final class TEIQuoteTests: XCTestCase {
     XCTAssertEqual(titled(3), "")
     XCTAssertNil(
       TEIRenderer.quote(
-        in: pages, imageID: "https://example.org/iiif/p1", start: first, end: last,
-        endImageID: "https://example.org/iiif/p3"))
+        in: pages, frameID: "https://example.org/iiif/p1", start: first, end: last,
+        endFrameID: "https://example.org/iiif/p3"))
     XCTAssertNil(
       TEIRenderer.quote(
-        in: pages, imageID: "https://example.org/iiif/p1", start: first,
-        end: .init(line: 1, word: 2, surface: "off"), endImageID: "https://example.org/iiif/p2"))
+        in: pages, frameID: "https://example.org/iiif/p1", start: first,
+        end: .init(line: 1, word: 2, surface: "off"), endFrameID: "https://example.org/iiif/p2"))
   }
 
   func testAWordThatReadsOtherwiseIsNotHighlighted() {
     let pages = TEIRenderer.pages(in: document)
     let moved = TEIWordPosition(line: 2, word: 3, surface: "word")
-    XCTAssertNil(TEIRenderer.quote(in: pages, imageID: "https://example.org/iiif/p1", start: moved, end: moved))
+    XCTAssertNil(TEIRenderer.quote(in: pages, frameID: "https://example.org/iiif/p1", start: moved, end: moved))
     let absent = TEIWordPosition(line: 9, word: 1, surface: "word")
-    XCTAssertNil(TEIRenderer.quote(in: pages, imageID: "https://example.org/iiif/p1", start: absent, end: absent))
+    XCTAssertNil(TEIRenderer.quote(in: pages, frameID: "https://example.org/iiif/p1", start: absent, end: absent))
     let word = TEIWordPosition(line: 2, word: 4, surface: "word")
-    XCTAssertNil(TEIRenderer.quote(in: pages, imageID: "https://example.org/iiif/nowhere", start: word, end: word))
+    XCTAssertNil(TEIRenderer.quote(in: pages, frameID: "https://example.org/iiif/nowhere", start: word, end: word))
   }
 
   /// The same pages as gnorium-python's `units` counts them
@@ -268,15 +268,15 @@ final class TEIQuoteTests: XCTestCase {
     let pages = TEIRenderer.pages(in: tagged)
     let computor = TEIWordPosition(line: 2, word: 1, surface: "computor")
     XCTAssertEqual(
-      TEIRenderer.quote(in: pages, imageID: "https://example.org/iiif/t0", start: computor, end: computor)?[
+      TEIRenderer.quote(in: pages, frameID: "https://example.org/iiif/t0", start: computor, end: computor)?[
         "https://example.org/iiif/t0"]?.last?.kind, .title)
     // A word broken over a page is counted where it starts, its surface both parts.
     let broken = TEIWordPosition(line: 1, word: 2, surface: "compu-ter")
-    XCTAssertNotNil(TEIRenderer.quote(in: pages, imageID: "https://example.org/iiif/t1", start: broken, end: broken))
+    XCTAssertNotNil(TEIRenderer.quote(in: pages, frameID: "https://example.org/iiif/t1", start: broken, end: broken))
     // The next page counts from its own first word; untagged text is counted by its tokens.
     let won = TEIWordPosition(line: 1, word: 1, surface: "won")
     let rosae = TEIWordPosition(line: 1, word: 2, surface: "rosæ")
-    XCTAssertNotNil(TEIRenderer.quote(in: pages, imageID: "https://example.org/iiif/t2", start: won, end: rosae))
+    XCTAssertNotNil(TEIRenderer.quote(in: pages, frameID: "https://example.org/iiif/t2", start: won, end: rosae))
   }
   /// A figure's `<figDesc>` and an incident's `<desc>` are the encoder's
   /// words about the page, never a word of it: the same page as
@@ -347,7 +347,7 @@ final class TEIQuoteTests: XCTestCase {
     for (word, surface, offset) in [(3, "x", 9), (4, "=", 11), (8, "c", 19), (9, "hold", 21)] {
       let at = TEIWordPosition(line: 1, word: word, surface: surface)
       let title = TEIRenderer.quote(
-        in: pages, imageID: "https://example.org/iiif/f0", start: at, end: at)?["https://example.org/iiif/f0"]?
+        in: pages, frameID: "https://example.org/iiif/f0", start: at, end: at)?["https://example.org/iiif/f0"]?
         .first { $0.kind == .title }
       XCTAssertEqual(title?.range, offset..<(offset + surface.unicodeScalars.count), surface)
     }
@@ -371,7 +371,7 @@ final class TEIQuoteTests: XCTestCase {
     // "a + \u{FFFC} b end": b at 6.
     let at = TEIWordPosition(line: 1, word: 3, surface: "b")
     let title = TEIRenderer.quote(
-      in: pages, imageID: "https://example.org/iiif/g0", start: at, end: at)?["https://example.org/iiif/g0"]?
+      in: pages, frameID: "https://example.org/iiif/g0", start: at, end: at)?["https://example.org/iiif/g0"]?
       .first { $0.kind == .title }
     XCTAssertEqual(title?.range, 6..<7)
   }
@@ -394,10 +394,10 @@ final class TEIQuoteTests: XCTestCase {
     for (line, word, surface) in [(1, 2, "Tragedy"), (2, 1, "King."), (3, 2, "thy"), (4, 2, "king"), (5, 1, "But")] {
       let at = TEIWordPosition(line: line, word: word, surface: surface)
       XCTAssertNotNil(
-        TEIRenderer.quote(in: pages, imageID: page, start: at, end: at), "\(surface) is not line \(line), word \(word)")
+        TEIRenderer.quote(in: pages, frameID: page, start: at, end: at), "\(surface) is not line \(line), word \(word)")
     }
     // The <lb/> ending line 4 and the one opening the next verse line are one line.
     let none = TEIWordPosition(line: 6, word: 1, surface: "But")
-    XCTAssertNil(TEIRenderer.quote(in: pages, imageID: page, start: none, end: none))
+    XCTAssertNil(TEIRenderer.quote(in: pages, frameID: page, start: none, end: none))
   }
 }

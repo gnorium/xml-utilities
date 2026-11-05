@@ -117,7 +117,7 @@
     /// none gives a width.
     public var scanWidth: Double? {
       if let block = textBlock, case _? = Self.leafTypeArea(of: block, lines: lines), let leaf = block.leafBox {
-        return Self.leafMeasure * block.imageWidth / (leaf.right - leaf.left)
+        return Self.leafMeasure * block.frameWidth / (leaf.right - leaf.left)
       }
       if let own = textBlock?.typeArea, own.width > 0 { return own.width }
       if let work = TEIRendition.typeArea(in: renditions), work.width > 0 { return work.width }
@@ -151,7 +151,7 @@
           if case _? = line.zone { return true }
           return false
         }),
-        let block = textBlock, block.imageWidth > 0, block.imageHeight > 0, let leaf = block.leafBox
+        let block = textBlock, block.frameWidth > 0, block.frameHeight > 0, let leaf = block.leafBox
       else { return nil }
       return TEIPageTypeArea(
         measure: leafMeasure, height: leafMeasure * (leaf.bottom - leaf.top) / (leaf.right - leaf.left), head: 0,
@@ -163,7 +163,7 @@
     ) -> TEIPageTypeArea? {
       guard let work = TEIRendition.typeArea(in: renditions) ?? textBlock?.typeArea else { return nil }
       var page: (width: Double, height: Double)?
-      if let workPage, let textBlock, textBlock.imageWidth > 0, textBlock.imageHeight > 0,
+      if let workPage, let textBlock, textBlock.frameWidth > 0, textBlock.frameHeight > 0,
         textBlock.paperWidth - workPage.width > work.leastMargin * work.body
           || textBlock.paperHeight - workPage.height > work.leastMargin * work.body
       {
@@ -242,7 +242,7 @@
     /// its own (`lineSetting`) keeps it. A page with no type area, or whose
     /// leaf is not kept, leaves its lines as they are.
     static func placedByZone(_ lines: [TEILine], typeArea: TEIPageTypeArea?, textBlock: TEITextBlock?) -> [TEILine] {
-      guard let typeArea, let block = textBlock, block.imageWidth > 0, block.imageHeight > 0, let leaf = block.leafBox,
+      guard let typeArea, let block = textBlock, block.frameWidth > 0, block.frameHeight > 0, let leaf = block.leafBox,
         leaf.right > leaf.left
       else { return lines }
       let leafWidth = typeArea.pageWidth > 0 ? typeArea.pageWidth : typeArea.left + typeArea.measure + typeArea.right
@@ -261,10 +261,10 @@
           return line
         }
         let box = zone.percent
-        let left = box.x / 100 * block.imageWidth
-        let top = box.y / 100 * block.imageHeight
-        let width = box.width / 100 * block.imageWidth
-        let height = box.height / 100 * block.imageHeight
+        let left = box.x / 100 * block.frameWidth
+        let top = box.y / 100 * block.frameHeight
+        let width = box.width / 100 * block.frameWidth
+        let height = box.height / 100 * block.frameHeight
         let down = bottom.map { (top - $0) * scale } ?? ((top - leaf.top) * scale - typeArea.head)
         bottom = top + height
         // A line of capitals (gilt lettering) is set at its ink's size: its
@@ -863,7 +863,7 @@
 
     /// The image each page reads, in order (`pages(in:)`'s
     /// `facsimileURL`s), read from its page breaks alone.
-    public static func pageImages(in xml: String) -> [String] {
+    public static func pageFrames(in xml: String) -> [String] {
       guard let text = XMLFormatter.textRange(of: xml) else { return [] }
       return pageBreaks(in: xml[text]).map(\.facsimileURL)
     }
@@ -929,11 +929,11 @@
         // image's break, carrying its `facs`.
         let (side, rest) = openingSideBreak(of: markup)
         if var folded = side {
-          let image = xml[open.tag]
-          if let facs = image.range(of: #"\sfacs\s*=\s*("[^"]*"|'[^']*')"#, options: .regularExpression),
+          let frame = xml[open.tag]
+          if let facs = frame.range(of: #"\sfacs\s*=\s*("[^"]*"|'[^']*')"#, options: .regularExpression),
             let close = folded.range(of: #"\s*/?>$"#, options: .regularExpression)
           {
-            folded.insert(contentsOf: image[facs], at: close.lowerBound)
+            folded.insert(contentsOf: frame[facs], at: close.lowerBound)
           }
           out += folded
         } else {

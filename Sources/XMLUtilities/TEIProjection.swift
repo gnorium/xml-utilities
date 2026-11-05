@@ -649,16 +649,16 @@
     /// not among `pages`, or a word is not there or reads otherwise than its
     /// surface: nothing is highlighted rather than the wrong words.
     ///
-    /// A quote that runs onto the next image (`endImageID`, the page after
-    /// `imageID`) ends on that page: its words from `start` to the first
+    /// A quote that runs onto the next image (`endFrameID`, the page after
+    /// `frameID`) ends on that page: its words from `start` to the first
     /// page's end and from the next page's start to `end`, highlighted on
     /// both.
     public static func quote(
-      in pages: [TEIPage], imageID: String, start: TEIWordPosition, end: TEIWordPosition,
-      endImageID: String? = nil
+      in pages: [TEIPage], frameID: String, start: TEIWordPosition, end: TEIWordPosition,
+      endFrameID: String? = nil
     ) -> [String: [TEIHighlight]]? {
       let ids = pages.map { serviceID(ofFacsimile: $0.facsimileURL) }
-      guard let at = ids.firstIndex(of: imageID) else { return nil }
+      guard let at = ids.firstIndex(of: frameID) else { return nil }
       let projections = pages.map { TEIProjection.of(markup: $0.markup) }
       let projection = projections[at]
       // Each word's whole surface: a word broken over the page break is its
@@ -678,8 +678,8 @@
         guard TEIProjection.fold(surface) == TEIProjection.fold(position.surface) else { return nil }
         return unit
       }
-      if let endImageID, endImageID != imageID {
-        guard at + 1 < ids.count, ids[at + 1] == endImageID, let first = located(start, on: at),
+      if let endFrameID, endFrameID != frameID {
+        guard at + 1 < ids.count, ids[at + 1] == endFrameID, let first = located(start, on: at),
           let last = located(end, on: at + 1)
         else { return nil }
         let next = projections[at + 1]
@@ -693,11 +693,11 @@
           ?? (first.range.lowerBound..<projection.size)
         let closing = sentence(next, holding: max(last.range.upperBound - 1, 0))
           ?? (0..<last.range.upperBound)
-        highlights[imageID] = [
+        highlights[frameID] = [
           .init(min(opening.lowerBound, first.range.lowerBound)..<projection.size, kind: .sentence),
           .init(first.range.lowerBound..<projection.size, kind: .title),
         ]
-        highlights[endImageID] = [
+        highlights[endFrameID] = [
           .init(0..<max(closing.upperBound, last.range.upperBound), kind: .sentence),
           .init(0..<last.range.upperBound, kind: .title),
         ]
@@ -746,9 +746,9 @@
         let breaks = projection.breaks
         let from = first.line >= 2 && first.line - 2 < breaks.count ? breaks[first.line - 2] : 0
         let to = last.line - 1 < breaks.count ? breaks[last.line - 1] : projection.size
-        highlights[imageID, default: []].append(.init(min(from, title.lowerBound)..<max(to, title.upperBound), kind: .sentence))
+        highlights[frameID, default: []].append(.init(min(from, title.lowerBound)..<max(to, title.upperBound), kind: .sentence))
       }
-      highlights[imageID, default: []].append(.init(title, kind: .title))
+      highlights[frameID, default: []].append(.init(title, kind: .title))
       return highlights
     }
 
@@ -757,11 +757,11 @@
     /// (`quote`) covers, by the page they start on. Empty where the
     /// anchor no longer reads.
     public static func quoteWords(
-      in pages: [TEIPage], imageID: String, start: TEIWordPosition, end: TEIWordPosition, endImageID: String? = nil
-    ) -> [(imageID: String, word: TEIWord)] {
-      guard let highlights = quote(in: pages, imageID: imageID, start: start, end: end, endImageID: endImageID)
+      in pages: [TEIPage], frameID: String, start: TEIWordPosition, end: TEIWordPosition, endFrameID: String? = nil
+    ) -> [(frameID: String, word: TEIWord)] {
+      guard let highlights = quote(in: pages, frameID: frameID, start: start, end: end, endFrameID: endFrameID)
       else { return [] }
-      var found: [(imageID: String, word: TEIWord)] = []
+      var found: [(frameID: String, word: TEIWord)] = []
       for page in pages {
         let id = serviceID(ofFacsimile: page.facsimileURL)
         let sentences = (highlights[id] ?? []).filter { $0.kind == .sentence }.map(\.range)
@@ -785,13 +785,13 @@
     /// Uses the same validated surfaces, diplomatic projection and explicit
     /// cross-page sentence continuation as the reader. No unseen text is added.
     public static func surroundingSentence(
-      in pages: [TEIPage], imageID: String, start: TEIWordPosition, end: TEIWordPosition
+      in pages: [TEIPage], frameID: String, start: TEIWordPosition, end: TEIWordPosition
     ) -> String? {
-      guard let highlights = quote(in: pages, imageID: imageID, start: start, end: end) else {
+      guard let highlights = quote(in: pages, frameID: frameID, start: start, end: end) else {
         return nil
       }
       var excludedByPage = highlights.mapValues { $0.filter { $0.kind == .title }.map(\.range) }
-      if let at = pages.firstIndex(where: { serviceID(ofFacsimile: $0.facsimileURL) == imageID }),
+      if let at = pages.firstIndex(where: { serviceID(ofFacsimile: $0.facsimileURL) == frameID }),
         TEIProjection.of(markup: pages[at].markup).units.first(where: {
           $0.line == end.line && $0.number == end.word
         })?.runsOn == true
