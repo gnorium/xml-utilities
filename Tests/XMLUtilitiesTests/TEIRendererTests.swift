@@ -662,7 +662,7 @@ final class TEIRendererTests: XCTestCase {
   /// where in its box alone "HAMLET" wrapped its "T" over its "M".
   func testACoversLetteringRunsReflowedAboutItsZonesMiddle() throws {
     let frame = "https://cdm16003.contentdm.oclc.org/iiif/2/p15150coll3:1360"
-    let tei = ##"<TEI xmlns="http://www.tei-c.org/ns/1.0"><facsimile><surface n="Front cover" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\##(image)/full/max/0/default.jpg" width="6120px" height="6630px"/>"##
+    let tei = ##"<TEI xmlns="http://www.tei-c.org/ns/1.0"><facsimile><surface n="Front cover" ulx="0" uly="0" lrx="1000" lry="1000"><graphic url="\##(frame)/full/max/0/default.jpg" width="6120px" height="6630px"/>"##
       + ##"<zone xml:id="p1-z-L2" ulx="417" uly="238" lrx="637" lry="259"/><zone xml:id="p1-z-L6" ulx="464" uly="427" lrx="595" lry="438"/>"##
       + ##"<zone xml:id="p1-textblock" type="textblock" points="172.3,64.24 879.57,59.61 884.82,936.85 175.7,941.07"/>"##
       + ##"<zone type="leaf" points="144.85,53.4 890.9,53.4 890.9,945.42 144.85,945.42"/></surface></facsimile>"##
@@ -885,7 +885,9 @@ final class TEIRendererTests: XCTestCase {
       TEIRenderer.layingPage(1, with: "<pb n=\"2a\"/><p>Left.</p><pb n=\"2b\"/><p>Right.</p>", in: document))
     let pages = TEIRenderer.pages(in: opening)
     XCTAssertEqual(pages.map(\.label), ["1", "2a"])
-    XCTAssertEqual(pages[1].markup, "<p>Left.</p><pb n=\"2b\"/><p>Right.</p>")
+    // Stored formatted (`XMLFormatter.formatted`): the body's children a
+    // line each.
+    XCTAssertEqual(pages[1].markup, "<p>Left.</p>\n<pb n=\"2b\"/>\n<p>Right.</p>")
     XCTAssertEqual(pages[1].lines.filter { if case .mark = $0.kind { true } else { false } }.map(\.text), ["2b"])
     // A page with no break of its own is laid as it is.
     XCTAssertEqual(

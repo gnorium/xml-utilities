@@ -35,12 +35,43 @@
     /// out of a document (a page) keeps its stray closing tags and unclosed
     /// elements. `prettified(prettified(x)) == prettified(x)`.
     public static func prettified(_ markup: String) -> String {
+      laidOut(markup, keepingMixedContent: false)
+    }
+
+    /// TEI as it is stored, one element a line (user, 2026-11-05: "store it
+    /// formatted"): laid out as `prettified` lays out an element-only
+    /// container—each child on a line of its own, two spaces deeper, the
+    /// white space between them replaced, a break put where there was none
+    /// only where `PrettyItem.breakable` allows it—and nothing else touched.
+    /// Mixed content (`p`, `ab`, `l`, `head`, `titlePart`, `note`, `fw`, `hi`,
+    /// `w`, any element whose children include text, or one `elementOnly`
+    /// does not name) is kept byte for byte, its white space with it: TEI
+    /// white space in mixed content is significant, so not one space in it
+    /// is added, removed or changed. A fragment whose top level holds text
+    /// is returned as given. The reading, the words, the `xml:id`s and the
+    /// rendered page stay the same; `formatted(formatted(x)) == formatted(x)`.
+    ///
+    /// The one formatter for stored TEI: every writer stores a page's
+    /// fragment through it (`TEIRenderer.layingPages`,
+    /// `TEIRenderer.formattingPages`), Raw, the Diff and the Revise editor
+    /// show a page through it (`TEIView.shownCode`), and the one-time
+    /// reformat of stored rows runs it. A model's output is never edited
+    /// with it: its trace keeps the page as it was written; only the
+    /// document the page is laid into is formatted.
+    public static func formatted(_ markup: String) -> String {
+      laidOut(markup, keepingMixedContent: true)
+    }
+
+    /// `prettified` and `formatted`: element-only containers laid out alike;
+    /// mixed content one printed line a row (`PrettyNode.printedLines`), or,
+    /// `keepingMixedContent`, as written.
+    private static func laidOut(_ markup: String, keepingMixedContent: Bool) -> String {
       let root = PrettyNode.tree(of: markup)
       // Text at the top level: there is no element-only context to lay out.
       guard !root.holdsText else { return markup }
       var items: [PrettyItem] = []
       var pending = ""
-      root.lay(at: -1, in: "root", into: &items, pending: &pending)
+      root.lay(at: -1, in: "root", keepingMixedContent: keepingMixedContent, into: &items, pending: &pending)
       guard !items.isEmpty else { return markup }
       var out = items[0].text
       for index in 1..<items.count {
@@ -253,8 +284,11 @@
     /// Elements a reading starts a new line at (`TEIRenderer`'s blocks and
     /// line breaks), or reads apart (a table's cells, a figure's
     /// description), or does not read at all (the facsimile, the header).
+    /// An anonymous block (`ab`) is one (`TEIRenderer`'s `case "ab"`): a
+    /// line starts at it, so Hamlet Q1's pages, a run of `<ab>`s, lay out
+    /// one a line.
     static let blocks: Set<String> = [
-      "p", "lg", "l", "head", "div", "speaker", "stage", "fw", "item", "note", "lb", "cb", "pb", "gap", "table",
+      "p", "ab", "lg", "l", "head", "div", "speaker", "stage", "fw", "item", "note", "lb", "cb", "pb", "gap", "table",
       "row", "cell", "figure", "figDesc", "desc", "facsimile", "teiHeader", "standOff", "docTitle", "titlePart",
       "docImprint", "byline", "epigraph", "argument", "imprimatur",
     ]
@@ -526,8 +560,8 @@
     /// read since the last line; `parent` the local name of the element it
     /// stands in ("root" at the top, as `TEIMarkup` names it).
     func lay(
-      at depth: Int, in parent: String, firstOfSpeech: Bool = false, unread: Bool = false, into items: inout [PrettyItem],
-      pending: inout String
+      at depth: Int, in parent: String, firstOfSpeech: Bool = false, unread: Bool = false,
+      keepingMixedContent: Bool = false, into items: inout [PrettyItem], pending: inout String
     ) {
       func add(
         _ text: String, _ indent: Int, reading: (PrettyItem.Reading, PrettyItem.Reading),
@@ -550,7 +584,11 @@
           let reading: PrettyItem.Reading = block ? .block : (prints ? .text : .silent)
           var projection = unread ? (.separator, .separator) : edges
           if firstOfSpeech { projection.1 = .separator }
-          add(printedLines(at: depth, in: parent), depth, reading: (reading, reading), projection: projection)
+          // Mixed content as written (`XMLFormatter.formatted`), or one
+          // printed line a row (`prettified`).
+          add(
+            keepingMixedContent ? verbatim : printedLines(at: depth, in: parent), depth,
+            reading: (reading, reading), projection: projection)
           return
         }
         let reading: PrettyItem.Reading = block ? .block : .silent
@@ -562,8 +600,8 @@
         let first = name == "sp" ? children.firstIndex { $0.kind == .element } : nil
         for (index, child) in children.enumerated() {
           child.lay(
-            at: depth + 1, in: name.isEmpty ? "root" : name, firstOfSpeech: index == first, unread: unread, into: &items,
-            pending: &pending)
+            at: depth + 1, in: name.isEmpty ? "root" : name, firstOfSpeech: index == first, unread: unread,
+            keepingMixedContent: keepingMixedContent, into: &items, pending: &pending)
         }
         if let close {
           let edge: PrettyItem.Projection =

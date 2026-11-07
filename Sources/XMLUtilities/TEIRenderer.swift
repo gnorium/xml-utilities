@@ -871,11 +871,13 @@
     /// `xml` with page `index` (as `pageRanges` places it) holding `markup`
     /// in place of its own: its content between the white space at its
     /// edges replaced, or, on a page with none, set on the line after its
-    /// page break. Nil when there is no such page.
+    /// page break. Stored formatted (`XMLFormatter.formatted`, user
+    /// 2026-11-05). Nil when there is no such page.
     public static func replacingPage(_ index: Int, with markup: String, in xml: String) -> String? {
       let ranges = pageRanges(in: xml)
       guard ranges.indices.contains(index) else { return nil }
       let range = ranges[index]
+      let markup = XMLFormatter.formatted(markup)
       var out = xml
       if let first = xml[range].firstIndex(where: { !$0.isWhitespace }),
         let last = xml[range].lastIndex(where: { !$0.isWhitespace })
@@ -906,8 +908,10 @@
     /// `own_page_break`). An opening's later sides keep their own breaks,
     /// without `facs`; `pages` reads them as marks within the image. Laying
     /// the side's break after the image's gave a single page two page
-    /// beginnings at one point, and its label twice. Nil when there is no
-    /// such page.
+    /// beginnings at one point, and its label twice. The page's content is
+    /// stored formatted (`XMLFormatter.formatted`, user 2026-11-05): one
+    /// element a line where its containers hold elements only, its mixed
+    /// content as written. Nil when there is no such page.
     public static func layingPage(_ index: Int, with markup: String, in xml: String) -> String? {
       layingPages([(index, markup)], in: xml)
     }
@@ -939,7 +943,9 @@
         } else {
           out += xml[open.tag]
         }
-        let content = side == nil ? markup : rest
+        // Stored formatted (`XMLFormatter.formatted`): every page a writer
+        // lays in reads the same in Raw, the Diff and the Revise editor.
+        let content = XMLFormatter.formatted(side == nil ? markup : rest)
         out += xml[open.tag.upperBound..<range.lowerBound]
         // Its content between the white space at its edges replaced, or, on
         // a page with none, set on the line after its page break
@@ -956,6 +962,60 @@
           out += content
           cursor = at
         }
+      }
+      out += xml[cursor...]
+      return out
+    }
+
+    /// `xml` with each page's content—its range (`pageRanges`) between the
+    /// white space at its edges—formatted as stored TEI is
+    /// (`XMLFormatter.formatted`, user 2026-11-05), every byte outside the
+    /// pages as it was: the header, recorded byte for byte, the facsimile,
+    /// the document's own structure. Given `since`, only the pages whose
+    /// content differs, byte for byte, from the same image's page there: a
+    /// writer formats what it wrote, never a page it left as it stood. A
+    /// document whose breaks name no image (a calibrated frame's own TEI,
+    /// `<pb n="1"/>`) is one page: its body's content.
+    public static func formattingPages(in xml: String, since: String? = nil) -> String {
+      let ranges = pageRanges(in: xml)
+      guard !ranges.isEmpty else {
+        if let since, Array(since.utf8) == Array(xml.utf8) { return xml }
+        guard let open = xml.range(of: #"<body(?=[\s>/])[^>]*>"#, options: .regularExpression),
+          let close = xml.range(of: "</body>", options: .backwards), open.upperBound <= close.lowerBound
+        else { return xml }
+        return formatting(xml, in: [open.upperBound..<close.lowerBound])
+      }
+      var standing: [String: [UInt8]] = [:]
+      if let since {
+        for (frame, range) in zip(pageFrames(in: since), pageRanges(in: since)) {
+          let service = serviceID(ofFacsimile: frame)
+          if standing[service] == nil {
+            standing[service] = Array(since[range].trimmingCharacters(in: .whitespacesAndNewlines).utf8)
+          }
+        }
+      }
+      let frames = pageFrames(in: xml)
+      let changed = zip(frames, ranges).compactMap { frame, range -> Range<String.Index>? in
+        guard since != nil else { return range }
+        let now = Array(xml[range].trimmingCharacters(in: .whitespacesAndNewlines).utf8)
+        return standing[serviceID(ofFacsimile: frame)] == now ? nil : range
+      }
+      return formatting(xml, in: changed)
+    }
+
+    /// `xml` with the content of each range (ascending, disjoint) between
+    /// the white space at its edges formatted (`XMLFormatter.formatted`).
+    private static func formatting(_ xml: String, in ranges: [Range<String.Index>]) -> String {
+      var out = ""
+      var cursor = xml.startIndex
+      for range in ranges {
+        guard cursor <= range.lowerBound,
+          let first = xml[range].firstIndex(where: { !$0.isWhitespace }),
+          let last = xml[range].lastIndex(where: { !$0.isWhitespace })
+        else { continue }
+        out += xml[cursor..<first]
+        out += XMLFormatter.formatted(String(xml[first...last]))
+        cursor = xml.index(after: last)
       }
       out += xml[cursor...]
       return out
