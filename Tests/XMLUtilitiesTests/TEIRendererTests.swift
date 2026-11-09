@@ -1568,8 +1568,8 @@ final class TEIRendererTests: XCTestCase {
       }
     }
     let flat = try shape(page(
-      ##"<ab rendition="#size-2"><lb facs="#z-L1"/>Fort. Where is this bloudy fight?"##
-        + ##"<lb facs="#z-L2"/>Amb. So iarring and so dismall,<lb facs="#z-L3"/>and so abrupt.</ab>"##))
+      ##"<ab rendition="#size-2"><lb facs="#z-L1"/>Fort. Where is this bloudy fight?</ab>"##
+        + ##"<ab rendition="#size-2"><lb facs="#z-L2"/>Amb. So iarring and so dismall,<lb facs="#z-L3"/>and so abrupt.</ab>"##))
     for block in ["ab", "p"] {
       let speech = try shape(page(
         ##"<sp who="#fortinbras" rendition="#size-2"><lb facs="#z-L1"/><speaker>Fort.</speaker> "##
@@ -1578,6 +1578,82 @@ final class TEIRendererTests: XCTestCase {
           + "<\(block)>So iarring and so dismall,<lb facs=\"#z-L3\"/>and so abrupt.</\(block)></sp>"))
       XCTAssertEqual(speech, flat, block)
     }
+  }
+
+  /// Measured lines take the leading of the nearest rendition that sets
+  /// them, whatever speech or verse wraps them (user, 2026-11-10: Hamlet Q1
+  /// p. 5, its `<ab rendition="#leading-…">` moved onto `<sp>`, `<lg>` or
+  /// `<l>`, set every line at the default leading and ran 13 em past the
+  /// type area). The page is laid out over lines, as documents are: white
+  /// space between its elements neither begins a line nor sets one.
+  func testMeasuredLinesKeepTheirBlocksLeadingWhateverSpeechAndVerseWrapThem() throws {
+    let zones = (1...3).map { ##"<zone xml:id="z-L\##($0)" ulx="100" uly="\##($0 * 50)" lrx="900" lry="\##($0 * 50 + 40)"/>"## }
+      .joined()
+    let header = "<teiHeader><encodingDesc><tagsDecl>"
+      + ##"<rendition xml:id="size-4" scheme="css">font-size:0.999rem</rendition>"##
+      + ##"<rendition xml:id="leading-4" scheme="css">line-height:1.2607rem</rendition>"##
+      + ##"<rendition xml:id="indent-3" scheme="css">text-indent:1.3433rem</rendition>"##
+      + "</tagsDecl></encodingDesc></teiHeader>"
+    func page(_ body: String) -> String {
+      ##"<TEI xmlns="http://www.tei-c.org/ns/1.0">"## + header
+        + ##"<facsimile><surface ulx="0" uly="0" lrx="1000" lry="1000">"## + zones
+        + ##"</surface></facsimile><text><body><pb n="p. 5" facs="https://example.org/iiif/p5/full/max/0/default.jpg"/>\##n"##
+        + body + "\n</body></text></TEI>"
+    }
+    func lines(_ body: String) throws -> [TEILine] { try XCTUnwrap(TEIRenderer.pages(in: page(body)).first).lines }
+    func shape(_ lines: [TEILine]) -> [String] {
+      lines.map { "\($0.zone?.id ?? "-")|\($0.text)|\($0.opensBlock)|\($0.opensParagraph)|\($0.sharesLine)|\($0.rend)" }
+    }
+    let settings = ##"rendition="#size-4 #leading-4 #indent-3""##
+    let flat = try lines(
+      ##"<ab \##(settings)><lb facs="#z-L1"/>Mar. Is it not like the King?</ab>\##n"##
+        + ##"<ab \##(settings)><lb facs="#z-L2"/>Hor. As thou art to thy ſelfe,\##n<lb facs="#z-L3"/>Such was the very armor</ab>"##)
+    // Each block opens its speech, every line at its leading.
+    XCTAssertEqual(flat.map(\.opensBlock), [true, true, false])
+    XCTAssertTrue(flat.allSatisfy { $0.rend.contains("css:line-height=1.262em") }, shape(flat).joined(separator: "\n"))
+    let encodings = [
+      // The block's settings on the speech, its lines verse lines.
+      ##"<sp who="#marcellus" \##(settings)><lb facs="#z-L1"/><speaker>Mar.</speaker> <l>Is it not like the King?</l></sp>\##n"##
+        + ##"<sp who="#horatio" \##(settings)><lb facs="#z-L2"/><speaker>Hor.</speaker> <l>As thou art to thy ſelfe,</l>\##n"##
+        + ##"<l><lb facs="#z-L3"/>Such was the very armor</l></sp>"##,
+      // On the speech, its lines in a stanza.
+      ##"<sp who="#marcellus" \##(settings)><lb facs="#z-L1"/><speaker>Mar.</speaker> <lg><l>Is it not like the King?</l></lg></sp>\##n"##
+        + ##"<sp who="#horatio" \##(settings)><lb facs="#z-L2"/><speaker>Hor.</speaker> <lg><l>As thou art to thy ſelfe,</l>\##n"##
+        + ##"<l><lb facs="#z-L3"/>Such was the very armor</l></lg></sp>"##,
+      // On the stanza a speech holds.
+      ##"<sp who="#marcellus"><lg \##(settings)><l><lb facs="#z-L1"/><speaker>Mar.</speaker> Is it not like the King?</l></lg></sp>\##n"##
+        + ##"<sp who="#horatio"><lg \##(settings)><l><lb facs="#z-L2"/><speaker>Hor.</speaker> As thou art to thy ſelfe,</l>\##n"##
+        + ##"<l><lb facs="#z-L3"/>Such was the very armor</l></lg></sp>"##,
+    ]
+    for encoded in encodings {
+      XCTAssertEqual(shape(try lines(encoded)), shape(flat), encoded)
+    }
+    // On every verse line: each line at its leading.
+    let everyLine = try lines(
+      ##"<sp who="#marcellus"><lb facs="#z-L1"/><speaker>Mar.</speaker> <l rendition="#size-4 #leading-4">Is it not like the King?</l></sp>\##n"##
+        + ##"<sp who="#horatio"><l rendition="#size-4 #leading-4"><lb facs="#z-L2"/><speaker>Hor.</speaker> As thou art to thy ſelfe,</l>\##n"##
+        + ##"<l rendition="#size-4 #leading-4"><lb facs="#z-L3"/>Such was the very armor</l></sp>"##)
+    XCTAssertEqual(everyLine.map(\.text), flat.map(\.text))
+    XCTAssertTrue(
+      everyLine[1...].allSatisfy { $0.rend.contains("css:line-height=1.262em") }, shape(everyLine).joined(separator: "\n"))
+    // A verse line begun within its line (after its run-in prefix) moves nothing: only its type is its words'.
+    XCTAssertEqual(everyLine[0].rend, "")
+    let run = try XCTUnwrap(everyLine[0].runs.first { $0.text.contains("King") })
+    XCTAssertTrue(run.rend.contains("css:font-size"), run.rend)
+    // A second speech begun within the line sets nothing of it.
+    let shared = try lines(
+      ##"<sp who="#marcellus" \##(settings)><lb facs="#z-L1"/><speaker>Mar.</speaker> Is it,</sp> "##
+        + ##"<sp who="#horatio" rendition="#leading-4"><speaker>Hor.</speaker> No.</sp>"##)
+    XCTAssertEqual(shared.map(\.text), ["Mar. Is it, Hor. No."])
+    XCTAssertEqual(shared[0].rend, flat[0].rend)
+    // A speech whose vertical space stands before its first line break begins a line too.
+    let spaced = try lines(
+      ##"<ab \##(settings)><lb facs="#z-L1"/>Mar. Is it not like the King?</ab>\##n"##
+        + ##"<sp who="#horatio" \##(settings)><space dim="vertical" quantity="0.45" unit="em"/><lb facs="#z-L2"/>"##
+        + ##"<speaker>Hor.</speaker> <l>As thou art to thy ſelfe,</l></sp>"##)
+    let horatio = try XCTUnwrap(spaced.last)
+    XCTAssertEqual(horatio.rend, flat[1].rend)
+    XCTAssertTrue(horatio.opensBlock)
   }
 
   /// A block's rend as its words carry it inside a measured line: its

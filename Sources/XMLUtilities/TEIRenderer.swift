@@ -686,10 +686,12 @@
   /// a facsimile edition is read one opening at a time and no HTML fragment
   /// can carry that structure.
   public enum TEIRenderer {
-    /// What names its words and never places them on a measured page
-    /// (`rendering`): a speaker, a stage direction, a verse line, a stanza,
-    /// a head. Elsewhere each is a block of its own, as a TEI reader sets it.
-    static let measuredInline: Set<String> = ["speaker", "stage", "l", "lg", "head"]
+    /// What names its words and never breaks a line or adds a block's space
+    /// on a measured page (`rendering`): a speech, a speaker, a stage
+    /// direction, a verse line, a stanza, a head. Its renditions place the
+    /// lines it begins, as an `<ab>`'s do. Elsewhere each but a speech is a
+    /// block of its own, as a TEI reader sets it.
+    static let measuredWrappers: Set<String> = ["sp", "speaker", "stage", "l", "lg", "head"]
 
     /// The areas around the type area a note in a margin is set in, outside
     /// the type area where the scan has it (user, 2026-10-14), in reading order:
@@ -1391,9 +1393,9 @@
       }
       // Whether its lines are measured: a line break in it names its zone
       // on the scan (`<lb facs="#z-…"/>`), and each line is set where the
-      // scan has it. Then a speaker, a stage direction, a verse line, a
-      // stanza or a head names what its words are and never where they
-      // stand (`measuredInline`).
+      // scan has it. Then a speech, a speaker, a stage direction, a verse
+      // line, a stanza or a head names what its words are and never where
+      // they stand (`measuredWrappers`).
       func measures(_ element: TEIMarkup.Element) -> Bool {
         element.elements.contains { ($0.name == "lb" && zone(of: $0) != nil) || measures($0) }
       }
@@ -1443,6 +1445,20 @@
       // The part the lines of the block set now stand in, so far.
       var blockPart = ""
 
+      /// A block's margin after it, at the last block of those it holds
+      /// (set from line `entry` on): its children's lines took none of it.
+      func close(from entry: Int, _ setting: String) {
+        guard let last = lines.indices.last(where: { $0 >= entry && lines[$0].opensBlock }),
+          lines[last].rend != setting
+        else { return }
+        lines[last].rend = TEIRendition.closing(lines[last].rend, within: setting)
+      }
+      // The blocks a measured wrapper set that close once the line they
+      // ended in is set: its end breaks no line (`measuredWrappers`).
+      var closingAfterLine: [(entry: Int, setting: String)] = []
+      // Whether the line being set has taken its setting (`begin`).
+      var lineBegun = false
+
       func flush() {
         runs = TEIRenderer.spaced(runs)
         let text = runs.map(\.text).joined()
@@ -1465,8 +1481,55 @@
           paragraphPending = false
           lineBroken = false
           breakInWord = false
+          if !closingAfterLine.isEmpty {
+            for block in closingAfterLine { close(from: block.entry, block.setting) }
+            closingAfterLine = []
+            blockPending = true
+          }
         }
         runs = []
+        lineBegun = false
+      }
+
+      /// Whether the line being set holds anything yet: white space alone
+      /// between elements, markup laid out over lines, is none.
+      func holdsText() -> Bool {
+        !TEIRenderer.spaced(runs).map(\.text).joined().isEmpty
+      }
+      /// Whether an element's first content breaks the line: a line break,
+      /// or a vertical space, which stands between lines.
+      func opensWithBreak(_ element: TEIMarkup.Element) -> Bool {
+        for node in element.children {
+          switch node {
+          case .text(let text):
+            if text.contains(where: { !$0.isWhitespace }) { return false }
+          case .element(let child):
+            switch child.name {
+            case "lb": return true
+            case "space":
+              switch TEIRenderer.spaceMeasure(of: child) {
+              case .lines, .length(_, vertical: true): return true
+              case .characters, .length(_, vertical: false): return false
+              }
+            default: return opensWithBreak(child)
+            }
+          }
+        }
+        return false
+      }
+      /// Whether an element's words begin a line: nothing set on the line
+      /// before them, or a line break first in it.
+      func beginsLine(_ element: TEIMarkup.Element) -> Bool {
+        !holdsText() || opensWithBreak(element)
+      }
+      /// The line's kind and setting, where it begins: a line is set as the
+      /// setting it begins in, never one an element begun within it has
+      /// (user, 2026-11-10: only a line break places a line).
+      func begin(_ kind: TEILine.Kind, _ rend: String) {
+        guard !lineBegun else { return }
+        currentKind = kind
+        currentRend = rend
+        lineBegun = true
       }
 
       func append(_ line: TEILine) {
@@ -1489,15 +1552,6 @@
         return ([TEIRendition.box(of: setting)] + ink.map(String.init)).filter { !$0.isEmpty }.joined(separator: " ")
       }
 
-      /// A block's margin after it, at the last block of those it holds
-      /// (set from line `entry` on): its children's lines took none of it.
-      func close(from entry: Int, _ setting: String) {
-        guard let last = lines.indices.last(where: { $0 >= entry && lines[$0].opensBlock }),
-          lines[last].rend != setting
-        else { return }
-        lines[last].rend = TEIRendition.closing(lines[last].rend, within: setting)
-      }
-
       func walk(
         _ owner: TEIMarkup.Element, kind: TEILine.Kind = .text,
         rend: String = "", inlineRend: String = "", alternative: String = "", zone initialZone: TEIZone? = nil,
@@ -1516,9 +1570,11 @@
         for (index, node) in owner.children.enumerated() where including(node) {
           switch node {
           case .text(let text):
-            currentKind = kind
-            currentRend = rend
             let preserved = preserving.contains(ObjectIdentifier(owner))
+            // White space alone between elements is no line's setting (a
+            // speech's last line, the white space before the next speech
+            // read after it, stays the speech's).
+            if preserved || text.contains(where: { !$0.isWhitespace }) { begin(kind, rend) }
             if !text.isEmpty {
               if alternative.isEmpty {
                 for piece in pieces(of: text, at: owner.projected[index], in: highlights, words: words) {
@@ -1550,8 +1606,7 @@
             }
             switch element.name {
             case "formula" where element.elements.contains(where: { $0.name == "math" }):
-              currentKind = kind
-              currentRend = rend
+              begin(kind, rend)
               let formula = math(element, highlights: highlights, words: words)
               runs.append(.init(text: formula.text, rend: inlineRend, kind: .math(formula.math)))
             case "hi":
@@ -1610,8 +1665,7 @@
             case "supplied":
               // Not on the surface: set apart in square brackets, as an
               // edition sets what it supplies.
-              currentKind = kind
-              currentRend = rend
+              begin(kind, rend)
               let bracket = pieces(
                 of: "[", at: element.projectedStart.map { .init(start: $0, counted: false) }, in: highlights,
                 words: words
@@ -1670,8 +1724,7 @@
                 append(.init(kind: .space(quantity: quantity, unit: unit), text: " "))
               case .characters, .length(_, vertical: false):
                 let unit = element.attribute("unit")
-                currentKind = kind
-                currentRend = rend
+                begin(kind, rend)
                 // Inside a quote it is the quote's (user, 2026-10-31): the
                 // quote is its words and the space between them, one mark.
                 runs.append(
@@ -1741,19 +1794,43 @@
               walk(
                 element, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative,
                 zone: initialZone, gloss: glossing(element))
-            case let name where measured && TEIRenderer.measuredInline.contains(name):
+            case let name where measured && TEIRenderer.measuredWrappers.contains(name):
               // On a measured page its words stand on the measured lines
               // they are printed on: a run-in speech prefix on its speech's
               // line, a verse line or a stanza on its lines, no line broken,
-              // no space or margin of a block's added—only a line break
-              // (`<lb/>`) and the line's renditions place a line (user,
-              // 2026-11-09: wrapping Hamlet Q1's speech prefixes in
-              // `<speaker>` set every line after them a line low). Its own
-              // type and ink are its words' (`TEIRendition.asInline`).
-              walk(
-                element, kind: kind, rend: rend, inlineRend: joined(TEIRendition.asInline(ownRend)),
-                alternative: alternative, zone: initialZone, gloss: glossing(element), opened: opened)
-            case let name where measured && (name == "p" || name == "ab") && !runs.isEmpty:
+              // no block's space added—only a line break (`<lb/>`) places a
+              // line (user, 2026-11-09: wrapping Hamlet Q1's speech prefixes
+              // in `<speaker>` set every line after them a line low). Its
+              // renditions are the measured settings an `<ab>`'s are:
+              // beginning a line, it sets the lines it begins by them—their
+              // leading, indent, alignment and margins (user, 2026-11-10:
+              // Hamlet Q1 p. 5's `<ab rendition>` moved onto its speeches'
+              // `<sp>` set every line at the default leading, 13 em past the
+              // type area), and its block closes after the line it ends in.
+              // Begun within a line, only its type and ink are its words'
+              // (`TEIRendition.asInline`).
+              if beginsLine(element), TEIRendition.placesLines(ownRend) {
+                flush()
+                let entry = lines.count
+                let setting = TEIRendition.cascade(
+                  rend, TEIRenderer.blockSetting(of: ownRend), .block(first: lines.count == opened))
+                let type = TEIRenderer.typeSetting(of: ownRend)
+                blockPending = true
+                walk(
+                  element, kind: kind, rend: setting, inlineRend: type.isEmpty ? inlineRend : joined(type),
+                  alternative: alternative, zone: initialZone, gloss: glossing(element), opened: entry)
+                if holdsText() {
+                  closingAfterLine.append((entry, setting))
+                } else {
+                  close(from: entry, setting)
+                  blockPending = true
+                }
+              } else {
+                walk(
+                  element, kind: kind, rend: rend, inlineRend: joined(TEIRendition.asInline(ownRend)),
+                  alternative: alternative, zone: initialZone, gloss: glossing(element), opened: opened)
+              }
+            case let name where measured && (name == "p" || name == "ab") && !beginsLine(element):
               // On a measured page a speech's block that begins in the line
               // its run-in prefix opened (`<sp><lb/><speaker>Fort.</speaker>
               // <ab>Where is…</ab></sp>`) continues that line: only a line

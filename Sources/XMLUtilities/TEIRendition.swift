@@ -892,18 +892,27 @@ public enum TEIRendition {
     }
   }
 
-  /// A block's rend as its words carry it where it stands within measured
-  /// lines (`TEIRenderer.measuredInline`): its type and ink only. What
-  /// places or boxes a block—its margins, measure, box, indent, alignment
-  /// and leading—is the measured line's own, from its renditions, never
-  /// the element's that names what the words are.
+  /// What places or boxes a block's lines: its margins, measure, box,
+  /// indent, alignment and leading.
+  static let placing: Set<String> = boxProperties.union(inlineMargins).union(startMargins).union(endMargins)
+    .union(["text-indent", "text-align", "line-height", "column-gap"])
+
+  /// A block's rend as its words carry it where it begins within a
+  /// measured line (`TEIRenderer.measuredWrappers`): its type and ink only.
+  /// What places its lines (`placing`) cannot move a line already begun.
   public static func asInline(_ rend: String) -> String {
     var setting = Setting(rend)
-    setting.remove(
-      boxProperties.union(inlineMargins).union(startMargins).union(endMargins)
-        .union(["text-indent", "text-align", "line-height", "column-gap"]))
+    setting.remove(placing)
     setting.entries.removeAll { $0.key == "align(" || $0.key == "indent(" }
     return setting.rend
+  }
+
+  /// Whether a rend places the lines it sets (`placing`, an alignment, an
+  /// indent), beyond their type and ink.
+  public static func placesLines(_ rend: String) -> Bool {
+    Setting(rend).entries.contains {
+      $0.key == "align(" || $0.key == "indent(" || ($0.key.hasPrefix("css:") && placing.contains(String($0.key.dropFirst(4))))
+    }
   }
 
   /// How a child's setting meets the one around it.
