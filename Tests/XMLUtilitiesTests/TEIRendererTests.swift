@@ -1478,6 +1478,38 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(unmeasured.map(\.text), ["Hor.", "Most like."])
   }
 
+  /// A page as an arbitration renders its draft (gnorium-python
+  /// `TEIReview.with_lines`): its lines name their zones by the ids its
+  /// document gives them (`p11-z-L1`, prefixed with the page's place), its
+  /// surface holding them after its text block. It is measured: each line at
+  /// its zone, each speaker in its line (dev, 2026-11-10: a p. 5 arbitration
+  /// cleared its `<lb facs>`, and its page rendered unmeasured, a speaker a
+  /// line of its own).
+  func testAnArbitrationsDraftNamingItsDocumentsZoneIdsIsMeasured() throws {
+    func page(_ body: String) -> String {
+      ##"<TEI xmlns="http://www.tei-c.org/ns/1.0"><facsimile><surface n="p. 5" ulx="0" uly="0" lrx="1000" lry="1000">"##
+        + ##"<graphic url="https://cdm16003.contentdm.oclc.org/iiif/2/p15150coll3:1370/full/max/0/default.jpg" width="6313px" height="6642px"/>"##
+        + ##"<zone xml:id="textblock" type="textblock" points="310.39,165.84 672.65,160.23 683.27,778.25 321,783.87" style="font-size:85.47px"/>"##
+        + ##"<zone xml:id="p11-z-L1" ulx="434" uly="161" lrx="562" lry="182"/>"##
+        + ##"<zone xml:id="p11-z-L2" ulx="338" uly="185" lrx="516" lry="205"/>"##
+        + ##"<zone xml:id="p11-z-L3" ulx="338" uly="201" lrx="508" lry="219"/></surface></facsimile><text><body>"##
+        + ##"<pb n="p. 5" facs="https://cdm16003.contentdm.oclc.org/iiif/2/p15150coll3:1370/full/max/0/default.jpg"/>"##
+        + body + "</body></text></TEI>"
+    }
+    let draft = page(
+      ##"<lb facs="#p11-z-L1"/><fw type="header" rend="align(center)">Prince of Denmarke.</fw>"##
+        + ##"<sp who="#marcellus"><lb facs="#p11-z-L2"/><speaker rend="italic">Mar.</speaker> Is it not like the King?</sp>"##
+        + ##"<sp who="#horatio"><lb facs="#p11-z-L3"/><speaker rend="italic">Hor.</speaker> As thou art to thy ſelfe,</sp>"##)
+    let lines = try XCTUnwrap(TEIRenderer.pages(in: draft).first).lines
+    XCTAssertEqual(lines.map { $0.zone?.id ?? "-" }, ["p11-z-L1", "p11-z-L2", "p11-z-L3"])
+    XCTAssertEqual(lines.map(\.text), ["Prince of Denmarke.", "Mar. Is it not like the King?", "Hor. As thou art to thy ſelfe,"])
+    // Its line breaks cleared, it is unmeasured: each speaker a line of its own.
+    let cleared = try XCTUnwrap(TEIRenderer.pages(in: draft.replacingOccurrences(
+      of: ##"<lb facs="#p11-z-L(\d)"/>"##, with: "<lb/>", options: .regularExpression)).first).lines
+    XCTAssertTrue(cleared.allSatisfy { $0.zone == nil })
+    XCTAssertTrue(cleared.contains { $0.text == "Mar." }, cleared.map(\.text).joined(separator: " | "))
+  }
+
   /// The valid measured form of a speech (user, 2026-11-09): the block's
   /// settings move from its `<ab rendition>` onto its `<sp rendition>`, its
   /// prefix run in before its first line, each verse line an `<l>` opening
