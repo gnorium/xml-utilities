@@ -1435,4 +1435,55 @@ final class TEIRendererTests: XCTestCase {
       XCTAssertTrue(figure?.rend.contains(token) ?? false, figure?.rend ?? "")
     }
   }
+
+  /// On a measured page (its line breaks name their zones) a speaker, a
+  /// stage direction, a verse line, a stanza and a head name what their
+  /// words are and never move a line (user, 2026-11-09): the page encoded
+  /// as a play sets the same lines, each at its zone, with the same
+  /// openings and spacing, as the flat page Calibration measured. Off a
+  /// measured page each is still a block of its own.
+  func testSpeechAndVerseNeverMoveAMeasuredLine() throws {
+    let zones = (1...5).map { ##"<zone xml:id="z-L\##($0)" ulx="100" uly="\##($0 * 50)" lrx="900" lry="\##($0 * 50 + 40)"/>"## }
+      .joined()
+    func page(_ body: String) -> String {
+      ##"<TEI xmlns="http://www.tei-c.org/ns/1.0"><facsimile><surface ulx="0" uly="0" lrx="1000" lry="1000">"##
+        + zones + ##"</surface></facsimile><text><body><pb n="p. 8" facs="https://example.org/iiif/p8/full/max/0/default.jpg"/>"##
+        + body + "</body></text></TEI>"
+    }
+    let flat = page(
+      ##"<ab><lb facs="#z-L1"/>Hor. Most like, it harrowes me with feare,"##
+        + ##"<lb facs="#z-L2"/>Mar. It would be spoke too."##
+        + ##"<lb facs="#z-L3"/>Enter the Ghoſt."##
+        + ##"<lb facs="#z-L4"/>The Tragedie of Hamlet"##
+        + ##"<lb facs="#z-L5"/>To be, or not to be, I there's the point,</ab>"##)
+    let encoded = page(
+      ##"<ab><sp who="#horatio"><lb facs="#z-L1"/><speaker rend="italic">Hor.</speaker> Most like, it harrowes me with feare,</sp>"##
+        + ##"<sp who="#marcellus"><lb facs="#z-L2"/><speaker>Mar.</speaker> It would be spoke too.</sp>"##
+        + ##"<stage type="entrance"><lb facs="#z-L3"/>Enter the Ghoſt.</stage>"##
+        + ##"<head><lb facs="#z-L4"/>The Tragedie of Hamlet</head>"##
+        + ##"<lg type="stanza"><l><lb facs="#z-L5"/>To be, or not to be, I there's the point,</l></lg></ab>"##)
+    let flatLines = try XCTUnwrap(TEIRenderer.pages(in: flat).first).lines
+    let encodedLines = try XCTUnwrap(TEIRenderer.pages(in: encoded).first).lines
+    func shape(_ lines: [TEILine]) -> [String] {
+      lines.map { "\($0.zone?.id ?? "-")|\($0.text)|\($0.opensParagraph)|\($0.sharesLine)|\($0.rend)" }
+    }
+    XCTAssertEqual(shape(encodedLines), shape(flatLines))
+    XCTAssertEqual(encodedLines.count, 5)
+    // The speaker's own type is its words', never a block's.
+    let prefix = try XCTUnwrap(encodedLines[0].runs.first { $0.text.contains("Hor.") })
+    XCTAssertTrue(prefix.rend.contains("italic"), prefix.rend)
+    // Unmeasured, a speaker is a line of its own, as a TEI reader sets it.
+    let unmeasured = try XCTUnwrap(TEIRenderer.pages(in: page(
+      ##"<sp><speaker>Hor.</speaker><p>Most like.</p></sp>"##)).first).lines
+    XCTAssertEqual(unmeasured.map(\.text), ["Hor.", "Most like."])
+  }
+
+  /// A block's rend as its words carry it inside a measured line: its
+  /// type and ink, never what places it.
+  func testABlocksRendAsInlineKeepsTypeAndInkOnly() {
+    XCTAssertEqual(
+      TEIRendition.asInline("italic color(red) align(center) css:margin-block-start=1em css:text-indent=2em css:font-size=0.8em"),
+      "italic color(red) css:font-size=0.8em")
+  }
 }
+

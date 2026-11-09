@@ -686,6 +686,11 @@
   /// a facsimile edition is read one opening at a time and no HTML fragment
   /// can carry that structure.
   public enum TEIRenderer {
+    /// What names its words and never places them on a measured page
+    /// (`rendering`): a speaker, a stage direction, a verse line, a stanza,
+    /// a head. Elsewhere each is a block of its own, as a TEI reader sets it.
+    static let measuredInline: Set<String> = ["speaker", "stage", "l", "lg", "head"]
+
     /// The areas around the type area a note in a margin is set in, outside
     /// the type area where the scan has it (user, 2026-10-14), in reading order:
     /// above, beside, below, a corner where it stands beyond two sides.
@@ -1384,6 +1389,15 @@
         guard facs.hasPrefix("#") else { return nil }
         return zones[String(facs.dropFirst())]
       }
+      // Whether its lines are measured: a line break in it names its zone
+      // on the scan (`<lb facs="#z-…"/>`), and each line is set where the
+      // scan has it. Then a speaker, a stage direction, a verse line, a
+      // stanza or a head names what its words are and never where they
+      // stand (`measuredInline`).
+      func measures(_ element: TEIMarkup.Element) -> Bool {
+        element.elements.contains { ($0.name == "lb" && zone(of: $0) != nil) || measures($0) }
+      }
+      let measured = measures(owner)
       // The elements whose white space is kept as written: inside an
       // `xml:space="preserve"`, until an `xml:space="default"` says otherwise.
       var preserving: Set<ObjectIdentifier> = []
@@ -1727,6 +1741,18 @@
               walk(
                 element, kind: kind, rend: rend, inlineRend: inlineRend, alternative: alternative,
                 zone: initialZone, gloss: glossing(element))
+            case let name where measured && TEIRenderer.measuredInline.contains(name):
+              // On a measured page its words stand on the measured lines
+              // they are printed on: a run-in speech prefix on its speech's
+              // line, a verse line or a stanza on its lines, no line broken,
+              // no space or margin of a block's added—only a line break
+              // (`<lb/>`) and the line's renditions place a line (user,
+              // 2026-11-09: wrapping Hamlet Q1's speech prefixes in
+              // `<speaker>` set every line after them a line low). Its own
+              // type and ink are its words' (`TEIRendition.asInline`).
+              walk(
+                element, kind: kind, rend: rend, inlineRend: joined(TEIRendition.asInline(ownRend)),
+                alternative: alternative, zone: initialZone, gloss: glossing(element), opened: opened)
             case "p", "lg", "l", "head", "div", "speaker", "stage", "fw", "item", "docTitle", "titlePart",
               "docImprint", "byline", "docAuthor", "docDate", "docEdition", "epigraph", "argument", "imprimatur", "entry":
               flush()

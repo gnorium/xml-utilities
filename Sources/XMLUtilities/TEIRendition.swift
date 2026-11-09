@@ -892,6 +892,20 @@ public enum TEIRendition {
     }
   }
 
+  /// A block's rend as its words carry it where it stands within measured
+  /// lines (`TEIRenderer.measuredInline`): its type and ink only. What
+  /// places or boxes a block—its margins, measure, box, indent, alignment
+  /// and leading—is the measured line's own, from its renditions, never
+  /// the element's that names what the words are.
+  public static func asInline(_ rend: String) -> String {
+    var setting = Setting(rend)
+    setting.remove(
+      boxProperties.union(inlineMargins).union(startMargins).union(endMargins)
+        .union(["text-indent", "text-align", "line-height", "column-gap"]))
+    setting.entries.removeAll { $0.key == "align(" || $0.key == "indent(" }
+    return setting.rend
+  }
+
   /// How a child's setting meets the one around it.
   public enum Placement: Sendable {
     /// A block inside a block (a paragraph in a division): `first` where
