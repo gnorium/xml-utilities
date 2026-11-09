@@ -1753,6 +1753,16 @@
               walk(
                 element, kind: kind, rend: rend, inlineRend: joined(TEIRendition.asInline(ownRend)),
                 alternative: alternative, zone: initialZone, gloss: glossing(element), opened: opened)
+            case let name where measured && (name == "p" || name == "ab") && !runs.isEmpty:
+              // On a measured page a speech's block that begins in the line
+              // its run-in prefix opened (`<sp><lb/><speaker>Fort.</speaker>
+              // <ab>Where is…</ab></sp>`) continues that line: only a line
+              // break places a line (user, 2026-11-09: Hamlet Q1 p. 8's prose
+              // speeches set each prefix on a line of its own). Its own type
+              // and ink are its words' (`TEIRendition.asInline`).
+              walk(
+                element, kind: kind, rend: rend, inlineRend: joined(TEIRendition.asInline(ownRend)),
+                alternative: alternative, zone: initialZone, gloss: glossing(element), opened: opened)
             case "p", "lg", "l", "head", "div", "speaker", "stage", "fw", "item", "docTitle", "titlePart",
               "docImprint", "byline", "docAuthor", "docDate", "docEdition", "epigraph", "argument", "imprimatur", "entry":
               flush()

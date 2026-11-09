@@ -1478,6 +1478,76 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(unmeasured.map(\.text), ["Hor.", "Most like."])
   }
 
+  /// The valid measured form of a speech (user, 2026-11-09): the block's
+  /// settings move from its `<ab rendition>` onto its `<sp rendition>`, its
+  /// prefix run in before its first line, each verse line an `<l>` opening
+  /// with its line break: every line set where the measured `<ab>` set it,
+  /// in the same settings.
+  func testASpeechCarryingItsBlocksSettingsSetsItsLinesAsTheBlockDid() throws {
+    let zones = (1...3).map { ##"<zone xml:id="z-L\##($0)" ulx="100" uly="\##($0 * 50)" lrx="900" lry="\##($0 * 50 + 40)"/>"## }
+      .joined()
+    let header = ##"<teiHeader><encodingDesc><tagsDecl><rendition xml:id="size-4" scheme="css">font-size:0.9em;text-indent:1em;margin-block-start:0.5em</rendition></tagsDecl></encodingDesc></teiHeader>"##
+    func page(_ body: String) -> String {
+      ##"<TEI xmlns="http://www.tei-c.org/ns/1.0">"## + header
+        + ##"<facsimile><surface ulx="0" uly="0" lrx="1000" lry="1000">"##
+        + zones + ##"</surface></facsimile><text><body><pb n="p. 8" facs="https://example.org/iiif/p8/full/max/0/default.jpg"/>"##
+        + body + "</body></text></TEI>"
+    }
+    let flat = page(
+      ##"<ab rendition="#size-4" rend="align(left)"><lb facs="#z-L1"/>Hor. Most like, it harrowes me with feare,"##
+        + ##"<lb facs="#z-L2"/>And wonder: it would be spoke too."##
+        + ##"<lb facs="#z-L3"/>Question it Horatio.</ab>"##)
+    let speech = page(
+      ##"<sp who="#horatio" rendition="#size-4" rend="align(left)"><lb facs="#z-L1"/><speaker rend="italic">Hor.</speaker> "##
+        + ##"<l>Most like, it harrowes me with feare,</l>"##
+        + ##"<l><lb facs="#z-L2"/>And wonder: it would be spoke too.</l>"##
+        + ##"<l><lb facs="#z-L3"/>Question it Horatio.</l></sp>"##)
+    let flatLines = try XCTUnwrap(TEIRenderer.pages(in: flat).first).lines
+    let speechLines = try XCTUnwrap(TEIRenderer.pages(in: speech).first).lines
+    func shape(_ lines: [TEILine]) -> [String] {
+      lines.map {
+        "\($0.zone?.id ?? "-")|\($0.text)|\($0.opensBlock)|\($0.opensParagraph)|\($0.sharesLine)|\($0.rend)|\($0.box)"
+      }
+    }
+    XCTAssertEqual(shape(speechLines), shape(flatLines))
+    XCTAssertEqual(speechLines.count, 3)
+    // The block's settings reach its lines in both.
+    XCTAssertTrue(flatLines[0].rend.contains("size-4") || flatLines[0].rend.contains("font-size"), flatLines[0].rend)
+  }
+
+  /// A prose speech on a measured page, its prefix run in before its
+  /// block (`<sp rendition><lb/><speaker>Fort.</speaker> <ab>…</ab></sp>`,
+  /// or a `<p>`): the block continues the prefix's line, every line where
+  /// the measured block set it (user, 2026-11-09: Hamlet Q1 p. 8). Only a
+  /// line break places a line.
+  func testARunInProseSpeechKeepsItsMeasuredLines() throws {
+    let zones = (1...3).map { ##"<zone xml:id="z-L\##($0)" ulx="100" uly="\##($0 * 50)" lrx="900" lry="\##($0 * 50 + 40)"/>"## }
+      .joined()
+    let header = ##"<teiHeader><encodingDesc><tagsDecl><rendition xml:id="size-2" scheme="css">font-size:1em;text-indent:1.352em</rendition></tagsDecl></encodingDesc></teiHeader>"##
+    func page(_ body: String) -> String {
+      ##"<TEI xmlns="http://www.tei-c.org/ns/1.0">"## + header
+        + ##"<facsimile><surface ulx="0" uly="0" lrx="1000" lry="1000">"## + zones
+        + ##"</surface></facsimile><text><body><pb n="p. 8" facs="https://example.org/iiif/p8/full/max/0/default.jpg"/>"##
+        + body + "</body></text></TEI>"
+    }
+    func shape(_ tei: String) throws -> [String] {
+      try XCTUnwrap(TEIRenderer.pages(in: tei).first).lines.map {
+        "\($0.zone?.id ?? "-")|\($0.text)|\($0.opensBlock)|\($0.opensParagraph)|\($0.rend)"
+      }
+    }
+    let flat = try shape(page(
+      ##"<ab rendition="#size-2"><lb facs="#z-L1"/>Fort. Where is this bloudy fight?"##
+        + ##"<lb facs="#z-L2"/>Amb. So iarring and so dismall,<lb facs="#z-L3"/>and so abrupt.</ab>"##))
+    for block in ["ab", "p"] {
+      let speech = try shape(page(
+        ##"<sp who="#fortinbras" rendition="#size-2"><lb facs="#z-L1"/><speaker>Fort.</speaker> "##
+          + "<\(block)>Where is this bloudy fight?</\(block)></sp>"
+          + ##"<sp who="#ambassador" rendition="#size-2"><lb facs="#z-L2"/><speaker>Amb.</speaker> "##
+          + "<\(block)>So iarring and so dismall,<lb facs=\"#z-L3\"/>and so abrupt.</\(block)></sp>"))
+      XCTAssertEqual(speech, flat, block)
+    }
+  }
+
   /// A block's rend as its words carry it inside a measured line: its
   /// type and ink, never what places it.
   func testABlocksRendAsInlineKeepsTypeAndInkOnly() {
