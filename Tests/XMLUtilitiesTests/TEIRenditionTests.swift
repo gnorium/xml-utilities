@@ -366,4 +366,19 @@ final class TEIRenditionTests: XCTestCase {
     XCTAssertEqual(declared["indent-2"], "css:text-indent=1.5456rem")
     XCTAssertEqual(declared["size-2"], "css:font-size=1rem")
   }
+
+  /// A document's head as the server reads it for a kept page (gnorium-server
+  /// `ReaderPages.head`: its TEI up to its `<text>`'s opening tag, never
+  /// closed) declares every rendition its header does: an arbitration of a
+  /// kept page is checked in them (dev, 2026-11-10: Hamlet Q1 p. 5, handed its
+  /// page's own renditions alone, read #track-roman as unresolved).
+  func testADocumentsUnclosedHeadDeclaresItsRenditions() {
+    let head = #"""
+      <TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><fileDesc><titleStmt><title>Hamlet</title></titleStmt></fileDesc><encodingDesc><tagsDecl><rendition xml:id="size-4" scheme="css">font-size:0.999rem</rendition><rendition xml:id="track-roman" scheme="css">letter-spacing:-0.0291em</rendition><rendition xml:id="align-center-2" scheme="css">margin-inline-start:4.4752em</rendition></tagsDecl></encodingDesc></teiHeader><text xml:lang="en">
+      """#
+    let declared = TEIRendition.declarations(of: head)
+    XCTAssertEqual(declared["track-roman"], "css:letter-spacing=-0.0291em")
+    XCTAssertEqual(declared["align-center-2"], "css:margin-inline-start=4.4752em")
+    XCTAssertEqual(declared["size-4"], "css:font-size=0.999rem")
+  }
 }

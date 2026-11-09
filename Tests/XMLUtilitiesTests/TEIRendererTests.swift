@@ -1012,6 +1012,28 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertTrue(lines[4].rend.contains("css:margin-inline-start=23.75em"))
   }
 
+  /// Hamlet Q1 p. 5's direction line as its stored page keeps it: the
+  /// signature on its measured line, the catchword on its row, each at the
+  /// place its margin gives in rem, so "B 2" stands centre-right and "Hath"
+  /// after it at the far right (dev, 2026-11-10: an arbitration set the two
+  /// margins as spaces, the catchword's counted from the row's start, and
+  /// its render put "Hath" before "B 2").
+  func testHamletQ1P5sSignatureAndCatchwordStandWhereTheirMarginsPlaceThem() {
+    let lines = TEIRenderer.lines(
+      in: #"""
+        <lb facs="#p11-z-L38"/>
+        <fw type="sig" rend="align(left)" style="margin-inline-start:15.1489rem"><w xml:id="w10.593" lemma="B" class="letter" facs="#p11-wz282">B</w> <num value="2">2</num></fw>
+        <fw type="catch" facs="#p11-z-L39" rend="align(left)" style="margin-inline-start:24.0052rem"><w xml:id="w10.594" lemma="have" class="verb" facs="#p11-wz281">Hath</w></fw>
+        """#)
+    XCTAssertEqual(lines.map(\.text), ["B 2", "Hath"])
+    XCTAssertEqual(lines.map(\.sharesLine), [false, true])
+    let starts = lines.map { line -> Double? in
+      line.rend.split(separator: " ").first { $0.hasPrefix("css:margin-inline-start=") }
+        .flatMap { Double($0.dropFirst("css:margin-inline-start=".count).dropLast(2)) }
+    }
+    XCTAssertEqual(starts, [15.1489, 24.0052], "each at its own margin from the row's start, never after the other")
+  }
+
   /// A title page's parts are blocks, as TEI has them: each starts a line.
   /// A `docAuthor` in a byline is a phrase of it.
   func testATitlePagesPartsStartTheirOwnLines() {
