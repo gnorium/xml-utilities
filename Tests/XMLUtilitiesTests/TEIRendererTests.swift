@@ -1014,7 +1014,7 @@ final class TEIRendererTests: XCTestCase {
 
   /// Hamlet Q1 p. 5's direction line as its stored page keeps it: the
   /// signature on its measured line, the catchword on its row, each at the
-  /// place its margin gives in rem, so "B 2" stands centre-right and "Hath"
+  /// place its margin gives in rem, so "B 2" stands center-right and "Hath"
   /// after it at the far right (dev, 2026-11-10: an arbitration set the two
   /// margins as spaces, the catchword's counted from the row's start, and
   /// its render put "Hath" before "B 2").

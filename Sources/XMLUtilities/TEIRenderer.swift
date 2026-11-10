@@ -1231,7 +1231,7 @@
     }
 
     /// Whether `element` is a mark an owner or a library added to the copy
-    /// (`<note type="provenance">`): a stamp, a bookplate, a shelfmark,
+    /// (`<note type="provenance">`): a stamp, a bookplate, a call number,
     /// shown on the scan with its gloss and never set in the reading pane.
     static func isOwnersMark(_ element: TEIMarkup.Element) -> Bool {
       element.name == "note" && element.attribute("type") == "provenance"

@@ -194,11 +194,11 @@
     /// convention, and a rule that assumed one would be wrong about every
     /// source that does not follow it.
     static func matches(_ a: String, _ b: String) -> Bool {
-      func normalised(_ text: String) -> String {
+      func normalized(_ text: String) -> String {
         text.lowercased().replacingOccurrences(of: " ", with: "")
           .replacingOccurrences(of: ".", with: "")
       }
-      return normalised(a) == normalised(b)
+      return normalized(a) == normalized(b)
     }
 
     /// A long unbroken sentence about the page, where lines of a transcription
