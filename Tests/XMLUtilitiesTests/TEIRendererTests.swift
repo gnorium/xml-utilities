@@ -1639,6 +1639,41 @@ final class TEIRendererTests: XCTestCase {
     XCTAssertEqual(blocked, flat)
   }
 
+  /// A speech's first-line indent is its first line's alone: a verse line
+  /// that begins a later line of it, setting no indent of its own, is set
+  /// flush, as the same line a later line of a block is (dev, 2026-11-10:
+  /// Hamlet Q1 p. 6's "This preſent obiect made probation.", the last of
+  /// Horatio's verse lines, was set at his speech's 1.6 em).
+  func testAVerseLineBegunInASpeechTakesNoneOfItsFirstLineIndent() throws {
+    let zones = (1...4).map { ##"<zone xml:id="z-L\##($0)" ulx="100" uly="\##($0 * 50)" lrx="900" lry="\##($0 * 50 + 40)"/>"## }
+      .joined()
+    func shape(_ body: String) throws -> [String] {
+      let tei = ##"<TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><encodingDesc><tagsDecl>"##
+        + ##"<rendition xml:id="size-4" scheme="css">font-size:0.999rem</rendition>"##
+        + ##"<rendition xml:id="leading-4" scheme="css">line-height:1.2607rem</rendition>"##
+        + ##"<rendition xml:id="indent-2" scheme="css">text-indent:0.2807rem</rendition>"##
+        + ##"<rendition xml:id="indent-4" scheme="css">text-indent:1.5858rem</rendition>"##
+        + ##"</tagsDecl></encodingDesc></teiHeader><facsimile><surface ulx="0" uly="0" lrx="1000" lry="1000">"##
+        + zones + ##"</surface></facsimile><text><body><pb n="p. 6" facs="https://example.org/iiif/p6/full/max/0/default.jpg"/>"##
+        + body + "</body></text></TEI>"
+      // Each line and the indent it is set at: a block's first line its text-indent, a later line none.
+      return try XCTUnwrap(TEIRenderer.pages(in: tei).first).lines.map { line in
+        let indent = line.rend.split(separator: " ").first { $0.hasPrefix("css:text-indent=") }
+        return "\(line.zone?.id ?? "-")|\(line.text)|\(line.opensBlock ? indent.map(String.init) ?? "flush" : "flush")"
+      }
+    }
+    let flat = try shape(
+      ##"<ab rendition="#size-4 #leading-4 #indent-4"><lb facs="#z-L1"/>Hor. And then it faded,</ab>"##
+        + ##"<ab rendition="#size-4 #leading-4 #indent-2"><lb facs="#z-L2"/>To his confines,<lb facs="#z-L3"/>This preſent obiect.</ab>"##
+        + ##"<ab rendition="#size-4 #leading-4 #indent-4"><lb facs="#z-L4"/>Mar. It faded.</ab>"##)
+    let speech = try shape(
+      ##"<sp who="#horatio" rendition="#size-4 #leading-4 #indent-4"><lb facs="#z-L1"/><speaker>Hor.</speaker> <l>And then it faded,</l>"##
+        + ##"<l rendition="#size-4 #leading-4 #indent-2"><lb facs="#z-L2"/>To his confines,</l>"##
+        + ##"<l rendition="#size-4 #leading-4"><lb facs="#z-L3"/>This preſent obiect.</l></sp>"##
+        + ##"<sp who="#marcellus" rendition="#size-4 #leading-4 #indent-4"><lb facs="#z-L4"/><speaker>Mar.</speaker> <l>It faded.</l></sp>"##)
+    XCTAssertEqual(speech, flat)
+  }
+
   /// Measured lines take the leading of the nearest rendition that sets
   /// them, whatever speech or verse wraps them (user, 2026-11-10: Hamlet Q1
   /// p. 5, its `<ab rendition="#leading-…">` moved onto `<sp>`, `<lg>` or

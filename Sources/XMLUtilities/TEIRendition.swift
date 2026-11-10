@@ -907,6 +907,19 @@ public enum TEIRendition {
     return setting.rend
   }
 
+  /// A block's rend as a measured wrapper it holds takes it where that
+  /// wrapper begins a later line of the block (`TEIRenderer.measuredWrappers`):
+  /// its first-line indent is its first line's alone, as on the page it was
+  /// measured on (gnorium-python `tei_encoding._FIRST_LINE_ONLY`; dev,
+  /// 2026-11-10: Hamlet Q1 p. 6's speech set `#indent-4`, its last verse
+  /// line, flush in print, took the speech's indent and was set 1.6 em in).
+  public static func laterLine(_ rend: String) -> String {
+    var setting = Setting(rend)
+    setting.remove(["text-indent"])
+    setting.entries.removeAll { $0.key == "indent(" }
+    return setting.rend
+  }
+
   /// Whether a rend places the lines it sets (`placing`, an alignment, an
   /// indent), beyond their type and ink.
   public static func placesLines(_ rend: String) -> Bool {

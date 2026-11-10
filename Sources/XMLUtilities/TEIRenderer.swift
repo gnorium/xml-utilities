@@ -1823,8 +1823,12 @@
               if beginsLine(element), TEIRendition.placesLines(ownRend) {
                 flush()
                 let entry = lines.count
+                // Begun on a later line of the block it is in, it takes none
+                // of that block's first-line indent (`TEIRendition.laterLine`).
+                let first = lines.count == opened
                 let setting = TEIRendition.cascade(
-                  rend, TEIRenderer.blockSetting(of: ownRend), .block(first: lines.count == opened))
+                  first ? rend : TEIRendition.laterLine(rend), TEIRenderer.blockSetting(of: ownRend),
+                  .block(first: first))
                 let type = TEIRenderer.typeSetting(of: ownRend)
                 blockPending = true
                 walk(
