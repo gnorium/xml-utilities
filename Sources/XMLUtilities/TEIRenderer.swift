@@ -1454,8 +1454,20 @@
         lines[last].rend = TEIRendition.closing(lines[last].rend, within: setting)
       }
       // The blocks a measured wrapper set that close once the line they
-      // ended in is set: its end breaks no line (`measuredWrappers`).
+      // ended in is set: its end breaks no line (`measuredWrappers`). Set,
+      // they close where the next printed line begins (`closingAtBreak`):
+      // a part of that line set after them (`<seg facs>`, `sharesLine`)
+      // is still that line, and opens no block (dev, 2026-11-10: Hamlet Q1
+      // p. 6's "exit Ghoſt.", after its speech's "2. Tis heere.", was set a
+      // line low and every line after it).
       var closingAfterLine: [(entry: Int, setting: String)] = []
+      var closingAtBreak: [(entry: Int, setting: String)] = []
+      func closeAtBreak() {
+        guard !closingAtBreak.isEmpty else { return }
+        for block in closingAtBreak { close(from: block.entry, block.setting) }
+        closingAtBreak = []
+        blockPending = true
+      }
       // Whether the line being set has taken its setting (`begin`).
       var lineBegun = false
 
@@ -1463,6 +1475,7 @@
         runs = TEIRenderer.spaced(runs)
         let text = runs.map(\.text).joined()
         if !text.isEmpty {
+          if lineBroken { closeAtBreak() }
           var line = TEILine(
             kind: currentKind, text: text, rend: currentRend, runs: runs, opensBlock: blockPending,
             opensParagraph: paragraphPending, sharesLine: !lineBroken, joinsPrevious: breakInWord)
@@ -1481,11 +1494,8 @@
           paragraphPending = false
           lineBroken = false
           breakInWord = false
-          if !closingAfterLine.isEmpty {
-            for block in closingAfterLine { close(from: block.entry, block.setting) }
-            closingAfterLine = []
-            blockPending = true
-          }
+          closingAtBreak += closingAfterLine
+          closingAfterLine = []
         }
         runs = []
         lineBegun = false
@@ -1533,6 +1543,7 @@
       }
 
       func append(_ line: TEILine) {
+        closeAtBreak()
         var line = line
         line.opensParagraph = paragraphPending
         line.box = currentBox
@@ -2002,6 +2013,7 @@
       }
       walk(owner)
       flush()
+      closeAtBreak()
       return lines
     }
 

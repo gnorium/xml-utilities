@@ -1602,6 +1602,43 @@ final class TEIRendererTests: XCTestCase {
     }
   }
 
+  /// A line set in two parts on a measured page—a speech and its exit, the
+  /// exit's part its own zone, set at its measured margin (`<seg facs>`)—
+  /// is one line, however speech and stage wrap them: only a line break
+  /// places a line, and a block that opens within a line holding no break
+  /// of its own continues it (dev, 2026-11-10: Hamlet Q1 p. 6's "2. Tis
+  /// heere." and its "exit Ghoſt.", the exit moved into an `<ab>` of its
+  /// own after the speech, set a line low and every line after it).
+  func testAPartOfAMeasuredLineStaysOnItsLineWhateverWrapsIt() throws {
+    let zones = ##"<zone xml:id="z-L1" ulx="100" uly="50" lrx="300" lry="90"/>"##
+      + ##"<zone xml:id="z-L1-2" ulx="600" uly="50" lrx="800" lry="90"/>"##
+      + ##"<zone xml:id="z-L2" ulx="100" uly="100" lrx="900" lry="140"/>"##
+    func shape(_ body: String) throws -> [String] {
+      let tei = ##"<TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><encodingDesc><tagsDecl>"##
+        + ##"<rendition xml:id="size-4" scheme="css">font-size:0.999rem</rendition>"##
+        + ##"<rendition xml:id="leading-4" scheme="css">line-height:1.2607rem</rendition>"##
+        + ##"<rendition xml:id="indent-4" scheme="css">text-indent:1.4rem</rendition>"##
+        + ##"</tagsDecl></encodingDesc></teiHeader><facsimile><surface ulx="0" uly="0" lrx="1000" lry="1000">"##
+        + zones + ##"</surface></facsimile><text><body><pb n="p. 6" facs="https://example.org/iiif/p6/full/max/0/default.jpg"/>"##
+        + body + "</body></text></TEI>"
+      return try XCTUnwrap(TEIRenderer.pages(in: tei).first).lines.map {
+        "\($0.zone?.id ?? "-")|\($0.text)|\($0.sharesLine)|\($0.opensBlock)|\($0.rend)"
+      }
+    }
+    let exit = ##"<seg facs="#z-L1-2" rend="align(left)" style="margin-inline-start:14rem">exit Ghoſt.</seg>"##
+    let set = ##" rendition="#size-4 #leading-4 #indent-4""##
+    let next = ##"<ab rendition="#size-4 #leading-4"><lb facs="#z-L2"/>Hor. Tis heere.</ab>"##
+    let flat = try shape("<ab" + set + ##"><lb facs="#z-L1"/>2. Tis heere."## + exit + "</ab>" + next)
+    let staged = try shape(
+      ##"<sp who="#barnardo""## + set + ##"><lb facs="#z-L1"/><speaker>2.</speaker> <l>Tis heere.</l><stage>"##
+        + exit + "</stage></sp>" + next)
+    let blocked = try shape(
+      ##"<sp who="#barnardo""## + set + ##"><lb facs="#z-L1"/><speaker>2.</speaker> <l>Tis heere.</l></sp>"##
+        + ##"<ab rendition="#size-4 #leading-4">"## + exit + "</ab>" + next)
+    XCTAssertEqual(staged, flat)
+    XCTAssertEqual(blocked, flat)
+  }
+
   /// Measured lines take the leading of the nearest rendition that sets
   /// them, whatever speech or verse wraps them (user, 2026-11-10: Hamlet Q1
   /// p. 5, its `<ab rendition="#leading-…">` moved onto `<sp>`, `<lg>` or
